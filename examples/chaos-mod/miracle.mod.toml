@@ -1,0 +1,4 @@
+id = "chaos-mod"
+name = "Chaos Mod"
+version = "0.1.0"
+entrypoint = "com.example.chaos.ChaosMod"

@@ -1,0 +1,6 @@
+# The only file a Miracle mod needs besides its classes.
+id = "hello-mod"
+name = "Hello Mod"
+version = "0.1.0"
+entrypoint = "com.example.hello.HelloMod"
+authors = ["Hronosin"]

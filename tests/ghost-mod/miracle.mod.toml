@@ -1,0 +1,2 @@
+id = "ghost-mod"
+entrypoint = "test.ghost.GhostMod"

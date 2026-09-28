@@ -1,0 +1,2 @@
+id = "eager-mod"
+entrypoint = "test.eager.EagerMod"

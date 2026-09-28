@@ -1,0 +1,3 @@
+id = "boom-mod"
+name = "Boom Mod"
+entrypoint = "test.boom.BoomMod"
