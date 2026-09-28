@@ -2,7 +2,7 @@
 # Smoke tests: run the fake game with different mod sets and check what comes out.
 set -uo pipefail
 cd "$(dirname "$0")"
-export LC_ALL=C.UTF-8  # the crash banner is in Russian; keep the JVM from printing ????
+export LC_ALL=C.UTF-8  # keep the JVM from turning non-ASCII output into ????
 ./build.sh > /dev/null || { echo "build failed"; exit 1; }
 
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
@@ -96,7 +96,7 @@ expect ghost "[FakeMinecraft] done"
 # --- mod throws in transform() -> crash banner names it --------------------------------------
 run_with boom "$T/boom-mod.jar"
 expect_code boom 1
-expect boom "ЧУДА НЕ ПРОИЗОШЛО"
+expect boom "NO MIRACLE OCCURRED"
 expect boom "Mod Boom Mod (boom-mod 0.0.0) failed in transform()"
 expect boom "kaboom"
 expect_not boom "[FakeMinecraft]"

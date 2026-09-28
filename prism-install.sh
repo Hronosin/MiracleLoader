@@ -78,7 +78,7 @@ print(ver, loaders[0] if loaders else "-")
 PY
 )
 
-[ "$other_loader" = "-" ] || die "instance already has $other_loader. Two loaders both want to own mainClass — use a clean vanilla instance."
+[ "$other_loader" = "-" ] || die "instance already has $other_loader. Two loaders both want to own mainClass. Use a clean vanilla instance."
 case "$mc_version" in
     26.*) ;;
     *) echo "WARNING: instance is Minecraft $mc_version. MiracleLoader targets 26.x (unobfuscated, Java 25)." >&2

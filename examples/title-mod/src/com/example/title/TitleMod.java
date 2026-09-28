@@ -13,7 +13,7 @@ public final class TitleMod implements MiracleMod {
     public void transform(Rgct rgct) {
         rgct.target("net.minecraft.client.gui.screens.TitleScreen")
                 .method("init")
-                .atHead(self -> System.out.println("[title-mod] Title screen opened. Чудо свершилось. (" + self.getClass().getName() + ")"));
+                .atHead(self -> System.out.println("[title-mod] Title screen opened. A miracle has occurred. (" + self.getClass().getName() + ")"));
     }
 
     @Override

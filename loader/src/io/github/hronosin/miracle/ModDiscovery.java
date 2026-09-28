@@ -36,7 +36,7 @@ final class ModDiscovery {
     /** Mods sorted by id, so load order never depends on the file system's mood. */
     static List<ModInfo> discover(Path modsDir) throws IOException, DiscoveryException {
         if (!Files.isDirectory(modsDir)) {
-            Log.info("No mods folder at " + modsDir.toAbsolutePath() + " — creating an empty one.");
+            Log.info("No mods folder at " + modsDir.toAbsolutePath() + ", creating an empty one.");
             Files.createDirectories(modsDir);
             return List.of();
         }
@@ -72,7 +72,7 @@ final class ModDiscovery {
         try (JarFile jf = new JarFile(jar.toFile())) {
             var entry = jf.getJarEntry(METADATA_FILE);
             if (entry == null) {
-                Log.warn(jar.getFileName() + " has no " + METADATA_FILE + " — not a Miracle mod, skipping.");
+                Log.warn(jar.getFileName() + " has no " + METADATA_FILE + ": not a Miracle mod, skipping.");
                 return null;
             }
             try (InputStream in = jf.getInputStream(entry)) {

@@ -32,7 +32,7 @@ final class MiniToml {
                 continue;
             }
             if (line.startsWith("[")) {
-                throw new ParseException(lineNo, "tables are not supported (yet) — keep it flat");
+                throw new ParseException(lineNo, "tables are not supported (yet), keep it flat");
             }
             int eq = line.indexOf('=');
             if (eq < 0) {

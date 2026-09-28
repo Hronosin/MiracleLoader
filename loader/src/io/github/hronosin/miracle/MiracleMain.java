@@ -183,8 +183,7 @@ public final class MiracleMain {
         PrintStream err = System.err;
         err.println();
         err.println("==================================================");
-        err.println("            ЧУДА НЕ ПРОИЗОШЛО");
-        err.println("            (no miracle occurred)");
+        err.println("               NO MIRACLE OCCURRED");
         err.println("==================================================");
         Throwable shown = t;
         if (t instanceof MiracleFailure mf) {

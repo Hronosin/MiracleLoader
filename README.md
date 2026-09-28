@@ -1,60 +1,62 @@
 # MiracleLoader
 
-> Forge куют. Fabric шьют. У нас оно само.
+> Forge hammers. Fabric stitches. Miracle just happens.
 
-Мод-лоадер для Minecraft Java Edition 26.x, который работает *чудом*. Ну, технически — потому что начиная с 26.1 игра больше не обфусцирована, и половина боли, ради которой существовали Gradle-плагины, маппинги и ремаппинг, просто испарилась. Мы этим пользуемся максимально нагло.
+A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, technically: since 26.1 the game ships unobfuscated, and half the pain that Gradle plugins, mappings and remapping existed to solve has simply evaporated. We take that and run with it, shamelessly.
 
-- **Без тулчейна.** Мод — это `javac`, `jar` и один файл `miracle.mod.toml`. Никакого Gradle, никакого Loom, никаких синков по пять минут.
-- **Без миксинов.** Вместо них **RGCT** — Runtime Game Class Transformer, построенный на стандартном ClassFile API из JDK. Ноль зависимостей. Совсем ноль.
-- **Без магии в плохом смысле.** Кто что пропатчил — печатается при старте. Кто уронил игру — написано в краш-репорте.
+- **No toolchain.** A mod is `javac`, `jar` and one `miracle.mod.toml`. No Gradle, no Loom, no five-minute project syncs.
+- **No mixins.** Instead there's **RGCT**, the Runtime Game Class Transformer, built on the JDK's own ClassFile API. Zero dependencies. Actually zero.
+- **No magic, in the bad sense.** Who patched what is printed at startup. Who crashed the game is written in the crash report.
 
-Для ленивых, которые не хотят писать всё с нуля, будет **MiracleToolChain** — отдельный мод-библиотека с событиями, регистрами и прочим форджевым комфортом. Он будет обычным модом без привилегий, так что всё, что умеет он, можешь и ты.
+For those who'd rather not write everything from scratch, there will be **MiracleToolChain**: a separate library mod with events, registries and the rest of the Forge-style comforts. It will be an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Статус: 0.1.0-mvp.** Работает на настоящем Minecraft 26.2: клиент через Prism Launcher и выделенный сервер. RGCT умеет head/return-хуки и сырые трансформации; хуки пока только наблюдают (`self`), без доступа к аргументам и возвращаемому значению.
+> **Status: 0.1.0-mvp.** Runs on real Minecraft 26.2: the client through Prism Launcher and the dedicated server. RGCT supports head/return hooks and raw transforms. Hooks can only observe for now (`self`), with no access to arguments or return values yet.
 
 ---
 
-## Быстрый старт
+## Quick start
 
-Нужен **JDK 25+** (его же требует Minecraft 26.x). На Fedora: `sudo dnf install java-25-openjdk-devel`.
-
-```bash
-./build.sh   # собрать лоадер, фейковую игру и примеры модов
-./run.sh     # запустить фейковую игру с модами
-./test.sh    # смоук-тесты
-```
-
-Если в системе несколько JDK: `JAVA_HOME=/usr/lib/jvm/java-25-openjdk ./build.sh`.
-
-## Как это запускается
-
-Лоадер кладётся на classpath рядом с игрой, а главным классом становится `MiracleMain` вместо игрового:
+You need **JDK 25+** (Minecraft 26.x requires it anyway). On Fedora: `sudo dnf install java-25-openjdk-devel`.
 
 ```bash
-java -cp miracle-loader.jar:minecraft.jar:<библиотеки> \
-     io.github.hronosin.miracle.MiracleMain <аргументы игры>
+./build.sh   # build the loader, the fake game and the example mods
+./run.sh     # run the fake game with the example mods
+./test.sh    # smoke tests
 ```
 
-Всё остальное лаунчер может оставить как есть. Моды ищутся в `./mods`.
+With several JDKs installed: `JAVA_HOME=/usr/lib/jvm/java-25-openjdk ./build.sh`.
+
+## How it launches
+
+Put the loader on the class path next to the game and use `MiracleMain` as the main class instead of the game's:
+
+```bash
+java -cp miracle-loader.jar:minecraft.jar:<libraries> \
+     io.github.hronosin.miracle.MiracleMain <game arguments>
+```
+
+The launcher can leave everything else as it is. Mods are loaded from `./mods`.
+
+| Property | Default | Purpose |
+|---|---|---|
+| `-Dmiracle.target` | `net.minecraft.client.main.Main` | the game's main class (`net.minecraft.server.Main` for servers) |
+| `-Dmiracle.modsDir` | `mods` | mods folder |
+| `-Dmiracle.gameClasspath` | JVM class path minus the loader | if the game is not on the class path |
+| `-Dmiracle.dump` | none | folder to write every patched class into, for debugging |
 
 ### Prism Launcher
 
 ```bash
-./prism-install.sh --list                # какие инстансы есть
-./prism-install.sh "Имя папки инстанса"  # установить (Prism должен быть закрыт)
-./prism-install.sh --uninstall "Имя"     # убрать
+./prism-install.sh --list                   # list instances
+./prism-install.sh "Instance Folder Name"   # install (close Prism first)
+./prism-install.sh --uninstall "Name"       # remove
 ```
 
-Скрипт кладёт лоадер в `libraries/` инстанса, добавляет кастомный компонент MiracleLoader (он подменяет `mainClass`) и копирует в `mods/` пробный `title-mod`. Flatpak-версия Prism находится сама, для других путей — `PRISM_DATA=/путь/к/PrismLauncher`. Нужен чистый ванильный инстанс 26.x: Fabric/NeoForge в том же инстансе будут драться за `mainClass`.
+The script puts the loader into the instance's `libraries/`, adds a MiracleLoader custom component (it overrides `mainClass`), and copies the example mods into `mods/`. The Flatpak install of Prism is found automatically; for anything else set `PRISM_DATA=/path/to/PrismLauncher`. Use a clean vanilla 26.x instance: Fabric or NeoForge in the same instance would fight over `mainClass`.
 
-| Свойство | По умолчанию | Зачем |
-|---|---|---|
-| `-Dmiracle.target` | `net.minecraft.client.main.Main` | главный класс игры (для сервера — свой) |
-| `-Dmiracle.modsDir` | `mods` | папка с модами |
-| `-Dmiracle.gameClasspath` | classpath JVM без лоадера | если игра лежит не на classpath |
-| `-Dmiracle.dump` | — | папка, куда писать все пропатченные классы для отладки |
+Tip: Mojang's 26.x launch arguments include `--enable-native-access=ALL-UNNAMED` and `--sun-misc-unsafe-memory-access=allow`. Adding them to the instance's JVM arguments silences LWJGL's startup warnings.
 
-## Пишем мод без тулчейна
+## Writing a mod without a toolchain
 
 `miracle.mod.toml`:
 
@@ -66,7 +68,7 @@ entrypoint = "com.example.hello.HelloMod"
 authors = ["Hronosin"]
 ```
 
-Код:
+The code:
 
 ```java
 public final class HelloMod implements MiracleMod {
@@ -74,17 +76,17 @@ public final class HelloMod implements MiracleMod {
     public void transform(Rgct rgct) {
         rgct.target("net.minecraft.world.entity.player.Player")
             .method("jumpFromGround")
-            .atHead(self -> System.out.println("прыг-скок, байткод-патч"));
+            .atHead(self -> System.out.println("hop, bytecode patch"));
     }
 
     @Override
     public void onLaunch() {
-        System.out.println("Чудеса существуют.");
+        System.out.println("Miracles are real.");
     }
 }
 ```
 
-Сборка — вся:
+The entire build:
 
 ```bash
 javac --release 25 -cp miracle-loader.jar:minecraft.jar -d classes HelloMod.java
@@ -92,56 +94,57 @@ cp miracle.mod.toml classes/
 jar --create --file hello-mod.jar -C classes .
 ```
 
-Готовые примеры — в `examples/hello-mod` и `examples/chaos-mod`.
+More examples live in `examples/`.
 
-### Мод против настоящей игры: `examples/dirt-diamonds`
+### A real gameplay mod: `examples/dirt-diamonds`
 
-Классика: 1 земля → 1 алмаз. Рецепт — обычный JSON в `data/dirt_diamonds/recipe/` внутри джарки мода. Мод вешает хук на `VanillaPackResourcesBuilder#build` и подкладывает свою джарку как ещё один корень встроенного ванильного пака, а игра дальше сама находит рецепт, как свой собственный. Никаких объектов рецептов в коде.
+The classic: 1 dirt → 1 diamond. The recipe is a plain JSON file in `data/dirt_diamonds/recipe/` inside the mod jar. The mod hooks `VanillaPackResourcesBuilder#build` and adds its own jar as one more root of the built-in vanilla pack, so the game finds the recipe as if it were its own. No recipe objects in code.
 
-Компилируется прямо против клиента Майнкрафта: `build.sh` сам находит скачанную Prism'ом джарку 26.x (или `MC_JAR=/путь/к/client.jar ./build.sh`). На выделенном сервере 26.2 число рецептов при загрузке становится 1586 вместо 1585.
+It compiles directly against the Minecraft client: `build.sh` finds the 26.x jar Prism has already downloaded (or use `MC_JAR=/path/to/client.jar ./build.sh`). On a dedicated 26.2 server the recipe count at startup goes from 1585 to 1586.
 
 ## RGCT
 
 ```java
 rgct.target("a.b.SomeClass")
-    .method("name")                 // все перегрузки
-    .atHead(self -> ...)            // перед первой инструкцией
-    .atReturn(self -> ...)          // перед каждым нормальным return
+    .method("name")                 // every overload
+    .atHead(self -> ...)            // before the first instruction
+    .atReturn(self -> ...)          // before every normal return
     .and()
-    .method("name", "(IF)Z")        // конкретная перегрузка
+    .method("name", "(IF)Z")        // one exact overload
     .atHead(self -> ...)
     .and()
-    .raw(classTransform);           // сырой ClassFile API: ты сам себе злобный буратино
+    .raw(classTransform);           // raw ClassFile API: you're on your own
 ```
 
-- `self` — объект, на котором вызван метод. `null` для статических методов и в голове конструктора (там `this` ещё не инициализирован).
-- Все хуки идут через один диспетчер, поэтому в будущем на этом месте вырастут слои и слияние эффектов (см. roadmap), не ломая API.
-- Если хук кидает исключение, его тип сохраняется, но к нему цепляется пометка, какой мод виноват.
-- Если метод-цель не найден, RGCT предупреждает: скорее всего, мод собран под другую версию игры.
+- `self` is the object the method was called on. It is `null` for static methods and at the head of a constructor, where `this` is not initialized yet.
+- Every hook goes through a single dispatcher. That's where layers and effect merging will grow later (see the roadmap) without breaking the API.
+- If a hook throws, the exception keeps its type, but gets a note attached saying which mod is to blame.
+- If a target method doesn't exist, RGCT warns you. The mod was most likely built for another game version.
 
-### Единственное правило
+### The one rule
 
-**Не трогай классы игры внутри `transform()`.** В этот момент патчи ещё собираются, и класс загрузится непропатченным. Лоадер это ловит и откажется стартовать, назвав виноватый мод, — лучше честный краш сразу, чем тихо не сработавший патч через полчаса игры.
+**Don't touch game classes inside `transform()`.** Patches are still being collected at that point, so the class would load unpatched. The loader catches this and refuses to start, naming the mod. An honest crash right away beats a patch that silently didn't apply half an hour into a session.
 
-## Жизненный цикл
+## Lifecycle
 
-1. Поиск модов в `mods/`, сортировка по id — порядок загрузки не зависит от настроения файловой системы.
-2. `transform(Rgct)` у каждого мода.
-3. RGCT замораживается и печатает отчёт «кто что наслоил».
-4. `onLaunch()` у каждого мода.
-5. `main` игры. Классы патчатся по мере загрузки.
+1. Find mods in `mods/` and sort them by id, so load order never depends on the file system's mood.
+2. Call `transform(Rgct)` on every mod.
+3. Freeze RGCT and print the report of who layered what.
+4. Call `onLaunch()` on every mod.
+5. Run the game's `main`. Classes get patched as they load.
 
 ## Roadmap
 
-- [ ] Запуск настоящего клиента 26.x и интеграция с лаунчерами (Prism и компания)
-- [ ] **Слои**: хуки не мутируют игру, а возвращают эффекты, которые складываются по правилам — результат не зависит от порядка модов
-- [ ] Правила слияния: от цели, от мода, эвристики по байткоду лямбды
-- [ ] `miracle.lock` — выведенные правила фиксируются, модпаки воспроизводимы
-- [ ] Приоритеты как тай-брейкер, внятные ошибки конфликтов
-- [ ] Прямой вызов вместо диспетчера, когда на метод один хук
-- [ ] Зависимости между модами в `miracle.mod.toml`
-- [ ] **MiracleToolChain**: события, регистры, сеть, конфиги
+- [x] Run the real 26.x client and server, Prism Launcher integration
+- [ ] Hook access to arguments and return values
+- [ ] **Layers**: hooks don't mutate the game, they return effects that merge by rules, so the result doesn't depend on mod order
+- [ ] Merge rules: declared by the target, by the mod, or inferred by heuristics from the hook's bytecode
+- [ ] `miracle.lock`: inferred rules get pinned, modpacks stay reproducible
+- [ ] Priorities as a tie-breaker, clear conflict errors
+- [ ] Direct calls instead of the dispatcher when a method has a single hook
+- [ ] Mod dependencies in `miracle.mod.toml`
+- [ ] **MiracleToolChain**: events, registries, networking, configs
 
-## Лицензия
+## License
 
-Читайте внимательно: [EULA.md](EULA.md).
+Please read carefully: [EULA.md](EULA.md).
