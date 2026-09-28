@@ -120,7 +120,7 @@ rgct.target("net.minecraft.world.entity.LivingEntity")
 
 ### Compiling against Minecraft
 
-Both mods above compile directly against the Minecraft client. `build.sh` finds the newest 26.x client jar Prism has downloaded, plus Minecraft's libraries from the same folder (its classes extend Brigadier, DataFixerUpper and friends, so javac needs them too). Elsewhere: `MC_JAR=/path/to/client.jar MC_LIBS=/path/to/libraries ./build.sh`.
+Both mods above compile directly against the Minecraft client. `build.sh` finds the newest 26.x client jar Prism has downloaded, and reads Prism's metadata for that version to put exactly its libraries on the class path (Minecraft's classes extend Brigadier, DataFixerUpper and friends, so javac needs them too). Jars left over from other instances, like an old Forge, stay out. Elsewhere: `MC_JAR=/path/to/client.jar MC_LIBS=/folder/with/that/versions/jars ./build.sh`.
 
 ## RGCT
 
