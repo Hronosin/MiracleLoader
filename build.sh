@@ -52,16 +52,24 @@ build_jar examples/title-mod "$OUT/title-mod.jar" "$OUT/miracle-loader.jar"
 
 echo "==> real-game mods (compiled against Minecraft itself)"
 # MC_JAR=/path/to/client.jar, or the newest 26.x client jar Prism has downloaded.
-if [ -z "${MC_JAR:-}" ]; then
-    MC_JAR="$(ls -1 "$HOME"/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/libraries/com/mojang/minecraft/26.*/minecraft-26.*-client.jar \
-                    "$HOME"/.local/share/PrismLauncher/libraries/com/mojang/minecraft/26.*/minecraft-26.*-client.jar \
-                    2>/dev/null | sort -V | tail -1 || true)"
+# Minecraft's own libraries are needed too (its classes extend Brigadier, DFU, ...): they're
+# taken from the same Prism libraries folder, or from MC_LIBS=/folder/with/jars.
+PRISM_LIBS=""
+for d in "$HOME/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/libraries" \
+         "$HOME/.local/share/PrismLauncher/libraries"; do
+    if [ -d "$d/com/mojang/minecraft" ]; then PRISM_LIBS="$d"; break; fi
+done
+if [ -z "${MC_JAR:-}" ] && [ -n "$PRISM_LIBS" ]; then
+    MC_JAR="$(ls -1 "$PRISM_LIBS"/com/mojang/minecraft/26.*/minecraft-26.*-client.jar 2>/dev/null | sort -V | tail -1 || true)"
 fi
-if [ -n "$MC_JAR" ] && [ -f "$MC_JAR" ]; then
+MC_LIBS="${MC_LIBS:-$PRISM_LIBS}"
+if [ -n "${MC_JAR:-}" ] && [ -f "$MC_JAR" ] && [ -d "$MC_LIBS" ]; then
     echo "    against $MC_JAR"
-    build_jar examples/dirt-diamonds "$OUT/dirt-diamonds.jar" "$OUT/miracle-loader.jar:$MC_JAR"
+    MC_CP="$MC_JAR:$(find "$MC_LIBS" -name '*.jar' ! -path '*/com/mojang/minecraft/*' | sort | tr '\n' ':')"
+    build_jar examples/dirt-diamonds "$OUT/dirt-diamonds.jar" "$OUT/miracle-loader.jar:$MC_CP"
+    build_jar examples/super-jump "$OUT/super-jump.jar" "$OUT/miracle-loader.jar:$MC_CP"
 else
-    echo "    skipped: no Minecraft 26.x jar found (launch a 26.x instance in Prism once, or set MC_JAR=...)"
+    echo "    skipped: no Minecraft 26.x jar + libraries found (launch a 26.x instance in Prism once, or set MC_JAR=... MC_LIBS=...)"
 fi
 
 echo "==> test mods"

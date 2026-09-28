@@ -10,6 +10,10 @@ import java.lang.classfile.ClassTransform;
  * rgct.target("net.minecraft.world.entity.player.Player")
  *     .method("jumpFromGround")
  *     .atHead(self -> System.out.println("jump!"));
+ *
+ * rgct.target("net.minecraft.world.entity.LivingEntity")
+ *     .method("getJumpPower", "()F")
+ *     .interceptReturn(ctx -> ctx.setReturnValue((float) ctx.returnValue() * 1.5f));
  * }</pre>
  */
 public final class Rgct {
@@ -88,6 +92,25 @@ public final class Rgct {
         /** Runs the hook before every normal return (not on exceptions). */
         public MethodTarget atReturn(Hook hook) {
             registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.RETURN, hook);
+            return this;
+        }
+
+        /**
+         * Runs the hook before the first instruction, with access to the arguments. It can change
+         * them ({@link HookContext#setArg}) or skip the method entirely ({@link HookContext#cancel}).
+         * Not supported on constructors.
+         */
+        public MethodTarget interceptHead(ContextHook hook) {
+            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.INTERCEPT_HEAD, hook);
+            return this;
+        }
+
+        /**
+         * Runs the hook before every normal return, with access to the arguments and the return
+         * value, which it can replace ({@link HookContext#setReturnValue}).
+         */
+        public MethodTarget interceptReturn(ContextHook hook) {
+            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.INTERCEPT_RETURN, hook);
             return this;
         }
 

@@ -10,7 +10,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there will be **MiracleToolChain**: a separate library mod with events, registries and the rest of the Forge-style comforts. It will be an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.1.0-mvp.** Runs on real Minecraft 26.2: the client through Prism Launcher and the dedicated server. RGCT supports head/return hooks and raw transforms. Hooks can only observe for now (`self`), with no access to arguments or return values yet.
+> **Status: 0.1.0-mvp.** Runs on real Minecraft 26.2: the client through Prism Launcher and the dedicated server. RGCT hooks can observe a method, change its arguments and return value, or cancel it outright; raw ClassFile transforms are there for everything else.
 
 ---
 
@@ -100,23 +100,73 @@ More examples live in `examples/`.
 
 The classic: 1 dirt → 1 diamond. The recipe is a plain JSON file in `data/dirt_diamonds/recipe/` inside the mod jar. The mod hooks `VanillaPackResourcesBuilder#build` and adds its own jar as one more root of the built-in vanilla pack, so the game finds the recipe as if it were its own. No recipe objects in code.
 
-It compiles directly against the Minecraft client: `build.sh` finds the 26.x jar Prism has already downloaded (or use `MC_JAR=/path/to/client.jar ./build.sh`). On a dedicated 26.2 server the recipe count at startup goes from 1585 to 1586.
+The same builder also assembles the client's vanilla *resource* pack, so the hook reads its `PackLocationInfo` argument and only touches the data pack.
+
+On a dedicated 26.2 server the recipe count at startup goes from 1585 to 1586, and stays there after `/reload`.
+
+### `examples/super-jump`
+
+Players jump 1.5x as fast, about 2.6 blocks high: over a 2-block wall, and still no fall damage on the way down. Mobs are unaffected. The whole mod:
+
+```java
+rgct.target("net.minecraft.world.entity.LivingEntity")
+    .method("getJumpPower", "()F")
+    .interceptReturn(ctx -> {
+        if (ctx.self() instanceof Player) {
+            ctx.setReturnValue((float) ctx.returnValue() * 1.5f);
+        }
+    });
+```
+
+### Compiling against Minecraft
+
+Both mods above compile directly against the Minecraft client. `build.sh` finds the newest 26.x client jar Prism has downloaded, plus Minecraft's libraries from the same folder (its classes extend Brigadier, DataFixerUpper and friends, so javac needs them too). Elsewhere: `MC_JAR=/path/to/client.jar MC_LIBS=/path/to/libraries ./build.sh`.
 
 ## RGCT
 
 ```java
 rgct.target("a.b.SomeClass")
     .method("name")                 // every overload
-    .atHead(self -> ...)            // before the first instruction
-    .atReturn(self -> ...)          // before every normal return
+    .atHead(self -> ...)            // observe: before the first instruction
+    .atReturn(self -> ...)          // observe: before every normal return
     .and()
     .method("name", "(IF)Z")        // one exact overload
-    .atHead(self -> ...)
+    .interceptHead(ctx -> ...)      // read/change arguments, or cancel the method
+    .interceptReturn(ctx -> ...)    // read/replace the return value
     .and()
     .raw(classTransform);           // raw ClassFile API: you're on your own
 ```
 
-- `self` is the object the method was called on. It is `null` for static methods and at the head of a constructor, where `this` is not initialized yet.
+### Observing: `atHead` / `atReturn`
+
+The hook gets `self`, the object the method was called on. It is `null` for static methods and at the head of a constructor, where `this` is not initialized yet. Observing is nearly free: one static call, no allocation.
+
+### Intercepting: `interceptHead` / `interceptReturn`
+
+The hook gets a `HookContext`:
+
+| | at the head | at a return |
+|---|---|---|
+| `self()` | yes (`null` if static) | yes |
+| `arg(i)` / `setArg(i, v)` | changes what the method body sees | read the arguments; changes only affect later hooks |
+| `returnValue()` / `setReturnValue(v)` | no | yes |
+| `cancel()` / `cancel(value)` | skips the method (and its return hooks) | no |
+
+```java
+// (method names are illustrative)
+.method("damage").interceptHead(ctx -> ctx.setArg(0, (float) ctx.arg(0) / 2f)) // half damage
+.method("explode").interceptHead(ctx -> ctx.cancel())                          // no explosions
+.method("getMaxHealth").interceptReturn(ctx -> ctx.setReturnValue(40f))        // double health
+```
+
+- Primitives travel boxed: an `int` argument is an `Integer`, a `float` return is a `Float`. Plain Java casts unbox them: `(float) ctx.returnValue()`.
+- Setting the wrong type (a `Double` where the game expects a `float`) fails right away with an error that names the method, the expected type and your mod, instead of a mysterious crash deep inside the game.
+- When several mods intercept the same method, their hooks run in mod-id order and each sees what the previous ones changed. Layered merging will replace this later without changing the API.
+- Interception costs an `Object[]` of boxed arguments per call. Fine for most methods; for something called millions of times per tick, prefer observing.
+- Not supported on constructor heads.
+
+### General
+
 - Every hook goes through a single dispatcher. That's where layers and effect merging will grow later (see the roadmap) without breaking the API.
 - If a hook throws, the exception keeps its type, but gets a note attached saying which mod is to blame.
 - If a target method doesn't exist, RGCT warns you. The mod was most likely built for another game version.
@@ -136,7 +186,7 @@ rgct.target("a.b.SomeClass")
 ## Roadmap
 
 - [x] Run the real 26.x client and server, Prism Launcher integration
-- [ ] Hook access to arguments and return values
+- [x] Hook access to arguments and return values, cancellation
 - [ ] **Layers**: hooks don't mutate the game, they return effects that merge by rules, so the result doesn't depend on mod order
 - [ ] Merge rules: declared by the target, by the mod, or inferred by heuristics from the hook's bytecode
 - [ ] `miracle.lock`: inferred rules get pinned, modpacks stay reproducible

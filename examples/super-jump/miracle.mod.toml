@@ -1,0 +1,5 @@
+id = "super-jump"
+name = "Super Jump"
+version = "0.1.0"
+entrypoint = "com.example.superjump.SuperJump"
+authors = ["Hronosin"]

@@ -127,10 +127,12 @@ GAME_DIR="$INSTANCE/minecraft"
 mkdir -p "$GAME_DIR/mods"
 cp build/title-mod.jar "$GAME_DIR/mods/"
 extra=""
-if [ -f build/dirt-diamonds.jar ]; then
-    cp build/dirt-diamonds.jar "$GAME_DIR/mods/"
-    extra=" + dirt-diamonds.jar"
-fi
+for m in dirt-diamonds super-jump; do
+    if [ -f "build/$m.jar" ]; then
+        cp "build/$m.jar" "$GAME_DIR/mods/"
+        extra="$extra + $m.jar"
+    fi
+done
 
 cat <<EOF
 MiracleLoader $VERSION installed into "$(basename "$INSTANCE")" (Minecraft $mc_version).

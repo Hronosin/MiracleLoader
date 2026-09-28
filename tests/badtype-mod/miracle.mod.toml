@@ -1,0 +1,2 @@
+id = "badtype-mod"
+entrypoint = "test.badtype.BadTypeMod"

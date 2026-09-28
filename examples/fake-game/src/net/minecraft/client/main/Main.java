@@ -15,6 +15,11 @@ public class Main {
         Player nobody = new Player("");
         System.out.println("[FakeMinecraft] nobody score=" + nobody.getScore());
         System.out.println("[FakeMinecraft] ticks=" + Player.ticks());
+        System.out.println("[FakeMinecraft] jumpPower=" + steve.getJumpPower());
+        steve.damage(10f, "zombie");
+        steve.explode();
+        System.out.println("[FakeMinecraft] moved=" + steve.move(2L, 0.5, false, 'x'));
+        System.out.println("[FakeMinecraft] motd=" + Player.motd());
         System.out.println("[FakeMinecraft] done");
     }
 }

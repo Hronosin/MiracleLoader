@@ -1,0 +1,2 @@
+id = "intercept-mod"
+entrypoint = "test.intercept.InterceptMod"

@@ -31,4 +31,27 @@ public class Player {
     public static int ticks() {
         return ticks;
     }
+
+    public float getJumpPower() {
+        return 0.42f;
+    }
+
+    public void damage(float amount, String source) {
+        System.out.println("[FakeMinecraft] " + name + " takes " + amount + " damage from " + source);
+    }
+
+    public void explode() {
+        System.out.println("[FakeMinecraft] BOOM");
+    }
+
+    /** Wide locals (long, double) and small ones (boolean, char) in one signature. */
+    public double move(long dx, double dy, boolean fast, char tag) {
+        double result = dx + dy + (fast ? 1000 : 0);
+        System.out.println("[FakeMinecraft] move " + dx + " " + dy + " " + fast + " " + tag + " -> " + result);
+        return result;
+    }
+
+    public static String motd() {
+        return "vanilla";
+    }
 }

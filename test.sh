@@ -113,6 +113,49 @@ run_with dupe "$M/hello-mod.jar" build/hello-copy.jar
 expect_code dupe 1
 expect dupe "Two mods claim the id 'hello-mod'"
 
+# --- vanilla values of the methods intercept-mod changes -------------------------------------
+run_with vanilla2
+expect vanilla2 "jumpPower=0.42"
+expect vanilla2 "Steve takes 10.0 damage from zombie"
+expect vanilla2 "[FakeMinecraft] BOOM"
+expect vanilla2 "moved=2.5"
+expect vanilla2 "motd=vanilla"
+
+# --- interceptHead / interceptReturn ---------------------------------------------------------
+run_with intercept "$T/intercept-mod.jar"
+expect_code intercept 0
+expect intercept "jumpPower=0.84"                                   # float return replaced
+expect intercept "Steve takes 5.0 damage from reduced zombie"       # float + String args replaced
+expect intercept "[intercept-mod] explosion cancelled"
+expect_not intercept "[FakeMinecraft] BOOM"                         # void method cancelled
+expect intercept "move 20 0.5 true x -> 1020.5"                     # long/boolean args, double & char untouched
+expect intercept "[intercept-mod] move args at return: 20 x"        # args visible at return
+expect intercept "moved=1020.75"                                    # double return replaced
+expect intercept "motd=miracle, self=null"                          # static, reference return
+expect intercept "[FakeMinecraft] score=42"
+expect intercept "nobody score=1337"                                # cancel with an int value
+expect intercept "ticks=101"                                        # static int return
+expect intercept "uses interceptHead on a constructor"
+expect intercept "intercept@RETURN"
+expect intercept "[FakeMinecraft] done"
+
+# --- observe + intercept on the same methods -------------------------------------------------
+run_with both "$M/hello-mod.jar" "$T/intercept-mod.jar"
+expect_code both 0
+expect both "[hello-mod] hop, bytecode patch for Steve"
+expect both "[hello-mod] getScore returning for 'Steve'"
+expect_not both "[hello-mod] getScore returning for ''"             # cancelled: return hooks skipped too
+expect both "nobody score=1337"
+expect both "[hello-mod] static method, self=null"
+expect both "ticks=101"
+
+# --- wrong value type -> clear error naming the mod ------------------------------------------
+run_with badtype "$T/badtype-mod.jar"
+expect_code badtype 1
+expect badtype "NO MIRACLE OCCURRED"
+expect badtype "return value must be a Float (primitive float), got java.lang.Double 2.0"
+expect badtype "thrown by a hook of mod 'badtype-mod'"
+
 echo
 echo "passed: $pass, failed: $fail"
 [ "$fail" -eq 0 ]
