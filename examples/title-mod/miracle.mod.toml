@@ -1,0 +1,5 @@
+id = "title-mod"
+name = "Title Mod"
+version = "0.1.0"
+entrypoint = "com.example.title.TitleMod"
+authors = ["Hronosin"]

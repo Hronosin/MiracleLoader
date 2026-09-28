@@ -37,6 +37,16 @@ java -cp miracle-loader.jar:minecraft.jar:<библиотеки> \
 
 Всё остальное лаунчер может оставить как есть. Моды ищутся в `./mods`.
 
+### Prism Launcher
+
+```bash
+./prism-install.sh --list                # какие инстансы есть
+./prism-install.sh "Имя папки инстанса"  # установить (Prism должен быть закрыт)
+./prism-install.sh --uninstall "Имя"     # убрать
+```
+
+Скрипт кладёт лоадер в `libraries/` инстанса, добавляет кастомный компонент MiracleLoader (он подменяет `mainClass`) и копирует в `mods/` пробный `title-mod`. Flatpak-версия Prism находится сама, для других путей — `PRISM_DATA=/путь/к/PrismLauncher`. Нужен чистый ванильный инстанс 26.x: Fabric/NeoForge в том же инстансе будут драться за `mainClass`.
+
 | Свойство | По умолчанию | Зачем |
 |---|---|---|
 | `-Dmiracle.target` | `net.minecraft.client.main.Main` | главный класс игры (для сервера — свой) |

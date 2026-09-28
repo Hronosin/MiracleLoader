@@ -44,6 +44,8 @@ API="$OUT/miracle-loader.jar:$OUT/fake-minecraft.jar"
 echo "==> example mods"
 build_jar examples/hello-mod "$OUT/mods/hello-mod.jar" "$API"
 build_jar examples/chaos-mod "$OUT/mods/chaos-mod.jar" "$API"
+# Real-game mod: needs only the loader on the class path, no Minecraft jar.
+build_jar examples/title-mod "$OUT/title-mod.jar" "$OUT/miracle-loader.jar"
 
 echo "==> test mods"
 for m in tests/*-mod; do
