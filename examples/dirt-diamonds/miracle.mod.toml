@@ -1,0 +1,5 @@
+id = "dirt-diamonds"
+name = "Dirt Diamonds"
+version = "0.1.0"
+entrypoint = "com.example.dirtdiamonds.DirtDiamonds"
+authors = ["Hronosin"]

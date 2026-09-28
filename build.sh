@@ -30,6 +30,9 @@ build_jar() {
     if [ -f "$src/miracle.mod.toml" ]; then
         cp "$src/miracle.mod.toml" "$classes/"
     fi
+    if [ -d "$src/resources" ]; then
+        cp -r "$src/resources/." "$classes/"
+    fi
     "$JAR" --create --file "$jar" -C "$classes" .
 }
 
@@ -46,6 +49,20 @@ build_jar examples/hello-mod "$OUT/mods/hello-mod.jar" "$API"
 build_jar examples/chaos-mod "$OUT/mods/chaos-mod.jar" "$API"
 # Real-game mod: needs only the loader on the class path, no Minecraft jar.
 build_jar examples/title-mod "$OUT/title-mod.jar" "$OUT/miracle-loader.jar"
+
+echo "==> real-game mods (compiled against Minecraft itself)"
+# MC_JAR=/path/to/client.jar, or the newest 26.x client jar Prism has downloaded.
+if [ -z "${MC_JAR:-}" ]; then
+    MC_JAR="$(ls -1 "$HOME"/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/libraries/com/mojang/minecraft/26.*/minecraft-26.*-client.jar \
+                    "$HOME"/.local/share/PrismLauncher/libraries/com/mojang/minecraft/26.*/minecraft-26.*-client.jar \
+                    2>/dev/null | sort -V | tail -1 || true)"
+fi
+if [ -n "$MC_JAR" ] && [ -f "$MC_JAR" ]; then
+    echo "    against $MC_JAR"
+    build_jar examples/dirt-diamonds "$OUT/dirt-diamonds.jar" "$OUT/miracle-loader.jar:$MC_JAR"
+else
+    echo "    skipped: no Minecraft 26.x jar found (launch a 26.x instance in Prism once, or set MC_JAR=...)"
+fi
 
 echo "==> test mods"
 for m in tests/*-mod; do

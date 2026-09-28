@@ -126,12 +126,17 @@ GAME_DIR="$INSTANCE/minecraft"
 [ -d "$INSTANCE/.minecraft" ] && GAME_DIR="$INSTANCE/.minecraft"
 mkdir -p "$GAME_DIR/mods"
 cp build/title-mod.jar "$GAME_DIR/mods/"
+extra=""
+if [ -f build/dirt-diamonds.jar ]; then
+    cp build/dirt-diamonds.jar "$GAME_DIR/mods/"
+    extra=" + dirt-diamonds.jar"
+fi
 
 cat <<EOF
 MiracleLoader $VERSION installed into "$(basename "$INSTANCE")" (Minecraft $mc_version).
   loader : $INSTANCE/libraries/$LIB_FILE
   patch  : $INSTANCE/patches/$UID_.json
-  mods   : $GAME_DIR/mods   (title-mod.jar copied as a smoke test)
+  mods   : $GAME_DIR/mods   (title-mod.jar$extra copied)
   backup : $PACK.bak
 
 Now open Prism, launch the instance and watch the log for [Miracle] and [title-mod] lines.
