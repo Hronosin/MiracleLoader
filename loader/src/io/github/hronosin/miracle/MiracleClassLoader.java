@@ -49,6 +49,11 @@ final class MiracleClassLoader extends URLClassLoader {
         }
     }
 
+    /** Any URL, e.g. a folder inside a jar: {@code jar:file:/x.jar!/META-INF/miracle/baked/1.21.11/}. */
+    void addUrl(URL url) {
+        addURL(url);
+    }
+
     /** True if the class was already defined by this loader. */
     boolean isAlreadyLoaded(String className) {
         return findLoadedClass(className) != null;

@@ -36,14 +36,34 @@ build_jar() {
     if [ -d "$src/resources" ]; then
         cp -r "$src/resources/." "$classes/"
     fi
+    # Hand-made variants (tests): baked/<version>/src, as miracle-bake would lay them out.
+    if [ -d "$src/baked" ]; then
+        local versions=()
+        for v in "$src"/baked/*/; do
+            v="$(basename "$v")"
+            versions+=("\"$v\"")
+            # shellcheck disable=SC2046
+            javac_ ${cp:+-cp "$cp"} -d "$classes/META-INF/miracle/baked/$v" $(find "$src/baked/$v/src" -name '*.java')
+        done
+        mkdir -p "$classes/META-INF/miracle"
+        printf 'baked = [%s]\nchecked = []\n' "$(IFS=,; echo "${versions[*]}")" > "$classes/META-INF/miracle/bake.toml"
+    fi
     "$JAR" --create --file "$jar" -C "$classes" .
 }
 
 echo "==> loader"
 build_jar loader "$OUT/miracle-loader.jar"
 
+echo "==> miracle-bake"
+build_jar tools/bake "$OUT/miracle-bake.jar"
+printf 'Main-Class: io.github.hronosin.miracle.bake.Bake\n' > "$OUT/classes/bake-manifest.txt"
+"$JAR" --update --file "$OUT/miracle-bake.jar" --manifest "$OUT/classes/bake-manifest.txt"
+
 echo "==> fake game"
 build_jar examples/fake-game "$OUT/fake-minecraft.jar"
+
+echo "==> fake obfuscated game (for OSHI tests)"
+build_jar test-fixtures/fake-obf-game "$OUT/fake-minecraft-obf.jar"
 
 API="$OUT/miracle-loader.jar:$OUT/fake-minecraft.jar"
 
@@ -84,6 +104,26 @@ if [ -n "$MC_CP" ]; then
     build_jar examples/dirt-diamonds "$OUT/dirt-diamonds.jar" "$OUT/miracle-loader.jar:$MC_CP"
     build_jar examples/super-jump "$OUT/super-jump.jar" "$OUT/miracle-loader.jar:$MC_CP"
     build_jar examples/sprint-jump "$OUT/sprint-jump.jar" "$OUT/miracle-loader.jar:$MC_CP"
+
+    # OSHI: check the mods against every dictionary you've fetched (tools/fetch-dictionary.sh),
+    # and bake a variant for each obfuscated one.
+    DICTS="${MIRACLE_DICTIONARIES:-$HOME/.cache/miracle/dictionaries}"
+    mc_id="$(python3 -c "import json,sys,zipfile; print(json.loads(zipfile.ZipFile(sys.argv[1]).read('version.json'))['id'])" "$MC_JAR")"
+    bake_args=(--native "$mc_id=$MC_JAR")
+    for d in "$DICTS"/*/; do
+        [ -f "$d/client.jar" ] || continue
+        v="$(basename "$d")"
+        if [ -f "$d/mappings.txt" ]; then
+            bake_args+=(--obf "$v=$d/client.jar,$d/mappings.txt")
+        elif [ "$v" != "$mc_id" ]; then
+            bake_args+=(--native "$v=$d/client.jar")
+        fi
+    done
+    if [ "${#bake_args[@]}" -gt 2 ]; then
+        echo "==> baking (OSHI)"
+        "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle-bake.jar" "${bake_args[@]}" \
+            "$OUT/dirt-diamonds.jar" "$OUT/super-jump.jar" "$OUT/sprint-jump.jar" "$OUT/title-mod.jar"
+    fi
 else
     echo "    skipped: no Minecraft 26.x jar + libraries found (launch a 26.x instance in Prism once, or set MC_JAR=... MC_LIBS=...)"
 fi

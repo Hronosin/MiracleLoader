@@ -69,6 +69,19 @@ public final class Rgct {
             registry.addRaw(className, modId, transform);
             return this;
         }
+
+        /**
+         * OSHI, Old School Hook Integration: the class as plain bytes in, bytes out. Bring your
+         * own tools (ASM, a Mixin bridge...), shaded into your mod; the loader itself stays
+         * dependency-free. Runs after every other patch on the class. Like {@link #raw}, it's
+         * outside the layer system: RGCT can't merge it with other mods, and says so in the log.
+         *
+         * <p>Your tool must understand Java 25 class files (ASM 9.8 or newer).
+         */
+        public ClassTarget rawBytes(java.util.function.UnaryOperator<byte[]> transform) {
+            registry.addRawBytes(className, modId, transform);
+            return this;
+        }
     }
 
     /** Patches for one method (or every overload of a name). */

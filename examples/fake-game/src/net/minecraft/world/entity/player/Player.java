@@ -54,4 +54,9 @@ public class Player {
     public static String motd() {
         return "vanilla";
     }
+
+    /** Exists here but not in test-fixtures/fake-obf-game: something for miracle-bake to catch. */
+    public void fly() {
+        System.out.println("[FakeMinecraft] " + name + " flies");
+    }
 }

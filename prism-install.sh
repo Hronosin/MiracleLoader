@@ -81,8 +81,9 @@ PY
 [ "$other_loader" = "-" ] || die "instance already has $other_loader. Two loaders both want to own mainClass. Use a clean vanilla instance."
 case "$mc_version" in
     26.*) ;;
-    *) echo "WARNING: instance is Minecraft $mc_version. MiracleLoader targets 26.x (unobfuscated, Java 25)." >&2
-       echo "         On older versions class names are obfuscated and mods will find nothing to patch." >&2 ;;
+    *) echo "NOTE: Minecraft $mc_version is obfuscated. Mods need a variant baked for exactly $mc_version" >&2
+       echo "      (tools/fetch-dictionary.sh $mc_version, then ./build.sh), and MiracleLoader needs Java 25:" >&2
+       echo "      in Prism, Edit instance -> Settings -> Java -> pick a Java 25 installation." >&2 ;;
 esac
 
 [ -f build/miracle-loader.jar ] && [ -f build/title-mod.jar ] || ./build.sh

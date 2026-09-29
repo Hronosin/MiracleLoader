@@ -1,0 +1,2 @@
+id = "fly-mod"
+entrypoint = "test.fly.FlyMod"

@@ -1,0 +1,2 @@
+id = "oshi-mod"
+entrypoint = "test.oshi.OshiMod"

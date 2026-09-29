@@ -18,10 +18,20 @@ final class ModDiscovery {
 
     static final String METADATA_FILE = "miracle.mod.toml";
 
-    record ModInfo(String id, String name, String version, String entrypoint, List<String> authors, Path jar) {
+    static final String BAKE_INFO = "META-INF/miracle/bake.toml";
+
+    /**
+     * {@code bake} is null for a mod that never went through miracle-bake.
+     */
+    record ModInfo(String id, String name, String version, String entrypoint, List<String> authors, Path jar,
+                   BakeInfo bake) {
         String display() {
             return name + " (" + id + " " + version + ")";
         }
+    }
+
+    /** Written by miracle-bake: versions with a ready-made variant, and unobfuscated versions it was checked on. */
+    record BakeInfo(List<String> baked, List<String> checked) {
     }
 
     static final class DiscoveryException extends Exception {
@@ -69,6 +79,7 @@ final class ModDiscovery {
 
     private static ModInfo read(Path jar) throws IOException, DiscoveryException {
         String text;
+        String bakeText = null;
         try (JarFile jf = new JarFile(jar.toFile())) {
             var entry = jf.getJarEntry(METADATA_FILE);
             if (entry == null) {
@@ -77,6 +88,22 @@ final class ModDiscovery {
             }
             try (InputStream in = jf.getInputStream(entry)) {
                 text = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+            }
+            var bakeEntry = jf.getJarEntry(BAKE_INFO);
+            if (bakeEntry != null) {
+                try (InputStream in = jf.getInputStream(bakeEntry)) {
+                    bakeText = new String(in.readAllBytes(), StandardCharsets.UTF_8);
+                }
+            }
+        }
+
+        BakeInfo bake = null;
+        if (bakeText != null) {
+            try {
+                Map<String, Object> b = MiniToml.parse(bakeText);
+                bake = new BakeInfo(optionalList(b, "baked"), optionalList(b, "checked"));
+            } catch (MiniToml.ParseException e) {
+                throw new DiscoveryException(jar.getFileName() + ": broken " + BAKE_INFO + ", " + e.getMessage());
             }
         }
 
@@ -96,7 +123,7 @@ final class ModDiscovery {
         String name = optionalString(toml, "name", id);
         String version = optionalString(toml, "version", "0.0.0");
         List<String> authors = optionalList(toml, "authors");
-        return new ModInfo(id, name, version, entrypoint, authors, jar);
+        return new ModInfo(id, name, version, entrypoint, authors, jar, bake);
     }
 
     private static String requireString(Map<String, Object> toml, String key, Path jar) throws DiscoveryException {

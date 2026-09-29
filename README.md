@@ -21,7 +21,7 @@ You need **JDK 25+** (Minecraft 26.x requires it anyway). On Fedora: `sudo dnf i
 ```bash
 ./build.sh   # build the loader, the fake game and the example mods
 ./run.sh     # run the fake game with the example mods
-./test.sh    # smoke tests
+./test.sh    # smoke tests (including baking for a fake obfuscated game)
 ```
 
 With several JDKs installed: `JAVA_HOME=/usr/lib/jvm/java-25-openjdk ./build.sh`.
@@ -225,9 +225,68 @@ Details:
 
 **Don't touch game classes inside `transform()`.** Patches are still being collected at that point, so the class would load unpatched. The loader catches this and refuses to start, naming the mod. An honest crash right away beats a patch that silently didn't apply half an hour into a session.
 
+## OSHI: Old School Hook Integration
+
+Two things for people who still remember `ClassNode`s and mapping files.
+
+### Bring your own tools: `rawBytes`
+
+```java
+rgct.target("net.minecraft.world.entity.player.Player").rawBytes(bytes -> {
+    ClassNode node = new ClassNode();          // your ASM, shaded into your mod
+    new ClassReader(bytes).accept(node, 0);
+    // ... the monstrous tree surgery of your dreams ...
+    ClassWriter w = new ClassWriter(ClassWriter.COMPUTE_FRAMES);
+    node.accept(w);
+    return w.toByteArray();
+});
+```
+
+The loader stays dependency-free: whatever library you use, you bring it. `rawBytes` runs after every other patch on the class, is outside the layer system, and the startup report and log say who did it. Your library must read Java 25 class files (ASM 9.8+). A Mixin bridge would be a mod of its own built on this.
+
+### Reversed mapping: one source, many versions
+
+Minecraft 1.21.11 and older ship with scrambled names: `LivingEntity` is `chl`, `getJumpPower()` is `fF`, and short names get reused across overloads (`a`, `a`, `a`...). Other loaders translate the whole game to stable names at every launch. MiracleLoader does the opposite: **the mod is translated once, at build time, for every version you target**, and the loader just picks the right variant. Nothing is remapped at runtime.
+
+You write and compile against readable names (an unobfuscated 26.x jar). Then:
+
+```bash
+tools/fetch-dictionary.sh 1.21.11   # Mojang's client jar + official mappings, into ~/.cache/miracle
+tools/fetch-dictionary.sh 26.1.2    # unobfuscated versions: the jar is its own dictionary
+./build.sh                          # compiles, then checks and bakes against every fetched dictionary
+```
+
+Before anything is baked, every reference the mod makes into the game is looked up in every version's dictionary at once:
+
+```
+[bake] dirt-diamonds.jar (1 classes)
+         26.2      unobfuscated  ok, 12 game references present
+         1.21.11   obfuscated    ok, 13 game references translated, baked
+         26.1.2    unobfuscated  ok, 12 game references present
+[bake] fly-mod.jar (1 classes)
+         fake-obf  obfuscated    MISSING 1:
+             - RGCT target net.minecraft.world.entity.player.Player#fly
+             not baked. Drop this version, or add a fallback for what's missing.
+```
+
+- **Unobfuscated versions** are only checked. The jar records them as `checked`; on any other 26.x the loader still runs the mod, with a warning.
+- **Obfuscated versions** get a variant under `META-INF/miracle/baked/<version>/`. It's used on exactly that version and no other, because obfuscated names differ between every two releases.
+- Translated: class, method and field references, `instanceof`/casts, lambdas and method references (including game functional interfaces), methods of your classes that override game methods, and the strings of RGCT targets. `method("build")` becomes `method("a", "(Lazk;)Lazp;")`: a baked target always carries its exact descriptor, since `a` alone would hit every method called `a`. An overloaded target without a descriptor is a bake error.
+- At startup the loader reads `version.json` from the game jar, picks the variant, and fails clearly if an obfuscated version has none. The report shows readable names next to the scrambled ones (a few lines baked in for RGCT targets only).
+
+Tested on real dedicated servers: the same `dirt-diamonds`, `super-jump` and `sprint-jump` jars run on 26.2 as they are and on 1.21.11 from their baked variants (1470 → 1471 recipes).
+
+Limits, honestly:
+
+- MiracleLoader itself needs Java 25, so the oldest reachable versions are the ones that run on it (1.20.5+ in principle; 1.21.11 is what's tested). In Prism, set the instance's Java to 25.
+- Mojang's mappings may be used for development but not redistributed: they stay in your cache and are only read. Mods carry just the handful of readable names their RGCT targets need.
+- References into libraries (Brigadier, DataFixerUpper...) aren't obfuscated and aren't checked. Game names hidden in your own strings (reflection) aren't translated; only RGCT targets are.
+- Official Mojang mappings only, for now.
+
 ## Lifecycle
 
 1. Find mods in `mods/` and sort them by id, so load order never depends on the file system's mood.
+   Read the game version from `version.json`, and put each mod's baked variant for it (if any) in front of the mod's own classes.
 2. Call `transform(Rgct)` on every mod.
 3. Freeze RGCT, print the report of who layered what onto which method, and warn about possible conflicts.
 4. Call `onLaunch()` on every mod.
@@ -240,6 +299,10 @@ Details:
 - [x] **Layers**: hooks declare effects that merge by fixed rules, so the result doesn't depend on mod order
 - [x] Priorities as a tie-breaker, clear conflict errors naming the mods
 - [x] Startup conflict check from the hooks' bytecode
+- [x] OSHI: `rawBytes` for bring-your-own bytecode tools
+- [x] OSHI: check against many versions' dictionaries at once, bake variants for obfuscated ones
+- [ ] OSHI: fallback functions, hand-written variants of a method for the versions where the dictionary shows a hole
+- [ ] Yarn dictionaries
 - [ ] Merge rules declared per target (e.g. by MiracleToolChain for well-known game values)
 - [ ] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [ ] Direct calls instead of the dispatcher when a method has a single hook

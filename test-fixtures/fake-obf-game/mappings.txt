@@ -1,0 +1,18 @@
+# Hand-written dictionary for the fake obfuscated game, in Mojang's (ProGuard) format.
+net.minecraft.client.main.Main -> net.minecraft.client.main.Main:
+# {"fileName":"Main.java","id":"sourceFile"}
+    10:24:void main(java.lang.String[]) -> main
+net.minecraft.world.entity.player.Player -> o.a:
+# {"fileName":"Player.java","id":"sourceFile"}
+    int ticks -> a
+    java.lang.String name -> b
+    11:14:void <init>(java.lang.String) -> <init>
+    16:20:void jumpFromGround() -> a
+    23:27:int getScore() -> b
+    30:30:java.lang.String getName() -> c
+    34:34:int ticks() -> d
+    38:38:float getJumpPower() -> e
+    42:43:void damage(float,java.lang.String) -> a
+    46:47:void explode() -> f
+    51:54:double move(long,double,boolean,char) -> a
+    57:57:java.lang.String motd() -> g

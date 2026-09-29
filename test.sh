@@ -18,7 +18,7 @@ run_with() {
     for j in "$@"; do cp "$j" "$dir/mods/"; done
     # shellcheck disable=SC2086
     out="$(cd "$dir" && "$JAVA" ${JAVA_OPTS:-} -Dmiracle.dump=dump \
-        -cp "$ROOT/build/miracle-loader.jar:$ROOT/build/fake-minecraft.jar" \
+        -cp "$ROOT/build/miracle-loader.jar:${GAME_JAR:-$ROOT/build/fake-minecraft.jar}" \
         io.github.hronosin.miracle.MiracleMain --username Steve 2>&1)"
     code=$?
 }
@@ -192,6 +192,96 @@ run_with prio "$T/clash-a.jar" "$T/clash-b.jar" "$T/clash-hi.jar"
 expect_code prio 0
 expect prio "motd=HI"                                               # priority 5 beats the tie at 0
 expect prio "<- clash-hi  [sets return, priority 5]"
+
+# --- OSHI: bring-your-own bytecode tools ----------------------------------------------------
+run_with oshi "$T/oshi-mod.jar" "$T/clash-hi.jar"
+expect_code oshi 0
+expect oshi "<- oshi-mod (OSHI: brought its own tools)"
+expect oshi "OSHI: mod 'oshi-mod' brings its own hooks for net.minecraft.world.entity.player.Player"
+expect oshi "motd=HI"                                               # layers run first, then rawBytes...
+run_with oshi2 "$T/oshi-mod.jar"
+expect oshi2 "motd=old school"                                      # ...which rewrote the vanilla constant
+
+# --- OSHI: baked variants picked by game version ---------------------------------------------
+run_with variant-none "$T/variant-mod.jar"
+expect_code variant-none 0
+expect variant-none "Game: Minecraft unknown"
+expect variant-none "[variant-mod] running the plain classes"
+
+JAVA_OPTS=-Dmiracle.gameVersion=fake-1 run_with variant "$T/variant-mod.jar"
+expect_code variant 0
+expect variant "Game: Minecraft fake-1"
+expect variant "OSHI: variant-mod uses its variant baked for fake-1"
+expect variant "[variant-mod] running the variant baked for fake-1"
+expect_not variant "running the plain classes"
+
+JAVA_OPTS="-Dmiracle.gameVersion=fake-2 -Dmiracle.obfuscated=true" run_with variant-missing "$T/variant-mod.jar" "$M/hello-mod.jar"
+expect_code variant-missing 1
+expect variant-missing "Game: Minecraft fake-2 (obfuscated)"
+expect variant-missing "Mod variant-mod (variant-mod 0.0.0) has no variant for Minecraft fake-2 (obfuscated). It was baked for [fake-1]"
+expect variant-missing "Mod hello-mod was never baked"
+
+JAVA_OPTS=-Dmiracle.gameVersion=fake-3 run_with variant-unchecked "$T/variant-mod.jar"
+expect_code variant-unchecked 0
+expect variant-unchecked "Mod variant-mod was checked on [], not on fake-3"
+expect variant-unchecked "[variant-mod] running the plain classes"
+
+# --- OSHI: bake once against the dictionaries, run on the obfuscated game --------------------
+BAKED="$ROOT/build/test-baked"
+rm -rf "$BAKED" && mkdir -p "$BAKED"
+cp "$M/hello-mod.jar" "$T/intercept-mod.jar" "$T/stack-a.jar" "$T/stack-b.jar" \
+   "$T/clash-a.jar" "$T/clash-hi.jar" "$T/fly-mod.jar" "$BAKED/"
+out="$("$JAVA" -jar build/miracle-bake.jar --native fake=build/fake-minecraft.jar \
+        --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt "$BAKED"/*.jar 2>&1)"
+expect bake "[bake] intercept-mod.jar"
+expect bake "MISSING 1:"
+expect bake "RGCT target net.minecraft.world.entity.player.Player#fly"
+expect bake "not baked. Drop this version, or add a fallback for what's missing."
+[ "$(grep -c "game references translated, baked" <<< "$out")" -eq 6 ] && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [bake]: expected 6 baked mods"; echo "$out"; }
+
+OBF="$ROOT/build/fake-minecraft-obf.jar"
+GAME_JAR="$OBF" run_with obf-vanilla
+expect obf-vanilla "Game: Minecraft fake-obf (obfuscated)"
+expect obf-vanilla "jumpPower=0.42"
+
+GAME_JAR="$OBF" run_with obf-intercept "$BAKED/intercept-mod.jar"
+expect_code obf-intercept 0
+expect obf-intercept "OSHI: intercept-mod uses its variant baked for fake-obf"
+expect obf-intercept "jumpPower=0.84"
+expect obf-intercept "Steve takes 5.0 damage from reduced zombie"          # a(F,String), not a() or a(J,D,Z,C)
+expect obf-intercept "[intercept-mod] explosion cancelled"
+expect_not obf-intercept "[FakeMinecraft] BOOM"
+expect obf-intercept "move 20 0.5 true x -> 1020.5"
+expect obf-intercept "moved=1020.75"
+expect obf-intercept "motd=miracle, self=null"
+expect obf-intercept "nobody score=1337"                                   # ((Player) self) became ((o.a) self)
+expect obf-intercept "ticks=101"
+
+GAME_JAR="$OBF" run_with obf-stack "$BAKED/intercept-mod.jar" "$BAKED/stack-a.jar" "$BAKED/stack-b.jar"
+expect_code obf-stack 0
+expect obf-stack "jumpPower=1.56"
+expect obf-stack "[stack-b] sees jump power 0.42"                          # method ref + helper, baked
+expect obf-stack "ticks=50"
+expect obf-stack "o.a  (net.minecraft.world.entity.player.Player)"
+expect obf-stack "e()F (getJumpPower)"
+
+GAME_JAR="$OBF" run_with obf-hello "$BAKED/hello-mod.jar"
+expect_code obf-hello 0
+expect obf-hello "[hello-mod] hop, bytecode patch for Steve"
+expect obf-hello "[hello-mod] constructor done, self is a Player: true"   # instanceof Player -> o.a
+expect obf-hello "[hello-mod] getScore returning for 'Steve'"
+
+GAME_JAR="$OBF" run_with obf-prio "$BAKED/clash-a.jar" "$BAKED/clash-hi.jar"
+expect_code obf-prio 0
+expect obf-prio "motd=HI"
+
+GAME_JAR="$OBF" run_with obf-fly "$BAKED/fly-mod.jar"
+expect_code obf-fly 1
+expect obf-fly "Mod fly-mod (fly-mod 0.0.0) has no variant for Minecraft fake-obf (obfuscated). It was baked for [] and checked on [fake]"
+
+GAME_JAR="$OBF" run_with obf-unbaked "$M/hello-mod.jar"
+expect obf-unbaked "Mod hello-mod was never baked, and Minecraft fake-obf is obfuscated."
 
 echo
 echo "passed: $pass, failed: $fail"

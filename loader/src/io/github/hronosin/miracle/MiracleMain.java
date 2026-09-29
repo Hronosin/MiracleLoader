@@ -74,11 +74,14 @@ public final class MiracleMain {
         } catch (ModDiscovery.DiscoveryException e) {
             throw new MiracleFailure(e.getMessage());
         }
-        for (ModDiscovery.ModInfo info : infos) {
-            loader.addJar(info.jar());
-        }
+        GameVersion game = GameVersion.detect(loader);
+        Log.info("Game: " + game.describe());
         Log.info("Found " + infos.size() + " mod(s)" + (infos.isEmpty() ? "." : ":"));
         infos.forEach(m -> Log.info("  - " + m.display()));
+        for (ModDiscovery.ModInfo info : infos) {
+            pickVariant(info, game, loader, rgct);
+            loader.addJar(info.jar());
+        }
 
         Thread.currentThread().setContextClassLoader(loader);
 
@@ -133,6 +136,47 @@ public final class MiracleMain {
 
         Log.info("Handing over to " + target + ". Amen.");
         gameMain.invokeExact(args);
+    }
+
+    /**
+     * OSHI: a mod baked with miracle-bake carries ready-made variants for obfuscated versions.
+     * The one for the running game goes on the class path in front of the mod's own classes.
+     */
+    private static void pickVariant(ModDiscovery.ModInfo info, GameVersion game, MiracleClassLoader loader,
+                                    TransformRegistry rgct) throws java.io.IOException {
+        ModDiscovery.BakeInfo bake = info.bake();
+        if (bake != null && bake.baked().contains(game.id())) {
+            String dir = "META-INF/miracle/baked/" + game.id() + "/";
+            loader.addUrl(java.net.URI.create("jar:" + info.jar().toUri() + "!/" + dir).toURL());
+            Log.info("OSHI: " + info.id() + " uses its variant baked for " + game.id());
+            try (java.util.jar.JarFile jf = new java.util.jar.JarFile(info.jar().toFile())) {
+                var names = jf.getJarEntry(dir + "rgct-names.txt");
+                if (names != null) {
+                    try (var in = jf.getInputStream(names)) {
+                        for (String line : new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).split("\n")) {
+                            int eq = line.indexOf(" = ");
+                            if (!line.startsWith("#") && eq > 0) {
+                                rgct.addReadableName(line.substring(0, eq), line.substring(eq + 3).strip());
+                            }
+                        }
+                    }
+                }
+            }
+            return;
+        }
+        if (game.obfuscated()) {
+            if (bake != null) {
+                throw new MiracleFailure("Mod " + info.display() + " has no variant for " + game.describe()
+                        + ". It was baked for " + bake.baked() + " and checked on " + bake.checked()
+                        + ". Obfuscated names differ in every version, so it needs a variant for exactly this one:"
+                        + " ask the author to run miracle-bake with --obf " + game.id() + "=...");
+            }
+            Log.warn("Mod " + info.id() + " was never baked, and Minecraft " + game.id() + " is obfuscated."
+                    + " Any game class it names directly won't be found here.");
+        } else if (bake != null && !GameVersion.UNKNOWN.equals(game.id()) && !bake.checked().contains(game.id())) {
+            Log.warn("Mod " + info.id() + " was checked on " + bake.checked() + ", not on " + game.id()
+                    + ". It may well work; if a game member it needs is gone, you'll get an error naming it.");
+        }
     }
 
     private static MiracleMod instantiate(ModDiscovery.ModInfo info, ClassLoader loader) {

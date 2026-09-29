@@ -63,9 +63,13 @@ public final class TransformRegistry {
     record RawPatch(String modId, ClassTransform transform) {
     }
 
+    record RawBytesPatch(String modId, java.util.function.UnaryOperator<byte[]> transform) {
+    }
+
     private static final class ClassPatches {
         final List<HookPatch> hooks = new ArrayList<>();
         final List<RawPatch> raws = new ArrayList<>();
+        final List<RawBytesPatch> rawBytes = new ArrayList<>();
     }
 
     private static final ClassDesc DISPATCH = ClassDesc.of(HookDispatch.class.getName());
@@ -76,6 +80,13 @@ public final class TransformRegistry {
             ConstantDescs.CD_int, ConstantDescs.CD_Object, ConstantDescs.CD_Object.arrayType(), ConstantDescs.CD_Object);
 
     private final Map<String, ClassPatches> byClass = new LinkedHashMap<>();
+    /** Obfuscated jar name -> readable name, from baked variants; only used to make the report readable. */
+    private final Map<String, String> readable = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** {@code "chl" -> "net.minecraft.world.entity.LivingEntity"}, {@code "chl#fF()F" -> "getJumpPower()F"}. */
+    public void addReadableName(String jarName, String readableName) {
+        readable.put(jarName, readableName);
+    }
     private volatile boolean frozen;
 
     /** A view of RGCT that stamps every patch with this mod's id. */
@@ -117,6 +128,14 @@ public final class TransformRegistry {
         patchesFor(className).raws.add(new RawPatch(modId, transform));
     }
 
+    synchronized void addRawBytes(String className, String modId, java.util.function.UnaryOperator<byte[]> transform) {
+        checkOpen();
+        if (transform == null) {
+            throw new IllegalArgumentException("transform is null");
+        }
+        patchesFor(className).rawBytes.add(new RawBytesPatch(modId, transform));
+    }
+
     private ClassPatches patchesFor(String className) {
         return byClass.computeIfAbsent(className, k -> new ClassPatches());
     }
@@ -138,6 +157,7 @@ public final class TransformRegistry {
         List<String> mods = new ArrayList<>();
         p.hooks.forEach(h -> { if (!mods.contains(h.modId())) mods.add(h.modId()); });
         p.raws.forEach(r -> { if (!mods.contains(r.modId())) mods.add(r.modId()); });
+        p.rawBytes.forEach(r -> { if (!mods.contains(r.modId())) mods.add(r.modId()); });
         return mods;
     }
 
@@ -150,7 +170,8 @@ public final class TransformRegistry {
         }
         lines.add("RGCT: patches on " + byClass.size() + " class(es):");
         for (var e : new TreeMap<>(byClass).entrySet()) {
-            lines.add("  " + e.getKey());
+            String cls = readable.containsKey(e.getKey()) ? e.getKey() + "  (" + readable.get(e.getKey()) + ")" : e.getKey();
+            lines.add("  " + cls);
             // Grouped by method, so everything layered onto one method sits together.
             List<HookPatch> sorted = new ArrayList<>(e.getValue().hooks);
             sorted.sort(java.util.Comparator.comparing(HookPatch::method)
@@ -158,10 +179,15 @@ public final class TransformRegistry {
                     .thenComparing(HookPatch::where)
                     .thenComparing(HookPatch::modId));
             for (HookPatch h : sorted) {
-                lines.add(String.format("    %-28s %-17s <- %s%s", h.label(), h.where().label, h.modId(), details(h)));
+                String nice = readable.get(e.getKey() + "#" + h.label());
+                String label = nice == null ? h.label() : h.label() + " (" + nice + ")";
+                lines.add(String.format("    %-28s %-17s <- %s%s", label, h.where().label, h.modId(), details(h)));
             }
             for (RawPatch r : e.getValue().raws) {
                 lines.add(String.format("    %-28s %-17s <- %s (raw: you're on your own)", "<whole class>", "", r.modId()));
+            }
+            for (RawBytesPatch r : e.getValue().rawBytes) {
+                lines.add(String.format("    %-28s %-17s <- %s (OSHI: brought its own tools)", "<whole class>", "rawBytes", r.modId()));
             }
         }
         return lines;
@@ -250,7 +276,16 @@ public final class TransformRegistry {
             transform = transform.andThen(raw.transform());
         }
 
-        byte[] out = cf.transformClass(model, transform);
+        byte[] out = patches.hooks.isEmpty() && patches.raws.isEmpty() ? bytes : cf.transformClass(model, transform);
+        for (RawBytesPatch p : patches.rawBytes) {
+            Log.warn("OSHI: mod '" + p.modId() + "' brings its own hooks for " + className
+                    + ". Old school rules: you break it, you bought it.");
+            byte[] next = p.transform().apply(out);
+            if (next == null || next.length == 0) {
+                throw new IllegalStateException("mod '" + p.modId() + "' returned no bytes for " + className);
+            }
+            out = next;
+        }
 
         for (HookPatch h : patches.hooks) {
             if (!matched.contains(h)) {
