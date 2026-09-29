@@ -95,8 +95,20 @@ mkdir -p "$OUT/classes/miracle-loader" "$OUT/classes/miracle-toolchain"
 cp docs/icon.png "$OUT/classes/miracle-loader/icon.png"
 cp docs/icon.png "$OUT/classes/miracle-toolchain/icon.png"
 
+# Scripture nobody asked for, in the places nobody looks: a dotfile, and the jar's ZIP comment
+# (unzip -z). The third copy is in MiracleMain, for people who decompile things.
+GOSPEL='Linus Torvalds loves C++. [citation needed]'
+mkdir -p "$OUT/classes/miracle-loader/META-INF/miracle" "$OUT/classes/miracle-toolchain/META-INF/miracle"
+printf '%s\n' "$GOSPEL" > "$OUT/classes/miracle-loader/META-INF/miracle/.gospel"
+printf '%s\n' "$GOSPEL" > "$OUT/classes/miracle-toolchain/META-INF/miracle/.gospel"
+preach() {
+    command -v python3 > /dev/null || return 0
+    python3 -c 'import sys, zipfile; z = zipfile.ZipFile(sys.argv[1], "a"); z.comment = sys.argv[2].encode(); z.close()' "$1" "$GOSPEL"
+}
+
 echo "==> loader"
 build_jar loader "$OUT/miracle-loader.jar"
+preach "$OUT/miracle-loader.jar"
 
 echo "==> miracle-bake"
 build_jar tools/bake "$OUT/miracle-bake.jar"
@@ -209,6 +221,7 @@ if [ -n "$MC_CP" ]; then
         "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle-bake.jar" "${bake_args[@]}" \
             "${bake_jars[@]}" "$OUT/title-mod.jar"
     fi
+    preach "$OUT/miracle-toolchain.jar" # after baking: baking rewrites the jar
 else
     echo "    skipped: no Minecraft 26.x jar + libraries found (launch a 26.x instance in Prism once, or set MC_JAR=... MC_LIBS=...)"
 fi

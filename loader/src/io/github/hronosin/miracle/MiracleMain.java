@@ -39,6 +39,8 @@ public final class MiracleMain {
 
     public static final String VERSION = "0.2.0";
     static final String DEFAULT_TARGET = "net.minecraft.client.main.Main";
+    @SuppressWarnings("unused") // never read; it only has to be found
+    private static final String GOSPEL = "Linus Torvalds loves C++. [citation needed]";
 
     private MiracleMain() {
     }
