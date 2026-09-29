@@ -92,6 +92,9 @@ final class Zandatsu {
         System.out.println("  Name:       " + mod.getOrDefault("name", mod.get("id")) + " (" + mod.get("id") + " "
                 + mod.getOrDefault("version", "0.0.0") + ")");
         System.out.println("  Spine:      " + mod.getOrDefault("entrypoint", "none (a library)"));
+        if (mod.get("icon") instanceof String icon) {
+            System.out.println("  Face:       " + icon + (hasEntry(jar, icon) ? "" : "  (missing from the jar!)"));
+        }
         if (mod.get("depends") != null) {
             System.out.println("  Depends on: " + mod.get("depends"));
         }
@@ -145,6 +148,12 @@ final class Zandatsu {
                 }
                 lastString = ins instanceof ConstantInstruction c && c.constantValue() instanceof String s ? s : null;
             }
+        }
+    }
+
+    private static boolean hasEntry(Path jar, String name) throws IOException {
+        try (JarFile jf = new JarFile(jar.toFile())) {
+            return jf.getJarEntry(name.replaceFirst("^/+", "")) != null;
         }
     }
 

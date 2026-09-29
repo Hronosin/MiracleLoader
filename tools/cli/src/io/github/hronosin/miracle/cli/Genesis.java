@@ -75,6 +75,7 @@ final class Genesis {
                 version = "0.1.0"
                 entrypoint = "%s.%s"
                 authors = ["%s"]
+                # icon = "icon.png"   # a square PNG (128x128 is plenty) in resources/, for launchers and Modrinth
                 """.formatted(id, title, pkg, cls, System.getProperty("user.name", "you"))
                 + (ascetic ? "" : "depends = [\"miracle-toolchain>=0.2.0\"]\n"));
 

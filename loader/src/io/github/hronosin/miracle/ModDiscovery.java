@@ -25,7 +25,7 @@ final class ModDiscovery {
      * {@code bake} is null for a mod that never went through miracle-bake.
      */
     record ModInfo(String id, String name, String version, String entrypoint, List<String> authors, Path jar,
-                   BakeInfo bake, List<Dependencies.Requirement> depends) {
+                   BakeInfo bake, List<Dependencies.Requirement> depends, String icon) {
         String display() {
             return name + " (" + id + " " + version + ")";
         }
@@ -143,7 +143,17 @@ final class ModDiscovery {
                 throw new DiscoveryException(jar.getFileName() + ": " + METADATA_FILE + ", depends: " + e.getMessage());
             }
         }
-        return new ModInfo(id, name, version, entrypoint, authors, jar, bake, List.copyOf(depends));
+        String icon = optionalString(toml, "icon", null);
+        if (icon != null) {
+            icon = icon.replaceFirst("^/+", "");
+            try (JarFile jf = new JarFile(jar.toFile())) {
+                if (jf.getJarEntry(icon) == null) {
+                    Log.warn(jar.getFileName() + ": icon = \"" + icon + "\", but the jar has no such file. Faceless, then.");
+                    icon = null;
+                }
+            }
+        }
+        return new ModInfo(id, name, version, entrypoint, authors, jar, bake, List.copyOf(depends), icon);
     }
 
     private static String requireString(Map<String, Object> toml, String key, Path jar) throws DiscoveryException {

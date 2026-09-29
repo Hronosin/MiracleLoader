@@ -82,7 +82,7 @@ public final class MiracleMain {
         infos.forEach(m -> Log.info("  - " + m.display() + (m.library() ? ", a library" : "")));
         boolean client = loader.findResource("net/minecraft/client/main/Main.class") != null;
         Mods.revealed(infos.stream().map(m -> new Mods.Mod(m.id(), m.name(), m.version(), List.copyOf(m.authors()),
-                        m.jar(), m.library(), m.depends().stream().map(Dependencies.Requirement::id).toList())).toList(),
+                        m.jar(), m.library(), m.depends().stream().map(Dependencies.Requirement::id).toList(), m.icon())).toList(),
                 new Mods.Game(game.id(), game.obfuscated(), client));
         for (ModDiscovery.ModInfo info : infos) {
             pickVariant(info, game, loader, rgct);

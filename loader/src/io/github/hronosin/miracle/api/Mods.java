@@ -15,10 +15,29 @@ public final class Mods {
     /**
      * One loaded mod. {@code library} is true for a mod without an entrypoint: it only brings
      * classes for other mods to use. {@code depends} holds the ids from its {@code depends}
-     * (without version requirements).
+     * (without version requirements). {@code icon} is the path of its icon inside the jar, or
+     * null if it has none.
      */
     public record Mod(String id, String name, String version, List<String> authors, Path jar, boolean library,
-                      List<String> depends) {
+                      List<String> depends, String icon) {
+
+        /** The icon's bytes (a PNG), or null. Read from the jar each time; cache it if you show it often. */
+        public byte[] iconBytes() {
+            if (icon == null) {
+                return null;
+            }
+            try (var jf = new java.util.jar.JarFile(jar.toFile())) {
+                var e = jf.getJarEntry(icon);
+                if (e == null) {
+                    return null;
+                }
+                try (var in = jf.getInputStream(e)) {
+                    return in.readAllBytes();
+                }
+            } catch (java.io.IOException e) {
+                return null;
+            }
+        }
     }
 
     /**

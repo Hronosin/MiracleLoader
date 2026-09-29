@@ -12,6 +12,9 @@ public final class NeedsLib implements MiracleMod {
         System.out.println("[needs-lib] owner: " + Mods.owner(getClass()).map(Mods.Mod::id).orElse("?")
                 + ", psalm owner: " + Mods.owner(Psalm.class).map(Mods.Mod::id).orElse("?")
                 + ", String owner: " + Mods.owner(String.class).map(Mods.Mod::id).orElse("none"));
+        byte[] icon = Mods.of("dep-lib").iconBytes();
+        System.out.println("[needs-lib] icons: dep-lib " + Mods.of("dep-lib").icon() + " (" + (icon == null ? 0 : icon.length)
+                + " bytes), patron-lib " + Mods.of("patron-lib").icon());
         System.out.println("[needs-lib] dep-lib is a library: " + Mods.of("dep-lib").library()
                 + ", launched: " + Mods.launched() + ", client: " + Mods.game().client());
     }

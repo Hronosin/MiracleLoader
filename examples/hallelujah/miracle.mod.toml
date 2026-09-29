@@ -3,4 +3,5 @@ name = "Hallelujah"
 version = "0.2.0"
 entrypoint = "com.example.hallelujah.Hallelujah"
 authors = ["Hronosin"]
+icon = "icon.png"
 depends = ["miracle-toolchain>=0.2.0"]

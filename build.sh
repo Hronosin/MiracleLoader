@@ -90,6 +90,11 @@ build_jar() {
     "$JAR" --create --file "$jar" -C "$classes" .
 }
 
+# The icon (docs/icon.png) goes into the loader's and the library's jars.
+mkdir -p "$OUT/classes/miracle-loader" "$OUT/classes/miracle-toolchain"
+cp docs/icon.png "$OUT/classes/miracle-loader/icon.png"
+cp docs/icon.png "$OUT/classes/miracle-toolchain/icon.png"
+
 echo "==> loader"
 build_jar loader "$OUT/miracle-loader.jar"
 

@@ -83,6 +83,7 @@ my-mod/
 | `entrypoint` | string | unless `library` | binary name of a class implementing `io.github.hronosin.miracle.api.MiracleMod` with a public no-arg constructor |
 | `library` | boolean | no | `true`: no entrypoint; the mod only brings classes for other mods. It MUST be said explicitly, so a forgotten entrypoint is an error, not a library. |
 | `authors` | string array | no | |
+| `icon` | string | no | path of a square PNG inside the jar (from `resources/`), for launchers, mod lists and Modrinth; a leading `/` is ignored. A path the jar doesn't have is reported and dropped. |
 | `depends` | string array | no | `"<id>"` or `"<id> >= <version>"` (spaces optional). Every entry MUST be satisfied or the game does not start (8.2). |
 
 A mod that uses the library MUST list `"miracle-toolchain"` in `depends` (with or without a version). That is how the toolchain knows to compile against the library and ship it to `run/`, and how the library knows to prepare the mod's hooks (9.3).
@@ -474,7 +475,7 @@ Available from phase 2 on.
 
 | member | returns |
 |---|---|
-| `all()` | every mod, in load order: `Mod(id, name, version, authors, jar, library, depends)` |
+| `all()` | every mod, in load order: `Mod(id, name, version, authors, jar, library, depends, icon)`; `iconBytes()` reads the icon from the jar |
 | `get(id)`, `of(id)`, `isLoaded(id)` | one mod (`of` throws if absent) |
 | `game()` | `Game(version, obfuscated, client)`; `client` is false on a dedicated server |
 | `launched()` | true from phase 3 on |
