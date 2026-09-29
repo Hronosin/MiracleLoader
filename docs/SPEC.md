@@ -254,6 +254,22 @@ Opens a mod jar (default: the project's last bake) without running anything and 
 
 Inside a project, lists `build/`, and `logs/`, `crash-reports/` and `debug/` in every `run/` folder, with sizes. With `--yes`, deletes them. It MUST NOT delete worlds, bonfires, configs, sources or anything else. Exits 0.
 
+#### `scribe item|block <name>` (alias `assets`)
+
+```
+miracle scribe item <name> [--title "Holy Water"] [--force]
+miracle scribe block <name> [--title "Altar of Miracles"] [--force]
+```
+
+Writes, under the project's `resources/`, what a new item or block needs besides code (9.11). The namespace is the project's id with `-` as `_`:
+
+| kind | files |
+|---|---|
+| item | `assets/<ns>/items/<name>.json` (model definition), `assets/<ns>/models/item/<name>.json` (`item/generated`), `assets/<ns>/textures/item/<name>.png` |
+| block | `assets/<ns>/blockstates/<name>.json`, `assets/<ns>/models/block/<name>.json` (`block/cube_all`), `assets/<ns>/items/<name>.json` (the block's item uses the block model), `assets/<ns>/textures/block/<name>.png`, `data/<ns>/loot_table/blocks/<name>.json` (drops itself unless blown up) |
+
+Both also add `item.<ns>.<name>` or `block.<ns>.<name>` to `assets/<ns>/lang/en_us.json`, keeping its other entries; the name is `--title`, or the id's words capitalized. Textures are 16×16 placeholders coloured from a hash of the id (a gem for items, a framed tile for blocks). Existing files and entries MUST be kept unless `--force`; each file is reported as `wrote` or `kept`. A kind other than `item`/`block` is a heresy.
+
 ### 5.3 Plumbing
 
 | command | does |
@@ -471,6 +487,9 @@ Available from phase 2 on.
 | `Commandments` | `Config` | settings files (9.7) |
 | `Scripture` | `Resources` | the mod jar's `data/` and `assets/` (9.8) |
 | `Proclamations` | `Notices` | telling players things (9.9) |
+| `Creation`, `Relic` | `Content` | new items and blocks (9.11) |
+| `Telepathy`, `Scroll` | `Networking` | messages between client and server (9.12) |
+| `Gestures` | `Keybinds` | keys (9.13) |
 
 An alias is a subclass that adds nothing; `Events.playerJoined(...)` *is* `Omens.playerJoined(...)`.
 
@@ -480,7 +499,9 @@ Handlers and changes MUST be added in `onLaunch()` or later, never in `transform
 
 The reason is class loading. A handler whose parameter is, say, a `ServerPlayer` loads `ServerPlayer` (and `Player`, `LivingEntity`, `Entity`) the moment the handler is created. During `transform()` that would put those classes beyond anyone's reach to patch (8.4). So the library does its patching up front (9.3), and mods only hand over their handlers later, when using game classes is safe.
 
-Subscribing before launch (any `Omens` method, a change on a `Blessing` (`multiply`, `add`, `clamp`, `set`), `Sermons.preach`, `Scripture.reveal`) MUST fail with an error that says to use `onLaunch()`. Merely building a `Blessing` (`Blessings.jumpPower()`, `forPlayers()`, `when(...)`) doesn't. `Commandments` and `Proclamations` involve no hooks and MAY be used any time (`Proclamations` needs a live game, of course).
+Subscribing before launch (any `Omens` method, a change on a `Blessing` (`multiply`, `add`, `clamp`, `set`), `Sermons.preach`, `Scripture.reveal`, `Creation.item`/`block`, a channel's `onServer`/`onClient`, `Gestures.key`) MUST fail with an error that says to use `onLaunch()`. Merely building a `Blessing` (`Blessings.jumpPower()`, `forPlayers()`, `when(...)`) doesn't. `Commandments`, `Proclamations`, `Telepathy.channel(...)` and `Scroll`s involve no hooks and MAY be used any time (`Proclamations` and sending need a live game, of course).
+
+A handler's *parameters* MUST NOT be client-only classes (`Minecraft`, `LocalPlayer`...): `onLaunch()` also runs on dedicated servers, where creating such a handler fails because the class doesn't exist. That's why `clientTick` takes a `Runnable`; reach for `Minecraft.getInstance()` inside.
 
 ### 9.3 The Prophecy
 
@@ -496,10 +517,15 @@ What it reads: every `.class` entry of the mod jar outside `META-INF/`. What cou
 | a change whose value can't be traced within its method (the `Blessing` came from a field or a parameter) | that change for every value the mod names anywhere |
 | `Sermons.preach` or `ChatCommands.preach` | the command-tree hook |
 | `Scripture.reveal` or `Resources.reveal` | the pack hook |
+| `Creation.item`/`block` or `Content.item`/`block` | the registry and creative-tab hooks (library's name), and the pack hook, already revealed (the mod's things need their assets) |
+| any call on `Telepathy`, `Networking` or a `Telepathy.Channel` | the wire hooks (library's name) |
+| `Gestures.key` or `Keybinds.key` | the key hooks (library's name, clients only) |
 
 It logs one line per mod: `MiracleToolChain foresees for <id>: <what>`, and a warning for every `priority(...)` whose argument isn't a constant.
 
 A call written in the mod counts whether or not it ever runs; that costs a hook that never fires, nothing more. A call the Prophecy can't see (made by reflection, from generated classes, or from another jar that doesn't itself depend on the library) finds no hook prepared, and MUST fail with an error saying so. Parts no mod uses MUST NOT patch anything. (The one exception is the library's own `/smite`, 9.10, which has its own switch.)
+
+Creation, Telepathy and Gestures are shared machinery: one registry step, one wire, one keyboard, installed once in the library's own name when any dependent uses them. What each mod adds is still checked against what the Prophecy foresaw for that mod.
 
 At runtime, each hook loops over the handlers its mod added, in the order they were added. The mod calling is found from the call stack (the first class outside the library package) through `Mods.owner`.
 
@@ -517,7 +543,7 @@ At runtime, each hook loops over the handlers its mod added, in the order they w
 | `blockBroken` | `BlockJudge (player, pos) → Verdict` | a player is about to break a block | `ServerPlayerGameMode#destroyBlock(BlockPos)Z` (head) |
 | `entityHurt` | `HurtJudge (victim, source, amount) → Verdict` | a living entity is about to take damage; `amount` is before armor and before any mod's changes | `LivingEntity#hurtServer(ServerLevel, DamageSource, F)Z` (head) |
 | `entityDied` | `BiConsumer<LivingEntity, DamageSource>` | a living entity dies, players included | `LivingEntity#die(DamageSource)V` and `ServerPlayer#die(DamageSource)V` (head) |
-| `clientTick` | `Consumer<Minecraft>` | after every client tick; never on a dedicated server (no hook is installed there) | `Minecraft#tick()V` (return) |
+| `clientTick` | `Runnable` | after every client tick; never on a dedicated server (no hook is installed there) | `Minecraft#tick()V` (return) |
 
 **Verdicts.** `SPARE` (alias `ALLOW`) lets it happen; `SMITE` (alias `CANCEL`) stops it: the chat message isn't sent; the block stays (`destroyBlock` returns false and the game resends the block to the player); the hit doesn't land (`hurtServer` returns false: no damage, no knockback). Within one mod, the first `SMITE` ends that mod's judging for the event. Across mods, RGCT's rule applies: any cancel wins.
 
@@ -609,6 +635,79 @@ The library's own command, and its only useless feature:
 - replies `So be it.`, then on the next server tick throws `Smitten by MiracleToolChain: <reason>` (default reason: "thou hast asked for it"). The game handles it like any crash: a crash report in `crash-reports/`, then its normal shutdown;
 - controlled by `smite` (default `true`) in `config/miracle-toolchain.toml`, read at startup. When `false`, neither the command nor its tick hook exists.
 
+### 9.11 Creation
+
+```java
+Relic<Item>  water = Creation.item("holy_water", p -> new Item(p.stacksTo(16))).inTab("food_and_drinks");
+Relic<Block> altar = Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+```
+
+- `item(name[, factory])` and `block(name[, factory])` MUST be called in `onLaunch()` (9.2). Names match `[a-z0-9_./-]+`; the id is `<namespace>:<name>`, the namespace being the mod id with `-` as `_`. The same id twice MUST fail. Called once the registries are built, they MUST fail too ("frozen").
+- The factory receives properties that already carry the id (`Item.Properties.setId`, `BlockBehaviour.Properties.setId`). Defaults: `new Item(p)`; `new Block(p.strength(1f))`.
+- `block(...)` also makes an item that places the block (`BlockItem`, same id, named from the block), reachable as `relic.item()`, and links it so `block.asItem()` finds it.
+- `inTab(id)` puts the item (for a block, its item) in a creative tab: `building_blocks`, `colored_blocks`, `natural_blocks`, `functional_blocks`, `redstone_blocks`, `tools_and_utilities`, `combat`, `food_and_drinks`, `ingredients`, `spawn_eggs`, or any tab's full id. It shows there and in search.
+- `Relic.get()` is the thing itself; before the registries are built it throws. `exists()`, `id()`.
+
+Mechanics:
+
+| step | hook |
+|---|---|
+| blocks, in call order, then items, registered after vanilla's and before the registries freeze; each new block state gets the next network id, in the same order on every side | `BuiltInRegistries#freeze()V` (head) |
+| items added to their tabs whenever the game fills a tab | `CreativeModeTab#buildContents(ItemDisplayParameters)V` (return) |
+
+Blocks, items and their states travel as numbers, so client and server MUST have the same mods creating the same things in the same order. A vanilla client can't join a server with new blocks.
+
+Everything besides code (models, textures, names, loot tables) comes from the jar's `resources/`: a mod that creates things has them revealed automatically (9.3). `miracle scribe` writes a starting set (5.2).
+
+### 9.12 Telepathy
+
+```java
+static final Telepathy.Channel PRAYER = Telepathy.channel("hallelujah:prayer");
+PRAYER.onServer((player, scroll) -> ...);     // server thread
+PRAYER.onClient(scroll -> ...);               // client thread
+PRAYER.toServer(scroll);  PRAYER.toPlayer(player, scroll);  PRAYER.toEveryone(server, scroll);
+```
+
+**Channels.** A name `namespace:path` (lowercase). The same name is the same channel, on both sides; two names whose hashes collide MUST fail at `channel(...)`. `toServer` returns false where there's no server to send to (title screen, dedicated server).
+
+**Scrolls.** A message is a `Scroll`: values written in order (`writeInt`, `writeLong`, `writeDouble`, `writeBoolean`, `writeString`, `writeBytes`), read back in the same order. Each value carries a type tag; reading the wrong type, past the end, or a length that lies MUST fail with a message naming what was found. `toString()` shows the contents (`[string "amen", int 3]`). A received scroll is read-only; a new one is write-only.
+
+**Wire.** Everything travels in one custom payload, `miracle:telepathy`, whose body is a batch:
+
+```
+batch   = 'M' 'T' version:u8(1) seq:varint count:varint message*
+message = channel:i32 (FNV-1a of the name) length:varint scroll
+```
+
+- Each side queues what it sends during a tick and flushes it once, at the end of its tick (server: `MinecraftServer#tickServer` return; client: `Minecraft#tick` return), as one batch, or as several if the tick's messages exceed the limit: 32,000 bytes client to server, 1,000,000 server to client (the game's own limits are 32 KiB and 1 MiB). A single scroll over the limit MUST fail at send time.
+- `seq` counts batches per connection and direction, from 1. The client starts again at 1 on every new connection.
+- Channel names never cross the wire. Nothing received is ever executed: a message only reaches a handler the receiving side registered for that channel. Messages for channels a client doesn't know are ignored (a mod it doesn't have).
+- Hooks: `CustomPacketPayload$1#findCodec(Identifier)` (head: answers with our codec for our id, both directions; other ids go on to vanilla's), `ServerGamePacketListenerImpl#handleCustomPayload(ServerboundCustomPayloadPacket)` (head: hands the batch to the server thread), `ClientPacketListener#handleCustomPayload(CustomPacketPayload)` (head: handles ours and stops there).
+- A handler that throws is logged with its channel; the connection and the other handlers carry on.
+
+**The Inquisition.** On the server, per connection, each batch from a client is examined before any handler sees it:
+
+| heresy | when |
+|---|---|
+| out of order | its `seq` isn't the last honest one plus 1 (replayed, reordered, skipped, forged). Only an honest batch moves the count, so a forged number can't make the real next one look late. |
+| flood | more batches in one server tick than `inquisition_batches_per_tick` (default 4) |
+| unknown channel | a message for a channel the server doesn't know |
+| malformed | anything that doesn't parse as exactly one batch, or larger than the client's limit |
+
+Each heresy is logged (`Inquisition: <player> <what>. Penance: <action>.`), then `inquisition` in `config/miracle-toolchain.toml` decides: `log` (carry on, where possible), `drop` (default: the batch is discarded), `kick` (discarded, and the player disconnected). This catches packets made by tools that don't speak the protocol; a client built on this very code sends honest-looking lies, so servers MUST still validate what handlers are told.
+
+### 9.13 Gestures
+
+```java
+Gesture pray = Gestures.key("pray", "G", () -> PRAYER.toServer(new Scroll()));
+```
+
+- `key(name, defaultKey, action)` MUST be called in `onLaunch()`; after the game has read its key settings it MUST fail. Names match `[a-z0-9_.-]+`.
+- Keys are named, not numbered (key numbers changed meaning when the game moved from GLFW to SDL in 26.x; the names in `options.txt` didn't): a letter or digit, `F1`–`F24`, `KP_0`–`KP_9`, `SPACE`, `ENTER`, `TAB`, `BACKSPACE`, `INSERT`, `DELETE`, `HOME`, `END`, `PAGE_UP`, `PAGE_DOWN`, `UP`, `DOWN`, `LEFT`, `RIGHT`, `CAPS_LOCK`, `LEFT_SHIFT`, `LEFT_CONTROL`, `LEFT_ALT`, `RIGHT_SHIFT`, `RIGHT_CONTROL`, `RIGHT_ALT`, punctuation (`MINUS`, `EQUAL`, `COMMA`, `PERIOD`, `SLASH`, `SEMICOLON`, `APOSTROPHE`, `LEFT_BRACKET`, `RIGHT_BRACKET`, `BACKSLASH`, `GRAVE`), `NONE` for unbound, or the game's own name (`key.keyboard.g`, `key.mouse.middle`). Case and `_`/space don't matter. An unknown name MUST fail.
+- The key appears in Options → Controls, rebindable, as `key.<ns>.<name>` in a category `key.category.<ns>.keys`, and is saved in `options.txt` like vanilla's. Their display names come from the mod's `lang` files.
+- The action runs on the client thread once per press, while no screen is open. `Gesture.isDown()` tells whether it's held. On a dedicated server everything here does nothing.
+- Hooks (clients only): `Options#load()V` (head: adds the gestures to the options' full key list, the longest `KeyMapping[]` it has, before `options.txt` is read), `Minecraft#tick()V` (return: presses become actions).
+
 ## 10. Templates
 
 `miracle genesis <name> --template <t>` writes one of these as the mod's class. Each MUST compile against every supported unobfuscated version and bake for every supported obfuscated one without fallbacks. In the template sources `__PACKAGE__`, `__CLASS__` and `__ID__` are replaced with the project's package, class and id.
@@ -627,14 +726,14 @@ State other than these files is kept in memory and resets when the server restar
 
 | version | obfuscated | status |
 |---|---|---|
-| 26.3 | no | primary; everything in section 9 checked; client and dedicated server run |
+| 26.3 | no | primary; everything in section 9 checked; client and dedicated server run, client also headless in tests |
 | 26.2 | no | checked; client and dedicated server run |
 | 26.1.2 | no | checked (library references present) |
-| 1.21.11 | yes | baked; client (through Prism) and dedicated server run |
+| 1.21.11 | yes | baked; client (through Prism, and headless in tests) and dedicated server run |
 
 Every game method named in section 9 has the same name and descriptor in all four. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.
 
-"Run" above means started with the loader and mods and exercised. What needs a person at a keyboard (chat, block breaking, the templates' titles and meters) was exercised on a 26.3 client for the default template only.
+"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer`, a test mod pressing keys and forging packets from inside: new blocks load in chunks, items show in their tabs with their names, keys save and fire, messages go both ways, forged batches are caught. What needs eyes (textures, titles, meters) still wants a person.
 
 ## 12. Versioning and stability
 
@@ -645,7 +744,8 @@ Every game method named in section 9 has the same name and descriptor in all fou
 
 ## 13. Known limits
 
-- The library has no registries (items, blocks), networking or keybinds yet.
+- The library has no block entities, menus (screens), new entities or custom rendering yet.
+- New blocks and items need the same mods on both sides (9.11); there is no handshake that says so politely before the join fails.
 - Mappings are Mojang's only; no Yarn.
 - `miracle bake` does not fail on holes (6.5); read its report.
 - The Prophecy sees only calls written in the dependent mod's own classes (9.3); `Blessing.priority` needs a constant.
@@ -685,6 +785,11 @@ Every game method named in section 9 has the same name and descriptor in all fou
 | `Commandments` | `Config` | library |
 | `Scripture` | `Resources` | library |
 | `Proclamations` | `Notices` | library |
+| `Creation` | `Content` | library |
+| `Telepathy` | `Networking` | library |
+| `Gestures` | `Keybinds` | library |
+| `scribe` | `assets` | command |
+| the Inquisition | packet tripwire | library (9.12) |
 | `Verdict.SPARE` / `SMITE` | `ALLOW` / `CANCEL` | library |
 | heresy | user error | everywhere |
 | the Prophecy | static usage analysis | library (9.3) |

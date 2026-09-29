@@ -41,6 +41,14 @@ final class Faithful {
      * in the mod's code, for error messages.
      */
     static void join(String what, Object key, Object handler) {
+        list(check(what, key).id(), key).add(handler);
+    }
+
+    /**
+     * The mod calling {@code what}, after checking that it's launch time and that the Prophecy
+     * prepared {@code key} for it. For parts that keep their own records.
+     */
+    static Mods.Mod check(String what, Object key) {
         Mods.Mod mod = caller(what);
         if (!Mods.launched()) {
             throw new IllegalStateException(mod.id() + " calls " + what + " in transform(). Call it in onLaunch() instead:"
@@ -58,7 +66,7 @@ final class Faithful {
                       + " prepared nothing for it.";
             throw new IllegalStateException(mod.id() + " calls " + what + ", which wasn't prepared at startup. " + why);
         }
-        list(mod.id(), key).add(handler);
+        return mod;
     }
 
     /** The mod whose code called into the library: the first frame outside this package. */

@@ -5,15 +5,26 @@ import io.github.hronosin.miracle.api.MiracleMod;
 import io.github.hronosin.miracle.api.Mods;
 import io.github.hronosin.miracle.toolchain.Blessings;
 import io.github.hronosin.miracle.toolchain.Commandments;
-import io.github.hronosin.miracle.toolchain.Omens;
+import io.github.hronosin.miracle.toolchain.Creation;
+import io.github.hronosin.miracle.toolchain.Gestures;
 import io.github.hronosin.miracle.toolchain.Omens.Verdict;
+import io.github.hronosin.miracle.toolchain.Omens;
+import io.github.hronosin.miracle.toolchain.Proclamations;
+import io.github.hronosin.miracle.toolchain.Relic;
+import io.github.hronosin.miracle.toolchain.Scroll;
 import io.github.hronosin.miracle.toolchain.Sermons;
+import io.github.hronosin.miracle.toolchain.Telepathy;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.item.Item;
+import net.minecraft.world.level.block.Block;
 
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
 /**
@@ -25,6 +36,9 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>a sanctuary around 0,0 where only operators may break blocks (Omens, cancellable);</li>
  *   <li>higher jumps and softer landings for players (Blessings, stacking with other mods);</li>
  *   <li>{@code /hallelujah} and {@code /miracles} (Sermons);</li>
+ *   <li>holy water and an altar (Creation), with models, textures and names from
+ *       {@code resources/} (written by {@code miracle scribe});</li>
+ *   <li>a key, G, to pray (Gestures): the client asks, the server decides (Telepathy);</li>
  *   <li>the settings themselves (Commandments).</li>
  * </ul>
  * There is no transform() here, and no game method is named anywhere in this file. At startup
@@ -33,6 +47,16 @@ import java.util.concurrent.atomic.AtomicLong;
 public final class Hallelujah implements MiracleMod {
 
     private static final AtomicLong AMENS = new AtomicLong();
+
+    /** Client to server: "I pray". Carries nothing the server should believe. */
+    static final Telepathy.Channel PRAYER = Telepathy.channel("hallelujah:prayer");
+    /** Server to client: the answer. */
+    static final Telepathy.Channel ANSWER = Telepathy.channel("hallelujah:answer");
+
+    static Relic<Item> holyWater;
+    static Relic<Block> altar;
+    private static final Map<UUID, Integer> LAST_PRAYER = new ConcurrentHashMap<>();
+    private static volatile int tick;
 
     @Override
     public void onLaunch() {
@@ -67,6 +91,27 @@ public final class Hallelujah implements MiracleMod {
 
         Blessings.jumpPower().forPlayers().multiply(jump);
         Blessings.fallDamage().forPlayers().multiply(landing);
+
+        // New things. Their models, textures, names and the altar's loot table are in resources/.
+        holyWater = Creation.item("holy_water", p -> new Item(p.stacksTo(16))).inTab("food_and_drinks");
+        altar = Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+
+        // Press G to pray. The client only asks; the server decides whether anything happens,
+        // how much, and how often. Never let the client say how much to heal.
+        Gestures.key("pray", "G", () -> PRAYER.toServer(new Scroll().writeString("hallelujah")));
+        Omens.serverTick(server -> tick = server.getTickCount());
+        PRAYER.onServer((player, scroll) -> {
+            Integer last = LAST_PRAYER.get(player.getUUID());
+            if (last != null && tick - last < 200) {
+                Proclamations.overlay(player, "The heavens are busy. Pray again in " + (200 - (tick - last)) / 20 + "s.");
+                return;
+            }
+            LAST_PRAYER.put(player.getUUID(), tick);
+            player.heal(4f);
+            Proclamations.overlay(player, "Your prayer was heard. (+2 hearts)");
+            ANSWER.toPlayer(player, new Scroll().writeString("heard").writeInt((int) AMENS.incrementAndGet()));
+        });
+        ANSWER.onClient(scroll -> System.out.println("[hallelujah] The heavens answered: " + scroll));
 
         Sermons.preach(d -> {
             d.register(Commands.literal("hallelujah")

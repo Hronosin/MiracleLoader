@@ -2,7 +2,6 @@ package io.github.hronosin.miracle.toolchain;
 
 import io.github.hronosin.miracle.api.Mods;
 import io.github.hronosin.miracle.rgct.Rgct;
-import net.minecraft.client.Minecraft;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.PlayerChatMessage;
 import net.minecraft.server.MinecraftServer;
@@ -175,8 +174,13 @@ public class Omens {
     /**
      * After every client tick (20 a second, paused or not). Never fires on a dedicated server,
      * which has no client to tick.
+     *
+     * <p>A {@code Runnable}, not a handler taking the Minecraft client: the handler is created on
+     * dedicated servers too (same {@code onLaunch()}), and a lambda whose parameter is a client
+     * class can't even be created where client classes don't exist. Reach for
+     * {@code Minecraft.getInstance()} inside it.
      */
-    public static void clientTick(Consumer<Minecraft> handler) {
+    public static void clientTick(Runnable handler) {
         Faithful.join("Omens.clientTick", Omen.CLIENT_TICK, handler);
     }
 
@@ -286,10 +290,10 @@ public class Omens {
             }
             case CLIENT_TICK -> {
                 if (Mods.game().client()) {
-                    List<Consumer<Minecraft>> hs = Faithful.list(mod, omen);
+                    List<Runnable> hs = Faithful.list(mod, omen);
                     rgct.target("net.minecraft.client.Minecraft")
                             .method("tick", "()V")
-                            .atReturn(self -> hs.forEach(h -> h.accept((Minecraft) self)));
+                            .atReturn(self -> hs.forEach(Runnable::run));
                 }
             }
         }

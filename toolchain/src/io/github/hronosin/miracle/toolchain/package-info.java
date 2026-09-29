@@ -14,6 +14,12 @@
  *       — settings files.</li>
  *   <li>{@link io.github.hronosin.miracle.toolchain.Proclamations} / {@link io.github.hronosin.miracle.toolchain.Notices}
  *       — overlay lines, titles, broadcasts, the same on every version.</li>
+ *   <li>{@link io.github.hronosin.miracle.toolchain.Creation} / {@link io.github.hronosin.miracle.toolchain.Content}
+ *       — new items and blocks, in creative tabs.</li>
+ *   <li>{@link io.github.hronosin.miracle.toolchain.Telepathy} / {@link io.github.hronosin.miracle.toolchain.Networking}
+ *       — messages between client and server, batched per tick, watched by the Inquisition.</li>
+ *   <li>{@link io.github.hronosin.miracle.toolchain.Gestures} / {@link io.github.hronosin.miracle.toolchain.Keybinds}
+ *       — keys in the controls screen.</li>
  *   <li>{@link io.github.hronosin.miracle.toolchain.Scripture} / {@link io.github.hronosin.miracle.toolchain.Resources}
  *       — your jar's data and assets, loaded like the game's own.</li>
  * </ul>

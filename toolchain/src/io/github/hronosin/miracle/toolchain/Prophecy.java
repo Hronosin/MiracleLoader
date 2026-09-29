@@ -32,10 +32,10 @@ final class Prophecy {
 
     /** What a mod will need. */
     record Foresight(Set<Omens.Omen> omens, Set<Blessings.Key> blessings, boolean sermons, boolean scripture,
-                     List<String> doubts) {
+                     boolean creation, boolean telepathy, boolean gestures, List<String> doubts) {
 
         boolean empty() {
-            return omens.isEmpty() && blessings.isEmpty() && !sermons && !scripture;
+            return omens.isEmpty() && blessings.isEmpty() && !sermons && !scripture && !creation && !telepathy && !gestures;
         }
 
         @Override
@@ -52,6 +52,15 @@ final class Prophecy {
             if (scripture) {
                 parts.add("scripture");
             }
+            if (creation) {
+                parts.add("creation");
+            }
+            if (telepathy) {
+                parts.add("telepathy");
+            }
+            if (gestures) {
+                parts.add("gestures");
+            }
             return String.join(", ", parts);
         }
     }
@@ -65,7 +74,7 @@ final class Prophecy {
         Set<Blessings.Value> values = EnumSet.noneOf(Blessings.Value.class);
         Set<Blessings.Key> keys = new LinkedHashSet<>();
         Set<Blessings.Key> loose = new LinkedHashSet<>();
-        boolean[] flags = new boolean[2];
+        boolean[] flags = new boolean[5];
         List<String> doubts = new ArrayList<>();
         try (JarFile jf = new JarFile(jar.toFile())) {
             for (JarEntry e : jf.stream().toList()) {
@@ -93,7 +102,7 @@ final class Prophecy {
         for (Blessings.Key k : loose) {
             values.forEach(v -> keys.add(new Blessings.Key(v, k.op(), k.priority())));
         }
-        return new Foresight(omens, keys, flags[0], flags[1], doubts);
+        return new Foresight(omens, keys, flags[0], flags[1], flags[2], flags[3], flags[4], doubts);
     }
 
     /**
@@ -150,6 +159,9 @@ final class Prophecy {
                     }
                     case "Sermons", "ChatCommands" -> flags[0] |= name.equals("preach");
                     case "Scripture", "Resources" -> flags[1] |= name.equals("reveal");
+                    case "Creation", "Content" -> flags[2] |= name.equals("item") || name.equals("block");
+                    case "Telepathy", "Networking", "Telepathy$Channel" -> flags[3] = true;
+                    case "Gestures", "Keybinds" -> flags[4] |= name.equals("key");
                     default -> {
                     }
                 }

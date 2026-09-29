@@ -45,15 +45,18 @@ public class Scripture {
     }
 
     /** Startup: the pack hook, which adds the jar once the mod has called reveal(). */
-    static void install(Rgct rgct) {
+    static void install(Rgct rgct, boolean revealNow) {
         Path jar = Mods.of(rgct.modId()).jar();
         Set<String> namespaces = namespaces(jar);
-        if (namespaces.isEmpty()) {
+        if (namespaces.isEmpty() && !revealNow) {
             io.github.hronosin.miracle.Log.warn("MiracleToolChain: " + rgct.modId() + " reveals its scripture, but "
                     + jar.getFileName() + " has no data/<namespace>/ or assets/<namespace>/ folders. Nothing to reveal.");
         }
         Faithful.foresee(rgct.modId(), KEY);
         List<Boolean> revealed = Faithful.list(rgct.modId(), KEY);
+        if (revealNow) {
+            revealed.add(Boolean.TRUE);
+        }
         String[] exposed = namespaces.toArray(String[]::new);
         Holy root = new Holy(jar);
         rgct.target("net.minecraft.server.packs.VanillaPackResourcesBuilder")

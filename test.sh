@@ -448,7 +448,34 @@ grep -q 'depends = \["miracle-toolchain>=0.2.0"\]' "$CLI_HOME/stylish-mod/miracl
 cli genesis nope --template bloodborne
 expect_code template-bad 1
 expect template-bad "No template called 'bloodborne'."
+
+pcli scribe item holy_wafer
+expect_code scribe-item 0
+expect scribe-item "wrote assets/holy_hops/items/holy_wafer.json"
+expect scribe-item "wrote assets/holy_hops/textures/item/holy_wafer.png"
+pcli scribe block altar --title "Altar of Miracles"
+expect scribe-block "wrote data/holy_hops/loot_table/blocks/altar.json"
+expect scribe-block "wrote assets/holy_hops/blockstates/altar.json"
+R="$CLI_HOME/holy-hops/resources"
+grep -q '"item.holy_hops.holy_wafer": "Holy Wafer"' "$R/assets/holy_hops/lang/en_us.json" \
+    && grep -q '"block.holy_hops.altar": "Altar of Miracles"' "$R/assets/holy_hops/lang/en_us.json" \
+    && [ "$(head -c 8 "$R/assets/holy_hops/textures/block/altar.png" | od -An -tx1 | tr -d ' \n')" = "89504e470d0a1a0a" ] \
+    && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL [scribe]: lang or texture wrong"; }
+pcli scribe item holy_wafer
+expect scribe-again "kept  assets/holy_hops/items/holy_wafer.json (exists; --force to overwrite)"
+pcli scribe potion x
+expect_code scribe-bad 1
+expect scribe-bad "HERESY: scribe what?"
 unset MIRACLE_IMPATIENT
+
+# --- the library's own self-test (Telepathy's scrolls, litanies, Inquisition) -------------------
+if [ -f build/miracle-toolchain.jar ]; then
+    out="$("$JAVA" -cp build/miracle-loader.jar:build/miracle-toolchain.jar io.github.hronosin.miracle.toolchain.SelfTest 2>&1)"
+    code=$?
+    expect_code selftest 0
+    expect selftest " 0 failed"
+    expect selftest "ok    names never cross the wire"
+fi
 
 cli confess
 expect confess "Forgive me, Father, for I have built mods."

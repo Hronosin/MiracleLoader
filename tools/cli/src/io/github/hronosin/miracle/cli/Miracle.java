@@ -100,6 +100,11 @@ public final class Miracle {
             case "grace" -> {
                 return Bonfire.run(Path.of(""), rest, Bonfire.Voice.GRACE);
             }
+            case "scribe", "assets" -> {
+                boolean force = rest.remove("--force");
+                String title = option(rest, "--title");
+                return Scribe.run(Path.of(""), rest, title, force);
+            }
             case "messages", "todo" -> {
                 return Messages.run(Path.of(""));
             }
@@ -156,6 +161,8 @@ public final class Miracle {
                   miracle confess                 (doctor)  list what's wrong with your setup, and your Aura
                   miracle bonfire [list|rest [name]]  (backup)  checkpoint the worlds in run/; rest to go back
                   miracle grace ...                         the same, for the Tarnished
+                  miracle scribe item|block <name> (assets) models, placeholder texture, name, loot table
+                      --title "Holy Wafer"   the English name   --force   overwrite
                   miracle messages                (todo)    TODO/FIXME/HACK/XXX, as messages on the ground
                   miracle zandatsu [jar]          (inspect) cut a mod jar open: patches, library use, bakes
                   miracle exorcise [--yes]        (clean)   cast out build/, logs, crash reports (worlds spared)

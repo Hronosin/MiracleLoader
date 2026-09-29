@@ -16,11 +16,21 @@ public final class MiracleToolChain implements MiracleMod {
 
     @Override
     public void transform(Rgct rgct) {
-        if (Commandments.of(ID).flag("smite", true,
+        Commandments settings = Commandments.of(ID);
+        if (settings.flag("smite", true,
                 "/smite [reason]: operators may crash the server on purpose, with a crash report blaming the heavens."
                         + "\nUseless, and it stays that way.")) {
             Smite.install(rgct);
         }
+        Telepathy.action = settings.text("inquisition", "drop",
+                "What the server does with Telepathy batches out of the honest rhythm (replayed, flooded, unknown"
+                        + "\nchannels, garbage): \"log\" and carry on, \"drop\" the batch, or \"kick\" the player.");
+        Telepathy.batchesPerTick = (int) settings.integer("inquisition_batches_per_tick", 4,
+                "Telepathy batches a client may send in one tick before the Inquisition takes an interest.");
+
+        boolean creation = false;
+        boolean telepathy = false;
+        boolean gestures = false;
         for (Mods.Mod mod : Mods.all()) {
             if (!mod.depends().contains(ID)) {
                 continue;
@@ -37,10 +47,36 @@ public final class MiracleToolChain implements MiracleMod {
             if (f.sermons()) {
                 Sermons.install(theirs);
             }
-            if (f.scripture()) {
-                Scripture.install(theirs);
+            if (f.scripture() || f.creation()) {
+                // New items and blocks can't do without their models, names and loot tables:
+                // a mod that creates things has its data and assets revealed without asking.
+                Scripture.install(theirs, f.creation());
+            }
+            if (f.creation()) {
+                Faithful.foresee(mod.id(), Creation.KEY);
+                creation = true;
+            }
+            if (f.telepathy()) {
+                Faithful.foresee(mod.id(), Telepathy.KEY);
+                telepathy = true;
+            }
+            if (f.gestures()) {
+                Faithful.foresee(mod.id(), Gestures.KEY);
+                gestures = true;
             }
             Log.info("MiracleToolChain foresees for " + mod.id() + ": " + f);
+        }
+
+        // The shared machinery, in the library's own name: one registry, one wire, one keyboard.
+        boolean client = Mods.game().client();
+        if (creation) {
+            Creation.install(rgct);
+        }
+        if (telepathy) {
+            Telepathy.install(rgct, client);
+        }
+        if (gestures && client) {
+            Gestures.install(rgct);
         }
     }
 }

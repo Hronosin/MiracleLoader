@@ -368,6 +368,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle pray client` | `run` | bakes, then plays the mod: offline, singleplayer |
 | `miracle pray server` | `run` | bakes, then hosts it (asks you to accept Mojang's EULA first, with `--eula`) |
 | `miracle confess` | `doctor` | lists what's wrong with your setup and your Aura (RWBY), then absolves you anyway |
+| `miracle scribe item\|block <name>` | `assets` | writes what a new item or block needs besides code: model definitions, models, a placeholder texture, the English name, and for blocks a blockstate and a loot table. Keeps existing files unless `--force`; `--title "Holy Wafer"` names it |
 | `miracle bonfire [list\|rest [name]]` | `backup` | Dark Souls: checkpoints the worlds in `run/`; `rest` brings one back (the world you leave is kept too) |
 | `miracle grace ...` | | the same, for the Tarnished |
 | `miracle messages` | `todo` | Elden Ring: your TODO/FIXME/HACK/XXX comments as messages on the ground ("Try repent", "Be wary of the mixins") |
@@ -448,9 +449,14 @@ Everything you need, and several things you don't, in `miracle-toolchain.jar`. E
 | `Commandments` | `Config` | `config/<mod id>.toml`, written with defaults and comments the first time |
 | `Scripture` | `Resources` | the `data/` and `assets/` in your jar, loaded as if they were the game's own |
 | `Proclamations` | `Notices` | overlay lines, titles and broadcasts, the same on every version (the game renamed these; the packets stayed) |
+| `Creation` | `Content` | new items and blocks, with block items and creative tabs; `miracle scribe` writes their models, placeholder textures, names and loot tables |
+| `Telepathy` | `Networking` | messages between client and server: per-tick batches, hashed channel names, typed `Scroll`s, and the Inquisition watching for forged packets |
+| `Gestures` | `Keybinds` | keys players can rebind in Controls, by name (`"G"`, `"LEFT_ALT"`, `"F6"`) |
 
 ```java
 public final class Hallelujah implements MiracleMod {
+    static final Telepathy.Channel PRAYER = Telepathy.channel("hallelujah:prayer");
+
     @Override
     public void onLaunch() {
         Commandments config = Commandments.mine();
@@ -462,6 +468,13 @@ public final class Hallelujah implements MiracleMod {
         Blessings.jumpPower().forPlayers().multiply(jump);
         Blessings.damageTaken().when(e -> e instanceof Cow).clamp(0, 2);
 
+        Creation.item("holy_water", p -> new Item(p.stacksTo(16))).inTab("food_and_drinks");
+        Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+
+        // Press G: the client asks, the server decides.
+        Gestures.key("pray", "G", () -> PRAYER.toServer(new Scroll().writeString("hallelujah")));
+        PRAYER.onServer((player, scroll) -> player.heal(4f));
+
         Sermons.preach(d -> d.register(Commands.literal("hallelujah").executes(c -> {
             Sermons.reply(c.getSource(), "Amen.");
             return 1;
@@ -470,7 +483,7 @@ public final class Hallelujah implements MiracleMod {
 }
 ```
 
-With `depends = ["miracle-toolchain"]` in `miracle.mod.toml`. That's all of `examples/hallelujah`, give or take a sanctuary where only operators may break blocks. `miracle genesis` starts every project like this (`--ascetic` for plain RGCT).
+With `depends = ["miracle-toolchain"]` in `miracle.mod.toml`. That's `examples/hallelujah`, give or take a sanctuary where only operators may break blocks and a cooldown on prayers. Its textures, models, names and the altar's loot table came from `miracle scribe item holy_water` and `miracle scribe block altar`. `miracle genesis` starts every project like this (`--ascetic` for plain RGCT).
 
 **Why `onLaunch()`, and the Prophecy.** A handler that takes a `ServerPlayer` loads the `ServerPlayer` class the moment the handler is created, and with it `Player`, `LivingEntity` and `Entity`. Do that in `transform()` and those classes can no longer be patched, by you or anyone. So handlers are added in `onLaunch()`, when the game classes are fair game. The patches they need must exist before that, though, and that's the Prophecy: at startup the library reads the classes of every mod that depends on it (reads, not loads) and sees which omens, values and commands each one uses. It patches exactly those methods, in that mod's name.
 
@@ -485,7 +498,9 @@ Parts nobody uses patch nothing. The startup report, conflict checks and crash b
 
 **Blessings merge.** A blessing is RGCT's layers with the targets filled in: `clamp((vanilla + adds) × factors)`, so ten mods multiplying jump power all get their way, and `set` only where you mean it. The library knows where each value lives in every supported version, including where vanilla computes it twice: a player's speed comes from a different method than a mob's, and `movementSpeed` covers both.
 
-Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers, 26.3 and 1.21.11: the Prophecy's patches, commands before and after `/reload`, `serverStarted`, `serverTick` and `serverStopping`, damage multiplied then clamped (4 → 2, 10 → 5 → 3), a cow dropped from y=200 walking away from a `fallDamage().set(0)`, `entityHurt` and `entityDied` on mobs, all five templates loaded together, and `/smite` ending in a crash report. On a real desktop (26.3 client): the join greeting, the sample command and higher jumps. Chat, block breaking and the templates' player-facing parts still wait for someone to play them.
+**Telepathy, briefly.** Each side collects what it has to say during a tick and sends it as one batch, in one custom payload packet, at the end of the tick. Channel names never cross the wire, only a hash of them; what crosses is data, never code, and a message can only reach a handler the receiving side registered itself. The server's Inquisition expects a client's batches numbered 1, 2, 3... and a few per tick at most; anything else (replayed, forged, flooded, garbage, unknown channels) is logged, and dropped or kicked as `config/miracle-toolchain.toml` says (`inquisition = "drop"`). It's a tripwire for crude packet injectors, not an anti-cheat: the server should still check everything it's told.
+
+Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. Players' eyes are still needed for textures, titles and meters.
 
 ## Lifecycle
 
@@ -514,7 +529,8 @@ Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar 
 - [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
 - [ ] MiracleToolChain: `ide`, `ascend` (publish)
 - [x] MiracleToolChain library: events, well-known values, commands, configs, data and assets
-- [ ] MiracleToolChain library: registries (items, blocks), networking, keybinds
+- [x] MiracleToolChain library: registries (items, blocks), networking, keybinds
+- [ ] MiracleToolChain library: block entities, menus, entities, custom rendering
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 
 ## License
