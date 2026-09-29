@@ -1,0 +1,2 @@
+id = "typo-mod"
+entrypoint = "test.typo.TypoMod"

@@ -119,7 +119,10 @@ if [ -n "$MC_CP" ]; then
             bake_args+=(--native "$v=$d/client.jar")
         fi
     done
-    if [ "${#bake_args[@]}" -gt 2 ]; then
+    if [ "${#bake_args[@]}" -le 2 ]; then
+        echo "    not baked: no dictionaries in $DICTS. These mods run on unobfuscated versions (26.x) only."
+        echo "    For 1.21.x: tools/fetch-dictionary.sh 1.21.11, then build again."
+    else
         echo "==> baking (OSHI)"
         "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle-bake.jar" "${bake_args[@]}" \
             "$OUT/dirt-diamonds.jar" "$OUT/super-jump.jar" "$OUT/sprint-jump.jar" "$OUT/title-mod.jar"

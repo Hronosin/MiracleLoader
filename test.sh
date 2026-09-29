@@ -92,7 +92,13 @@ expect chaos "mod 'chaos-mod' raw-patches net.minecraft.world.entity.player.Play
 run_with ghost "$T/ghost-mod.jar"
 expect_code ghost 0
 expect ghost "no such method with a body exists. Wrong game version?"
+expect_not ghost "but this game has no such class"                   # the class exists, only the method doesn't
 expect ghost "[FakeMinecraft] done"
+
+# --- target class that doesn't exist -> loud warning, game still runs ------------------------
+run_with typo "$T/typo-mod.jar"
+expect_code typo 0
+expect typo "RGCT: typo-mod hook(s) net.minecraft.world.entity.player.Playre, but this game has no such class. Wrong game version, or a typo in the class name?"
 
 # --- mod throws in transform() -> crash banner names it --------------------------------------
 run_with boom "$T/boom-mod.jar"
@@ -282,6 +288,7 @@ expect obf-fly "Mod fly-mod (fly-mod 0.0.0) has no variant for Minecraft fake-ob
 
 GAME_JAR="$OBF" run_with obf-unbaked "$M/hello-mod.jar"
 expect obf-unbaked "Mod hello-mod was never baked, and Minecraft fake-obf is obfuscated."
+expect obf-unbaked "RGCT: hello-mod hook(s) net.minecraft.world.entity.player.Player, but this game has no such class. Minecraft fake-obf is obfuscated: the mod needs a variant baked for it"
 
 echo
 echo "passed: $pass, failed: $fail"

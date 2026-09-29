@@ -102,6 +102,7 @@ public final class MiracleMain {
         rgct.freeze();
         rgct.report().forEach(Log::info);
         rgct.lint().forEach(Log::warn);
+        warnAboutMissingTargets(rgct, loader, game);
 
         List<String> tooEarly = new ArrayList<>();
         for (String cls : rgct.targetedClasses()) {
@@ -136,6 +137,23 @@ public final class MiracleMain {
 
         Log.info("Handing over to " + target + ". Amen.");
         gameMain.invokeExact(args);
+    }
+
+    /**
+     * A hook on a class the game doesn't have would wait forever for a class that never loads.
+     * Say so up front, with the likely reason.
+     */
+    private static void warnAboutMissingTargets(TransformRegistry rgct, MiracleClassLoader loader, GameVersion game) {
+        for (String cls : rgct.targetedClasses()) {
+            if (loader.findResource(cls.replace('.', '/') + ".class") == null) {
+                String why = game.obfuscated()
+                        ? " Minecraft " + game.id() + " is obfuscated: the mod needs a variant baked for it"
+                          + " (tools/fetch-dictionary.sh " + game.id() + ", then rebuild). Until then these hooks do nothing."
+                        : " Wrong game version, or a typo in the class name? These hooks will never run.";
+                Log.warn("RGCT: " + String.join(", ", rgct.modsTargeting(cls)) + " hook(s) " + cls
+                        + ", but this game has no such class." + why);
+            }
+        }
     }
 
     /**
