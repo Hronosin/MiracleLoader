@@ -11,7 +11,8 @@ final class Genesis {
     private Genesis() {
     }
 
-    static Path create(Path where, String name, String pkg, String minecraft) throws IOException {
+    /** {@code ascetic}: a bare RGCT mod, without the MiracleToolChain library. */
+    static Path create(Path where, String name, String pkg, String minecraft, boolean ascetic) throws IOException {
         Path dir = where.resolve(name).toAbsolutePath().normalize();
         if (Files.exists(dir) && (!Files.isDirectory(dir) || Files.list(dir).findAny().isPresent())) {
             throw new Miracle.Heresy(dir + " already exists and isn't empty. Creation happens ex nihilo.");
@@ -41,7 +42,8 @@ final class Genesis {
                 version = "0.1.0"
                 entrypoint = "%s.%s"
                 authors = ["%s"]
-                """.formatted(id, title, pkg, cls, System.getProperty("user.name", "you")));
+                """.formatted(id, title, pkg, cls, System.getProperty("user.name", "you"))
+                + (ascetic ? "" : "depends = [\"miracle-toolchain>=0.2.0\"]\n"));
 
         write(dir.resolve(Project.PROJECT_FILE), """
                 # What you write and compile against. Must be unobfuscated (26.1+), so names are readable.
@@ -52,34 +54,7 @@ final class Genesis {
                 targets = ["%s"]
                 """.formatted(minecraft, minecraft));
 
-        write(src.resolve(cls + ".java"), """
-                package %s;
-
-                import io.github.hronosin.miracle.api.MiracleMod;
-                import io.github.hronosin.miracle.rgct.Rgct;
-                import net.minecraft.world.entity.player.Player;
-
-                /** Let there be mod. */
-                public final class %s implements MiracleMod {
-
-                    @Override
-                    public void transform(Rgct rgct) {
-                        // Players jump a quarter higher. multiply, not set: it stacks with other mods.
-                        rgct.target("net.minecraft.world.entity.LivingEntity")
-                                .method("getJumpPower", "()F")
-                                .interceptReturn(ctx -> {
-                                    if (ctx.self() instanceof Player) {
-                                        ctx.multiplyReturnValue(1.25f);
-                                    }
-                                });
-                    }
-
-                    @Override
-                    public void onLaunch() {
-                        System.out.println("[%s] Let there be mod.");
-                    }
-                }
-                """.formatted(pkg, cls, id));
+        write(src.resolve(cls + ".java"), (ascetic ? ASCETIC : BLESSED).formatted(pkg, cls, id));
 
         write(dir.resolve(".gitignore"), "build/\nrun/\n");
         write(dir.resolve("fallback/README.md"), """
@@ -105,6 +80,76 @@ final class Genesis {
         System.out.println("Next: cd " + name + " && miracle pray client");
         return dir;
     }
+
+    /** The default: the whole MiracleToolChain library, whether you need it or not. */
+    private static final String BLESSED = """
+            package %1$s;
+
+            import io.github.hronosin.miracle.api.MiracleMod;
+            import io.github.hronosin.miracle.toolchain.Blessings;
+            import io.github.hronosin.miracle.toolchain.Commandments;
+            import io.github.hronosin.miracle.toolchain.Omens;
+            import io.github.hronosin.miracle.toolchain.Sermons;
+            import net.minecraft.commands.Commands;
+            import net.minecraft.network.chat.Component;
+
+            /**
+             * Let there be mod. Everything happens in onLaunch(): at startup MiracleToolChain reads
+             * this class, sees what it uses, and patches exactly that.
+             */
+            public final class %2$s implements MiracleMod {
+
+                @Override
+                public void onLaunch() {
+                    // Settings: written to config/%3$s.toml the first time, with these defaults.
+                    Commandments config = Commandments.mine();
+                    double jump = config.number("jump_multiplier", 1.25, "How high players jump. 1 = vanilla.");
+
+                    // Things that happen.
+                    Omens.playerJoined(player -> player.sendSystemMessage(Component.literal("Let there be %3$s.")));
+
+                    // Well-known values. multiply, not set: it stacks with other mods.
+                    Blessings.jumpPower().forPlayers().multiply(jump);
+
+                    // Commands: /%3$s
+                    Sermons.preach(d -> d.register(Commands.literal("%3$s").executes(c -> {
+                        Sermons.reply(c.getSource(), "Amen.");
+                        return 1;
+                    })));
+                }
+            }
+            """;
+
+
+    /** --ascetic: RGCT and nothing else. */
+    private static final String ASCETIC = """
+            package %1$s;
+
+            import io.github.hronosin.miracle.api.MiracleMod;
+            import io.github.hronosin.miracle.rgct.Rgct;
+            import net.minecraft.world.entity.player.Player;
+
+            /** Let there be mod. */
+            public final class %2$s implements MiracleMod {
+
+                @Override
+                public void transform(Rgct rgct) {
+                    // Players jump a quarter higher. multiply, not set: it stacks with other mods.
+                    rgct.target("net.minecraft.world.entity.LivingEntity")
+                            .method("getJumpPower", "()F")
+                            .interceptReturn(ctx -> {
+                                if (ctx.self() instanceof Player) {
+                                    ctx.multiplyReturnValue(1.25f);
+                                }
+                            });
+                }
+
+                @Override
+                public void onLaunch() {
+                    System.out.println("[%3$s] Let there be mod.");
+                }
+            }
+            """;
 
     private static String defaultMinecraft() {
         try {

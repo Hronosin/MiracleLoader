@@ -351,6 +351,35 @@ cli confess
 expect confess "Forgive me, Father, for I have built mods."
 expect confess "not inside a mod project"
 
+# --- depends: libraries, order, versions, patrons ----------------------------------------------
+run_with depends "$T/needs-lib.jar" "$T/dep-lib.jar" "$T/patron-lib.jar" "$T/victim-mod.jar"
+expect_code depends 0
+expect depends "Dependency Library (dep-lib 1.2.0), a library"
+expect depends "[needs-lib] The Lord is my shepherd; I shall not want for Forge."
+expect depends "[needs-lib] order: [dep-lib, patron-lib, a-needs-lib, patron-lib-victim]"
+expect depends "[needs-lib] owner: a-needs-lib, psalm owner: dep-lib, String owner: none"
+expect depends "[needs-lib] dep-lib is a library: true, launched: true, client: true"
+expect depends "[patron] launched before transform: false"
+expect depends "jumpFromGround"
+expect depends "<- a-needs-lib"
+expect depends "[patron] jump, on behalf of a-needs-lib"
+expect depends "[patron] refused: 'patron-lib' may only patch on behalf of mods that depend on it, and 'patron-lib-victim' doesn't"
+
+run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
+expect_code too-old 1
+expect too-old "Some mods came without what they need:"
+expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.2.0 is here. Update it."
+
+run_with ghost-dep "$T/needs-ghost.jar"
+expect_code ghost-dep 1
+expect ghost-dep "needs-ghost needs holy-grail, which is not in the mods folder."
+expect ghost-dep "needs-ghost needs miracle-toolchain, which is not in the mods folder. It's the MiracleToolChain library"
+
+run_with cycle "$T/cycle-a.jar" "$T/cycle-b.jar"
+expect_code cycle 1
+expect cycle "These mods depend on each other in a circle: cycle-a -> cycle-b -> cycle-a."
+
 echo
 echo "passed: $pass, failed: $fail"
 [ "$fail" -eq 0 ]

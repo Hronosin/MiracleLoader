@@ -42,6 +42,9 @@ final class Builder {
         Files.createDirectories(classes);
         List<Path> base = new ArrayList<>();
         base.add(Miracle.loaderJar());
+        if (p.usesToolchain()) {
+            base.add(Miracle.toolchainJar());
+        }
         base.addAll(libs);
 
         List<Path> cp = new ArrayList<>(base);

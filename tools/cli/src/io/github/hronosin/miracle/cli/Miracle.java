@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.1.0";
+    static final String VERSION = "0.2.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -52,7 +52,17 @@ public final class Miracle {
         switch (args[0]) {
             case "genesis", "new" -> {
                 String name = positional(rest, "genesis needs a name: miracle genesis my-mod");
-                Genesis.create(Path.of(""), name, option(rest, "--package"), option(rest, "--minecraft"));
+                boolean ascetic = rest.remove("--ascetic");
+                Genesis.create(Path.of(""), name, option(rest, "--package"), option(rest, "--minecraft"), ascetic);
+                return 0;
+            }
+            case "classpath" -> {
+                // Plumbing for build.sh: a Minecraft client jar and the libraries it compiles against.
+                Mojang.Version v = Mojang.version(positional(rest, "classpath needs a Minecraft version"));
+                List<Path> cp = new ArrayList<>();
+                cp.add(Mojang.clientJar(v));
+                cp.addAll(Mojang.compileLibraries(v));
+                System.out.println(String.join(java.io.File.pathSeparator, cp.stream().map(Path::toString).toList()));
                 return 0;
             }
             case "bake", "build" -> {
@@ -91,6 +101,7 @@ public final class Miracle {
 
                   miracle genesis <name>          (new)     create a mod project. Let there be mod.
                       --package com.you.mod  --minecraft 26.2
+                      --ascetic           no MiracleToolChain library, just RGCT and you
                   miracle bake                    (build)   compile, check against every target, bake
                   miracle pray client|server      (run)     bake, then play it with MiracleLoader
                       --version 1.21.11   run a target version (uses its baked variant)
@@ -129,20 +140,33 @@ public final class Miracle {
 
     /** MiracleLoader's jar: next to the toolchain's own jar, or wherever -Dmiracle.loaderJar says. */
     static Path loaderJar() {
-        String prop = System.getProperty("miracle.loaderJar", System.getenv("MIRACLE_LOADER_JAR"));
+        return sibling("miracle-loader.jar", "miracle.loaderJar", "MIRACLE_LOADER_JAR",
+                "MiracleLoader not found at %s (set -Dmiracle.loaderJar=...)");
+    }
+
+    /** The MiracleToolChain library jar, for mods that depend on miracle-toolchain. */
+    static Path toolchainJar() {
+        return sibling("miracle-toolchain.jar", "miracle.toolchainJar", "MIRACLE_TOOLCHAIN_JAR",
+                "The MiracleToolChain library isn't at %s. It comes in the release zip; in a checkout,"
+                        + " ./build.sh builds it once it can find a Minecraft 26.x (run 'miracle pray client'"
+                        + " in any project once, or set MC_JAR). Or point -Dmiracle.toolchainJar=... at it.");
+    }
+
+    private static Path sibling(String fileName, String property, String env, String missing) {
+        String prop = System.getProperty(property, System.getenv(env));
         Path jar;
         if (prop != null) {
             jar = Path.of(prop);
         } else {
             try {
                 Path self = Path.of(Miracle.class.getProtectionDomain().getCodeSource().getLocation().toURI());
-                jar = self.resolveSibling("miracle-loader.jar");
+                jar = self.resolveSibling(fileName);
             } catch (URISyntaxException e) {
                 throw new IllegalStateException(e);
             }
         }
         if (!Files.isRegularFile(jar)) {
-            throw new Heresy("MiracleLoader not found at " + jar + " (set -Dmiracle.loaderJar=...)");
+            throw new Heresy(missing.formatted(jar));
         }
         return jar.toAbsolutePath();
     }

@@ -1,0 +1,7 @@
+id = "miracle-toolchain"
+name = "MiracleToolChain"
+version = "0.2.0"
+authors = ["Hronosin"]
+# Mods that use the library say depends = ["miracle-toolchain"]; its entrypoint prepares their hooks.
+entrypoint = "io.github.hronosin.miracle.toolchain.MiracleToolChain"
+depends = ["miracle>=0.2.0"]

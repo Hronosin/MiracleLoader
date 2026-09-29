@@ -32,6 +32,22 @@ public final class Rgct {
     }
 
     /**
+     * For libraries: patches registered through the returned view are in {@code dependent}'s
+     * name, so the startup report, conflict checks and crash blame all name the mod that
+     * actually asked for them. Only for a mod that lists this one in its {@code depends}.
+     */
+    public Rgct onBehalfOf(String dependent) {
+        registry.checkOpen();
+        var mod = io.github.hronosin.miracle.api.Mods.of(dependent);
+        boolean depends = mod.depends().stream().anyMatch(modId::equals);
+        if (!depends) {
+            throw new IllegalArgumentException("'" + modId + "' may only patch on behalf of mods that depend on it, and '"
+                    + dependent + "' doesn't (depends = " + mod.depends() + ")");
+        }
+        return registry.viewFor(dependent);
+    }
+
+    /**
      * Starts patching a class. Takes a binary name with dots, e.g.
      * {@code net.minecraft.world.entity.player.Player} or {@code a.b.Outer$Inner}.
      */

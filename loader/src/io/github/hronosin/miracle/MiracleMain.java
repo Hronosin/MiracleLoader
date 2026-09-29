@@ -1,6 +1,7 @@
 package io.github.hronosin.miracle;
 
 import io.github.hronosin.miracle.api.MiracleMod;
+import io.github.hronosin.miracle.api.Mods;
 import io.github.hronosin.miracle.rgct.TransformRegistry;
 
 import java.io.File;
@@ -36,7 +37,7 @@ import java.util.Map;
  */
 public final class MiracleMain {
 
-    public static final String VERSION = "0.1.0";
+    public static final String VERSION = "0.2.0";
     static final String DEFAULT_TARGET = "net.minecraft.client.main.Main";
 
     private MiracleMain() {
@@ -74,10 +75,15 @@ public final class MiracleMain {
         } catch (ModDiscovery.DiscoveryException e) {
             throw new MiracleFailure(e.getMessage());
         }
+        infos = Dependencies.resolve(infos, VERSION);
         GameVersion game = GameVersion.detect(loader);
         Log.info("Game: " + game.describe());
         Log.info("Found " + infos.size() + " mod(s)" + (infos.isEmpty() ? "." : ":"));
-        infos.forEach(m -> Log.info("  - " + m.display()));
+        infos.forEach(m -> Log.info("  - " + m.display() + (m.library() ? ", a library" : "")));
+        boolean client = loader.findResource("net/minecraft/client/main/Main.class") != null;
+        Mods.revealed(infos.stream().map(m -> new Mods.Mod(m.id(), m.name(), m.version(), List.copyOf(m.authors()),
+                        m.jar(), m.library(), m.depends().stream().map(Dependencies.Requirement::id).toList())).toList(),
+                new Mods.Game(game.id(), game.obfuscated(), client));
         for (ModDiscovery.ModInfo info : infos) {
             pickVariant(info, game, loader, rgct);
             loader.addJar(info.jar());
@@ -88,7 +94,9 @@ public final class MiracleMain {
         // --- instantiate ----------------------------------------------------------------------
         Map<ModDiscovery.ModInfo, MiracleMod> mods = new LinkedHashMap<>();
         for (ModDiscovery.ModInfo info : infos) {
-            mods.put(info, instantiate(info, loader));
+            if (!info.library()) {
+                mods.put(info, instantiate(info, loader));
+            }
         }
 
         // --- phase 1: transforms --------------------------------------------------------------
@@ -117,6 +125,7 @@ public final class MiracleMain {
         }
 
         // --- phase 2: launch ------------------------------------------------------------------
+        Mods.launch();
         for (var e : mods.entrySet()) {
             try {
                 e.getValue().onLaunch();

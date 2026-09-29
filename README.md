@@ -8,9 +8,9 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 - **No mixins.** Instead there's **RGCT**, the Runtime Game Class Transformer, built on the JDK's own ClassFile API. Zero dependencies. Actually zero.
 - **No magic, in the bad sense.** Who patched what is printed at startup. Who crashed the game is written in the crash report.
 
-For those who'd rather not write everything from scratch, there will be **MiracleToolChain**: a separate library mod with events, registries and the rest of the Forge-style comforts. It will be an ordinary mod with no special privileges, so anything it can do, you can do too.
+For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.1.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight.
+> **Status: 0.2.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 ---
 
@@ -38,6 +38,8 @@ You need **JDK 25+** (Minecraft 26.x requires it anyway). On Fedora: `sudo dnf i
 ```
 
 With several JDKs installed: `JAVA_HOME=/usr/lib/jvm/java-25-openjdk ./build.sh`.
+
+The MiracleToolChain library and the real-game examples compile against Minecraft itself, so `build.sh` builds them only when it finds a 26.x client: from Prism Launcher, from the toolchain's own cache (anything `miracle pray` ever ran), or from `MC_JAR=... MC_LIBS=...`.
 
 ## How it launches
 
@@ -108,6 +110,16 @@ jar --create --file hello-mod.jar -C classes .
 ```
 
 More examples live in `examples/`.
+
+### Dependencies and libraries
+
+```toml
+depends = ["miracle-toolchain>=0.2.0", "some-other-mod", "miracle>=0.2.0"]
+```
+
+Every mod listed must be in `mods/`, at least that version if one is given, and loads before the mod that needs it. `miracle` means the loader itself. A missing or outdated dependency, or a circle of mods waiting for each other, stops the game before it starts, with every problem listed at once.
+
+A mod with `library = true` and no `entrypoint` just brings classes for other mods. A library that needs to patch things for the mods using it can register patches in their name: `rgct.onBehalfOf("their-mod")`, allowed only for mods that depend on it. `io.github.hronosin.miracle.api.Mods` tells any mod who else is loaded, which jar a class came from, and which game is running.
 
 ### A real gameplay mod: `examples/dirt-diamonds`
 
@@ -349,7 +361,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 
 | command | alias | does |
 |---|---|---|
-| `miracle genesis <name>` | `new` | creates a mod project: sources, `miracle.mod.toml`, `miracle.project.toml`, a sample hook |
+| `miracle genesis <name>` | `new` | creates a mod project: sources, `miracle.mod.toml`, `miracle.project.toml`, a sample mod using the library (`--ascetic`: plain RGCT) |
 | `miracle bake` | `build` | compiles, adds fallbacks, then checks and bakes against every target |
 | `miracle pray client` | `run` | bakes, then plays the mod: offline, singleplayer |
 | `miracle pray server` | `run` | bakes, then hosts it (asks you to accept Mojang's EULA first, with `--eula`) |
@@ -387,15 +399,65 @@ Praying for Minecraft 1.21.11 in run/server-1.21.11 ...
 
 Verified: `genesis`, `bake` and `pray server` end to end on 26.3 and 1.21.11, and `genesis` → `pray client` on a real desktop (Fedora, Wayland, AMD): the 26.3 client downloads, starts through MiracleLoader with the mod, and drops you into a fresh world as an offline player. The `401` and Realms errors in the log are just the game noticing you're offline.
 
-Next for the toolchain: `miracle ide` (IDE project files, including readable API jars for fallbacks) and `miracle ascend` (publish to Modrinth); then the library half: events, registries, networking, configs.
+Next for the toolchain: `miracle ide` (IDE project files, including readable API jars for fallbacks) and `miracle ascend` (publish to Modrinth).
+
+## The MiracleToolChain library
+
+Everything you need, and several things you don't, in `miracle-toolchain.jar`. Every part has a solemn name and a boring alias; they are the same class, pick whichever you can say with a straight face.
+
+| part | alias | what |
+|---|---|---|
+| `Omens` | `Events` | things that happen: `serverStarted`, `serverStopping`, `serverTick`, `playerJoined`, `playerLeft`, `playerJumped`, `chat` (cancellable), `blockBroken` (cancellable), `clientTick` |
+| `Blessings` | `Tweaks` | well-known values with merge rules: `jumpPower`, `movementSpeed`, `fallDamage`, `damageTaken` |
+| `Sermons` | `ChatCommands` | commands, in plain Brigadier; they survive `/reload` |
+| `Commandments` | `Config` | `config/<mod id>.toml`, written with defaults and comments the first time |
+| `Scripture` | `Resources` | the `data/` and `assets/` in your jar, loaded as if they were the game's own |
+
+```java
+public final class Hallelujah implements MiracleMod {
+    @Override
+    public void onLaunch() {
+        Commandments config = Commandments.mine();
+        double jump = config.number("jump_multiplier", 1.25, "Player jump power. 1 = vanilla.");
+
+        Omens.playerJoined(p -> p.sendSystemMessage(Component.literal("Welcome, pilgrim.")));
+        Omens.chat((player, msg) -> msg.contains("creeper") ? Verdict.SMITE : Verdict.SPARE);
+
+        Blessings.jumpPower().forPlayers().multiply(jump);
+        Blessings.damageTaken().when(e -> e instanceof Cow).clamp(0, 2);
+
+        Sermons.preach(d -> d.register(Commands.literal("hallelujah").executes(c -> {
+            Sermons.reply(c.getSource(), "Amen.");
+            return 1;
+        })));
+    }
+}
+```
+
+With `depends = ["miracle-toolchain"]` in `miracle.mod.toml`. That's all of `examples/hallelujah`, give or take a sanctuary where only operators may break blocks. `miracle genesis` starts every project like this (`--ascetic` for plain RGCT).
+
+**Why `onLaunch()`, and the Prophecy.** A handler that takes a `ServerPlayer` loads the `ServerPlayer` class the moment the handler is created, and with it `Player`, `LivingEntity` and `Entity`. Do that in `transform()` and those classes can no longer be patched, by you or anyone. So handlers are added in `onLaunch()`, when the game classes are fair game. The patches they need must exist before that, though, and that's the Prophecy: at startup the library reads the classes of every mod that depends on it (reads, not loads) and sees which omens, values and commands each one uses. It patches exactly those methods, in that mod's name.
+
+```
+[Miracle] MiracleToolChain foresees for hallelujah: serverStarted, playerJoined, chat, blockBroken, jumpPower:multiply, fallDamage:multiply, sermons
+[Miracle]   net.minecraft.world.entity.LivingEntity
+[Miracle]     getJumpPower()F              intercept@RETURN  <- blessed  [modifies return]
+[Miracle]     getJumpPower()F              intercept@RETURN  <- hallelujah  [modifies return]
+```
+
+Parts nobody uses patch nothing. The startup report, conflict checks and crash blame name your mod, not the library. Calling an omen from `transform()`, or from code the Prophecy couldn't read, fails with a message that says so. `Blessing.priority(n)` only matters for `set`, and wants `n` written as a number.
+
+**Blessings merge.** A blessing is RGCT's layers with the targets filled in: `clamp((vanilla + adds) × factors)`, so ten mods multiplying jump power all get their way, and `set` only where you mean it. The library knows where each value lives in every supported version, including where vanilla computes it twice: a player's speed comes from a different method than a mob's, and `movementSpeed` covers both.
+
+Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers, 26.3 and 1.21.11: the Prophecy's patches, commands before and after `/reload`, `serverStarted`, `serverTick` and `serverStopping`, damage multiplied then clamped (4 → 2, 10 → 5 → 3), and a cow dropped from y=200 walking away from a `fallDamage().set(0)`. Joins, chat, block breaking and jumps need a player and wait for a desktop run.
 
 ## Lifecycle
 
-1. Find mods in `mods/` and sort them by id, so load order never depends on the file system's mood.
+1. Find mods in `mods/`, check their `depends`, and order them: dependencies first, otherwise by id, so load order never depends on the file system's mood.
    Read the game version from `version.json`, and put each mod's baked variant for it (if any) in front of the mod's own classes.
-2. Call `transform(Rgct)` on every mod.
+2. Call `transform(Rgct)` on every mod (libraries without an entrypoint have none). MiracleToolChain's Prophecy runs here.
 3. Freeze RGCT, print the report of who layered what onto which method, and warn about possible conflicts.
-4. Call `onLaunch()` on every mod.
+4. Call `onLaunch()` on every mod. Game classes may be used from here on.
 5. Run the game's `main`. Classes get patched as they load.
 
 ## Roadmap
@@ -409,13 +471,14 @@ Next for the toolchain: `miracle ide` (IDE project files, including readable API
 - [x] OSHI: check against many versions' dictionaries at once, bake variants for obfuscated ones
 - [x] OSHI: fallback functions, and readable API jars to compile them against
 - [ ] Yarn dictionaries
-- [ ] Merge rules declared per target (e.g. by MiracleToolChain for well-known game values)
+- [x] Merge rules for well-known game values (MiracleToolChain's Blessings)
 - [ ] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [ ] Direct calls instead of the dispatcher when a method has a single hook
-- [ ] Mod dependencies in `miracle.mod.toml`
+- [x] Mod dependencies in `miracle.mod.toml`, library mods, patching on behalf of dependents
 - [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
 - [ ] MiracleToolChain: `ide`, `ascend` (publish)
-- [ ] MiracleToolChain library: events, registries, networking, configs
+- [x] MiracleToolChain library: events, well-known values, commands, configs, data and assets
+- [ ] MiracleToolChain library: registries (items, blocks), networking, keybinds
 - [ ] MiracleToolChain specification
 
 ## License

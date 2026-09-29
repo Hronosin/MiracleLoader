@@ -1,0 +1,6 @@
+id = "hallelujah"
+name = "Hallelujah"
+version = "0.1.0"
+entrypoint = "com.example.hallelujah.Hallelujah"
+authors = ["Hronosin"]
+depends = ["miracle-toolchain>=0.2.0"]

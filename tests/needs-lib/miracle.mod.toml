@@ -1,0 +1,6 @@
+id = "a-needs-lib"
+name = "Needs Lib"
+version = "0.1.0"
+entrypoint = "org.test.needslib.NeedsLib"
+# Sorted by id, a-needs-lib would come first; its dependencies must still load before it.
+depends = ["dep-lib>=1.1", "patron-lib", "miracle>=0.2.0"]

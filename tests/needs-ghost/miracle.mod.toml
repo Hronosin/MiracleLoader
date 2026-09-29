@@ -1,0 +1,3 @@
+id = "needs-ghost"
+entrypoint = "org.test.ng.Ng"
+depends = ["miracle-toolchain", "holy-grail"]

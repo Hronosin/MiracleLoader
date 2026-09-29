@@ -64,6 +64,12 @@ final class Confess {
         } catch (Miracle.Heresy h) {
             sin("loader jar not found", h.getMessage());
         }
+        try {
+            virtue("MiracleToolChain library at " + Miracle.toolchainJar());
+        } catch (Miracle.Heresy h) {
+            // Only a sin for projects that use it; ascetic mods do fine without.
+            System.out.println("  (no MiracleToolChain library next to the toolchain: only --ascetic mods can be baked)");
+        }
     }
 
     private void cache() {
@@ -90,6 +96,14 @@ final class Confess {
             return;
         }
         virtue("project " + p.id() + " " + p.version() + " in " + p.dir());
+        if (p.usesToolchain()) {
+            try {
+                Miracle.toolchainJar();
+                virtue("uses the MiracleToolChain library");
+            } catch (Miracle.Heresy h) {
+                sin("the project depends on miracle-toolchain, but the library isn't here", h.getMessage());
+            }
+        }
         try {
             Mojang.Version primary = Mojang.version(p.minecraft());
             if (primary.obfuscated()) {

@@ -21,12 +21,17 @@ final class ModDiscovery {
     static final String BAKE_INFO = "META-INF/miracle/bake.toml";
 
     /**
+     * {@code entrypoint} is null for a library mod: it only brings classes for other mods.
      * {@code bake} is null for a mod that never went through miracle-bake.
      */
     record ModInfo(String id, String name, String version, String entrypoint, List<String> authors, Path jar,
-                   BakeInfo bake) {
+                   BakeInfo bake, List<Dependencies.Requirement> depends) {
         String display() {
             return name + " (" + id + " " + version + ")";
+        }
+
+        boolean library() {
+            return entrypoint == null;
         }
     }
 
@@ -119,11 +124,22 @@ final class ModDiscovery {
             throw new DiscoveryException(jar.getFileName() + ": mod id '" + id
                     + "' must be 2-64 chars of a-z, 0-9, '-' or '_', starting with a letter");
         }
-        String entrypoint = requireString(toml, "entrypoint", jar);
+        // No entrypoint: a library, which only brings classes for other mods. Say so explicitly
+        // (library = true), so a forgotten entrypoint doesn't silently turn a mod into a library.
+        boolean library = Boolean.TRUE.equals(toml.get("library"));
+        String entrypoint = library ? null : requireString(toml, "entrypoint", jar);
         String name = optionalString(toml, "name", id);
         String version = optionalString(toml, "version", "0.0.0");
         List<String> authors = optionalList(toml, "authors");
-        return new ModInfo(id, name, version, entrypoint, authors, jar, bake);
+        List<Dependencies.Requirement> depends = new ArrayList<>();
+        for (String d : optionalList(toml, "depends")) {
+            try {
+                depends.add(Dependencies.Requirement.parse(d));
+            } catch (IllegalArgumentException e) {
+                throw new DiscoveryException(jar.getFileName() + ": " + METADATA_FILE + ", depends: " + e.getMessage());
+            }
+        }
+        return new ModInfo(id, name, version, entrypoint, authors, jar, bake, List.copyOf(depends));
     }
 
     private static String requireString(Map<String, Object> toml, String key, Path jar) throws DiscoveryException {

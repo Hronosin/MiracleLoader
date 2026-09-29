@@ -44,6 +44,12 @@ final class Runner {
             }
         }
         Files.copy(mod, mods.resolve(mod.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+        Path library = mods.resolve("miracle-toolchain.jar");
+        if (p.usesToolchain()) {
+            Files.copy(Miracle.toolchainJar(), library, StandardCopyOption.REPLACE_EXISTING);
+        } else {
+            Files.deleteIfExists(library);
+        }
 
         List<String> cmd = new ArrayList<>();
         cmd.add(Miracle.javaExecutable());

@@ -1,0 +1,3 @@
+id = "cycle-a"
+entrypoint = "org.test.ca.C"
+depends = ["cycle-b"]

@@ -17,7 +17,8 @@ import java.util.Map;
  * targets = ["26.2", "1.21.11"]      # checked by miracle bake; obfuscated ones get a baked variant
  * </pre>
  */
-record Project(Path dir, String id, String name, String version, String minecraft, List<String> targets) {
+record Project(Path dir, String id, String name, String version, String minecraft, List<String> targets,
+               List<String> depends) {
 
     static final String PROJECT_FILE = "miracle.project.toml";
     static final String MOD_FILE = "miracle.mod.toml";
@@ -39,8 +40,15 @@ record Project(Path dir, String id, String name, String version, String minecraf
         String minecraft = str(project, "minecraft", PROJECT_FILE);
         List<String> targets = project.get("targets") instanceof List<?> l
                 ? l.stream().map(Object::toString).toList() : List.of(minecraft);
+        List<String> depends = mod.get("depends") instanceof List<?> l
+                ? l.stream().map(Object::toString).toList() : List.of();
         return new Project(dir, str(mod, "id", MOD_FILE), mod.getOrDefault("name", mod.get("id")).toString(),
-                mod.getOrDefault("version", "0.0.0").toString(), minecraft, targets);
+                mod.getOrDefault("version", "0.0.0").toString(), minecraft, targets, depends);
+    }
+
+    /** True if miracle.mod.toml says depends = ["miracle-toolchain", ...]. */
+    boolean usesToolchain() {
+        return depends.stream().anyMatch(d -> d.strip().matches("miracle-toolchain\\s*(>=.*)?"));
     }
 
     Path buildDir() {

@@ -1,0 +1,4 @@
+id = "dep-lib"
+name = "Dependency Library"
+version = "1.2.0"
+library = true

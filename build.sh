@@ -124,7 +124,8 @@ build_jar examples/title-mod "$OUT/title-mod.jar" "$OUT/miracle-loader.jar"
 
 echo "==> real-game mods (compiled against Minecraft itself)"
 # Needs the client jar AND the libraries that version uses (Minecraft's classes extend
-# Brigadier, DataFixerUpper, ...). Found automatically from Prism Launcher; otherwise set
+# Brigadier, DataFixerUpper, ...). Found automatically from Prism Launcher, or from
+# MiracleToolChain's own download cache (anything 'miracle pray' ever ran); otherwise set
 #   MC_JAR=/path/to/client.jar MC_LIBS=/folder/with/exactly/that/versions/jars
 PRISM_ROOT=""
 for d in "$HOME/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher" \
@@ -147,13 +148,28 @@ if [ -n "${MC_JAR:-}" ] && [ -f "$MC_JAR" ]; then
         [ -n "$MC_CP" ] || echo "    no Prism metadata for $mc_version (launch that instance once)"
     fi
 fi
+MIRACLE_CACHE="${MIRACLE_HOME:-$HOME/.cache/miracle}"
+if [ -z "$MC_CP" ] && [ -z "${MC_JAR:-}" ]; then
+    cached="$(ls -1d "$MIRACLE_CACHE"/minecraft/versions/26.*/ 2>/dev/null | sort -V | tail -1 || true)"
+    if [ -n "$cached" ] && [ -f "$cached/client.jar" ]; then
+        # The toolchain knows exactly which libraries that version compiles against (all cached).
+        MC_CP="$("${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle.jar" classpath "$(basename "$cached")" | tail -1)"
+        MC_JAR="${MC_CP%%:*}"
+        MC_CP="${MC_CP#*:}"
+    fi
+fi
 if [ -n "$MC_CP" ]; then
     echo "    against $MC_JAR ($(tr ':' '\n' <<< "$MC_CP" | grep -c . ) libraries)"
     LIBS_CP="$OUT/miracle-loader.jar:$MC_CP"
     MC_CP="$MC_JAR:$MC_CP"
-    REAL_MODS=(dirt-diamonds super-jump sprint-jump jump-counter)
+
+    echo "==> MiracleToolChain library"
+    build_jar toolchain "$OUT/miracle-toolchain.jar" "$OUT/miracle-loader.jar:$MC_CP" "$LIBS_CP"
+
+    REAL_MODS=(dirt-diamonds super-jump sprint-jump jump-counter hallelujah)
     for m in "${REAL_MODS[@]}"; do
-        build_jar "examples/$m" "$OUT/$m.jar" "$OUT/miracle-loader.jar:$MC_CP" "$LIBS_CP"
+        build_jar "examples/$m" "$OUT/$m.jar" "$OUT/miracle-loader.jar:$OUT/miracle-toolchain.jar:$MC_CP" \
+            "$LIBS_CP:$OUT/miracle-toolchain.jar"
     done
 
     # OSHI: check the mods against every dictionary you've fetched (tools/fetch-dictionary.sh),
@@ -174,7 +190,7 @@ if [ -n "$MC_CP" ]; then
         echo "    For 1.21.x: tools/fetch-dictionary.sh 1.21.11, then build again."
     else
         echo "==> baking (OSHI)"
-        bake_jars=()
+        bake_jars=("$OUT/miracle-toolchain.jar")
         for m in "${REAL_MODS[@]}"; do bake_jars+=("$OUT/$m.jar"); done
         "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle-bake.jar" "${bake_args[@]}" \
             "${bake_jars[@]}" "$OUT/title-mod.jar"
@@ -184,9 +200,12 @@ else
 fi
 
 echo "==> test mods"
+# dep-lib first: needs-lib compiles against it.
+build_jar tests/dep-lib "$OUT/test-mods/dep-lib.jar" "$API" "$OUT/miracle-loader.jar"
 for m in tests/*/; do
     m="${m%/}"
-    build_jar "$m" "$OUT/test-mods/$(basename "$m").jar" "$API" "$OUT/miracle-loader.jar"
+    [ "$m" = tests/dep-lib ] && continue
+    build_jar "$m" "$OUT/test-mods/$(basename "$m").jar" "$API:$OUT/test-mods/dep-lib.jar" "$OUT/miracle-loader.jar"
 done
 
 echo "Built. Try: ./run.sh"

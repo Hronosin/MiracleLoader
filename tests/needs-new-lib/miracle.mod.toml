@@ -1,0 +1,3 @@
+id = "needs-new-lib"
+entrypoint = "org.test.nnl.Nnl"
+depends = ["dep-lib>=2.0", "miracle>=99"]

@@ -6,9 +6,10 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Parser for the flat subset of TOML that {@code miracle.mod.toml} uses: {@code key = "string"},
- * {@code key = ["a", "b"]}, and {@code #} comments. No tables, no numbers, no multiline strings —
- * the loader has zero dependencies and intends to keep it that way.
+ * Parser for the flat subset of TOML that {@code miracle.mod.toml} and mod configs use:
+ * {@code key = "string"}, {@code key = ["a", "b"]}, {@code key = true}, {@code key = 42},
+ * {@code key = 1.5}, and {@code #} comments. No tables, no multiline strings — the loader has
+ * zero dependencies and intends to keep it that way.
  */
 public final class MiniToml {
 
@@ -21,7 +22,7 @@ public final class MiniToml {
         }
     }
 
-    /** Values are {@code String} or {@code List<String>}. */
+    /** Values are {@code String}, {@code List<String>}, {@code Boolean}, {@code Long} or {@code Double}. */
     public static Map<String, Object> parse(String text) throws ParseException {
         Map<String, Object> out = new LinkedHashMap<>();
         String[] lines = text.split("\r?\n", -1);
@@ -53,7 +54,7 @@ public final class MiniToml {
             } else if (c.peek() == '[') {
                 value = c.readArray();
             } else {
-                throw new ParseException(lineNo, "only \"strings\" and [\"arrays\"] are supported");
+                value = c.readBare();
             }
             c.skipSpaces();
             if (!c.atEnd() && c.peek() != '#') {
@@ -114,6 +115,38 @@ public final class MiniToml {
                 }
             }
             throw new ParseException(line, "unterminated string");
+        }
+
+        /** true, false, or a number: 42, -7, 1_000, 1.5, 2e3. */
+        Object readBare() throws ParseException {
+            int start = pos;
+            while (!atEnd() && peek() != ' ' && peek() != '\t' && peek() != '#') {
+                pos++;
+            }
+            String word = s.substring(start, pos);
+            switch (word) {
+                case "true" -> {
+                    return Boolean.TRUE;
+                }
+                case "false" -> {
+                    return Boolean.FALSE;
+                }
+                default -> {
+                }
+            }
+            String n = word.replace("_", "");
+            try {
+                if (n.matches("[+-]?\\d+")) {
+                    return Long.parseLong(n);
+                }
+                if (n.matches("[+-]?(\\d+\\.?\\d*|\\.\\d+)([eE][+-]?\\d+)?")) {
+                    return Double.parseDouble(n);
+                }
+            } catch (NumberFormatException e) {
+                throw new ParseException(line, "number out of range: " + word);
+            }
+            throw new ParseException(line, word.isEmpty() ? "missing value"
+                    : "expected \"string\", [array], true/false or a number, not " + word);
         }
 
         List<String> readArray() throws ParseException {
