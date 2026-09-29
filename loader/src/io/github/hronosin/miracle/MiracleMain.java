@@ -33,11 +33,13 @@ import java.util.Map;
  *   <li>{@code miracle.modsDir} — mods folder (default {@code mods})</li>
  *   <li>{@code miracle.gameClasspath} — game jars, if they should not be taken from the JVM class path</li>
  *   <li>{@code miracle.dump} — folder to write every patched class into, for debugging</li>
+ *   <li>{@code miracle.lock} — {@code update} (default), {@code strict} or {@code off}: see {@link MiracleLock}</li>
+ *   <li>{@code miracle.lockFile} — where miracle.lock lives (default: next to the mods folder)</li>
  * </ul>
  */
 public final class MiracleMain {
 
-    public static final String VERSION = "0.2.0";
+    public static final String VERSION = "0.3.0";
     static final String DEFAULT_TARGET = "net.minecraft.client.main.Main";
     @SuppressWarnings("unused") // never read; it only has to be found
     private static final String GOSPEL = "Linus Torvalds loves C++. [citation needed]";
@@ -113,6 +115,7 @@ public final class MiracleMain {
         rgct.report().forEach(Log::info);
         rgct.lint().forEach(Log::warn);
         warnAboutMissingTargets(rgct, loader, game);
+        pin(rgct, infos, modsDir, game, client);
 
         List<String> tooEarly = new ArrayList<>();
         for (String cls : rgct.targetedClasses()) {
@@ -148,6 +151,21 @@ public final class MiracleMain {
 
         Log.info("Handing over to " + target + ". Amen.");
         gameMain.invokeExact(args);
+    }
+
+    /** miracle.lock: compare what the mods patch with what they patched when it was pinned. */
+    private static void pin(TransformRegistry rgct, List<ModDiscovery.ModInfo> infos, Path modsDir, GameVersion game,
+                            boolean client) {
+        Map<String, List<String>> patches = rgct.pins();
+        Map<String, MiracleLock.Pinned> mods = new LinkedHashMap<>();
+        for (ModDiscovery.ModInfo info : infos) {
+            mods.put(info.id(), new MiracleLock.Pinned(info.version(), patches.getOrDefault(info.id(), List.of())));
+        }
+        String lockFile = System.getProperty("miracle.lockFile");
+        Path file = lockFile != null ? Path.of(lockFile)
+                : modsDir.toAbsolutePath().normalize().resolveSibling("miracle.lock");
+        MiracleLock.check(file, System.getProperty("miracle.lock", "update"),
+                new MiracleLock.State(game.id() + (client ? " client" : " server"), mods));
     }
 
     /**

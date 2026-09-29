@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.2.0";
+    static final String VERSION = "0.3.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -106,7 +106,9 @@ public final class Miracle {
             case "scribe", "assets" -> {
                 boolean force = rest.remove("--force");
                 String title = option(rest, "--title");
-                return Scribe.run(Path.of(""), rest, title, force);
+                boolean noEgg = rest.remove("--no-egg");
+                String egg = noEgg ? "" : option(rest, "--egg");
+                return Scribe.run(Path.of(""), rest, title, egg, force);
             }
             case "messages", "todo" -> {
                 return Messages.run(Path.of(""));
@@ -165,8 +167,10 @@ public final class Miracle {
                   miracle dictionary <v|26.*|>=1.21.11|latest>...  (mappings)  fetch what baking needs; --list
                   miracle bonfire [list|rest [name]]  (backup)  checkpoint the worlds in run/; rest to go back
                   miracle grace ...                         the same, for the Tarnished
-                  miracle scribe item|block <name> (assets) models, placeholder texture, name, loot table
+                  miracle scribe item|block|entity <name>  (assets) models, placeholder texture, names, loot table
                       --title "Holy Wafer"   the English name   --force   overwrite
+                      --egg zombie           entity: borrow a vanilla spawn egg's look instead of a placeholder
+                      --no-egg               entity: no spawn egg, no loot (a projectile, say)
                   miracle messages                (todo)    TODO/FIXME/HACK/XXX, as messages on the ground
                   miracle zandatsu [jar]          (inspect) cut a mod jar open: patches, library use, bakes
                   miracle exorcise [--yes]        (clean)   cast out build/, logs, crash reports (worlds spared)

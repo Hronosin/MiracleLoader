@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.2.0 |
+| Version | 0.3.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -47,7 +47,7 @@ Every name comes in two forms: a solemn one and a boring alias. They are equival
 | `miracle-loader.jar` | MiracleLoader: discovery, RGCT, launching | the JDK |
 | `miracle.jar` | the command line, with `miracle-bake` built in | the JDK, `miracle-loader.jar` (manifest `Class-Path`) |
 | `miracle-bake.jar` | `miracle-bake` alone, for scripts and `build.sh` | the JDK |
-| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.2.0, and the game |
+| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.3.0, and the game |
 | `miracle` | a shell wrapper that runs `build/miracle.jar`, building it first if it's missing | bash |
 
 All of them MUST run on Java 25 or newer and MUST NOT need anything beyond the JDK: JSON, TOML, HTTP, compilation (`javax.tools`) and bytecode work (`java.lang.classfile`) are the JDK's or our own.
@@ -156,6 +156,8 @@ Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the 
 | `-Dmiracle.dump` | property | loader | folder to write every patched class into |
 | `-Dmiracle.gameVersion`, `-Dmiracle.obfuscated` | property | loader | override version detection (8.3) |
 | `-Dmiracle.configDir` | property | library, templates | config folder (default `config`, relative to the game folder) |
+| `-Dmiracle.lock` | property | loader | `update` (default), `strict` or `off` (8.7) |
+| `-Dmiracle.lockFile` | property | loader | where `miracle.lock` lives (default: next to the mods folder) |
 
 ## 5. Commands
 
@@ -184,7 +186,7 @@ Creates `./<name>/` as a new project. It MUST refuse if that folder exists and i
 - **minecraft**: `--minecraft`, or Mojang's latest release if it is unobfuscated, otherwise (or when Mojang can't be reached) `26.2`.
 - **targets**: `["<minecraft>", "26.*", "1.21.11"]`.
 
-Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.2.0"]` unless `--ascetic`), `miracle.project.toml` (with comments), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
+Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.3.0"]` unless `--ascetic`), `miracle.project.toml` (with comments), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
 
 The source file is one of:
 
@@ -257,21 +259,23 @@ Opens a mod jar (default: the project's last bake) without running anything and 
 
 Inside a project, lists `build/`, and `logs/`, `crash-reports/` and `debug/` in every `run/` folder, with sizes. With `--yes`, deletes them. It MUST NOT delete worlds, bonfires, configs, sources or anything else. Exits 0.
 
-#### `scribe item|block <name>` (alias `assets`)
+#### `scribe item|block|entity <name>` (alias `assets`)
 
 ```
 miracle scribe item <name> [--title "Holy Water"] [--force]
 miracle scribe block <name> [--title "Altar of Miracles"] [--force]
+miracle scribe entity <name> [--title "Heretic"] [--egg zombie | --no-egg] [--force]
 ```
 
-Writes, under the project's `resources/`, what a new item or block needs besides code (9.11). The namespace is the project's id with `-` as `_`:
+Writes, under the project's `resources/`, what a new item, block or entity needs besides code (9.11). The namespace is the project's id with `-` as `_`:
 
 | kind | files |
 |---|---|
 | item | `assets/<ns>/items/<name>.json` (model definition), `assets/<ns>/models/item/<name>.json` (`item/generated`), `assets/<ns>/textures/item/<name>.png` |
 | block | `assets/<ns>/blockstates/<name>.json`, `assets/<ns>/models/block/<name>.json` (`block/cube_all`), `assets/<ns>/items/<name>.json` (the block's item uses the block model), `assets/<ns>/textures/block/<name>.png`, `data/<ns>/loot_table/blocks/<name>.json` (drops itself unless blown up) |
+| entity | `data/<ns>/loot_table/entities/<name>.json` (drops nothing, edit to taste) and a spawn egg `<name>_spawn_egg`: `assets/<ns>/items/<name>_spawn_egg.json` pointing at vanilla's `minecraft:item/<egg>_spawn_egg` with `--egg <egg>`, or at its own `item/generated` model and placeholder texture without; `--no-egg` writes neither the egg nor the loot table (a projectile, say) |
 
-Both also add `item.<ns>.<name>` or `block.<ns>.<name>` to `assets/<ns>/lang/en_us.json`, keeping its other entries; the name is `--title`, or the id's words capitalized. Textures are 16×16 placeholders coloured from a hash of the id (a gem for items, a framed tile for blocks). Existing files and entries MUST be kept unless `--force`; each file is reported as `wrote` or `kept`. A kind other than `item`/`block` is a heresy.
+All kinds add `item.<ns>.<name>`, `block.<ns>.<name>` or `entity.<ns>.<name>` to `assets/<ns>/lang/en_us.json` (entities with an egg also `item.<ns>.<name>_spawn_egg`, "<Name> Spawn Egg"), keeping its other entries; the name is `--title`, or the id's words capitalized. Textures are 16×16 placeholders coloured from a hash of the id (a gem for items and eggs, a framed tile for blocks). Existing files and entries MUST be kept unless `--force`; each file is reported as `wrote` or `kept`. Another kind, or `--egg` on anything but an entity, is a heresy.
 
 #### `dictionary <versions>` (alias `mappings`)
 
@@ -465,7 +469,7 @@ The loader reads the game version from `version.json` in the game jar (`-Dmiracl
 
 1. Discover, check dependencies, order (8.2), pick variants (8.3). Publish the mod list through the `Mods` API.
 2. Create each mod's entrypoint (libraries have none) and call `transform(Rgct)` on each, in load order. Game classes MUST NOT be loaded here: any class loaded now can no longer be patched, and if a mod targets one, the game stops and names it.
-3. Freeze RGCT. Print the report (who patches what, with what effects) and warnings about possible conflicts and missing target classes. `Mods.launched()` becomes true.
+3. Freeze RGCT. Print the report (who patches what, with what effects) and warnings about possible conflicts and missing target classes. Compare with `miracle.lock` (8.7). `Mods.launched()` becomes true.
 4. Call `onLaunch()` on each mod, in load order.
 5. Run the game's `main`. Classes are patched as they load.
 
@@ -485,11 +489,30 @@ Available from phase 2 on.
 
 `rgct.onBehalfOf(id)` returns an `Rgct` view whose patches are registered in the name of mod `id`, so the report, the conflict checks and crash blame name that mod. It MUST only be allowed when mod `id` lists the caller's mod in its `depends`, and only before the freeze.
 
+### 8.7 `miracle.lock`
+
+After the freeze the loader writes down what every mod patches, one line per patch, and keeps it in `miracle.lock` next to the mods folder (`-Dmiracle.lockFile` elsewhere):
+
+```
+game 26.3 server
+mod hallelujah 0.3.0
+  net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
+  net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
+mod miracle-toolchain 0.3.0
+  ...
+```
+
+- A line is `<class>#<method><descriptor> <where> [<effects>, priority n]`, effects as in the report (`observes`, `reads only`, `modifies return`, `sets args`, `cancels`, `cancels with a value`...); `<class> raw [whole class]` and `<class> rawBytes [whole class]` for raw patches; the same hook twice reads `x2`. On an obfuscated game, names come from the baked variants' `rgct-names.txt` where available. Lines are sorted, mods by id: the file diffs well in version control.
+- Patches made through `onBehalfOf` (8.6) count for the dependent mod: a library's patches are listed under the mod that asked for them.
+- Each start compares. No lock yet: pin it. A lock pinned on another game (version or side): pin afresh, saying so. Same patches: say so; if only versions changed, rewrite quietly. Different patches: print, per mod, `<id> <old> -> <new>` (or `(new)`, `(gone)`, `(same version, different patches: a setting?)`) and the `+`/`-` lines.
+- `-Dmiracle.lock`: `update` (default) prints the difference and pins the new state; `strict` prints it and stops the game without touching the file (delete it, or start once with `update`, to accept); `off` does nothing. Another value stops the game.
+- An unreadable lock is reported and replaced.
+
 ## 9. The library
 
 ### 9.1 What it is
 
-`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.2.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
+`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.3.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
 
 | part | alias | covers |
 |---|---|---|
@@ -499,9 +522,10 @@ Available from phase 2 on.
 | `Commandments` | `Config` | settings files (9.7) |
 | `Scripture` | `Resources` | the mod jar's `data/` and `assets/` (9.8) |
 | `Proclamations` | `Notices` | telling players things (9.9) |
-| `Creation`, `Relic` | `Content` | new items and blocks (9.11) |
+| `Creation`, `Relic`, `Being` | `Content` | new items, blocks and entities (9.11) |
 | `Telepathy`, `Scroll` | `Networking` | messages between client and server (9.12) |
 | `Gestures` | `Keybinds` | keys (9.13) |
+| `Communion` | `Handshake` | comparing mods when a player joins (9.14) |
 
 An alias is a subclass that adds nothing; `Events.playerJoined(...)` *is* `Omens.playerJoined(...)`.
 
@@ -511,7 +535,7 @@ Handlers and changes MUST be added in `onLaunch()` or later, never in `transform
 
 The reason is class loading. A handler whose parameter is, say, a `ServerPlayer` loads `ServerPlayer` (and `Player`, `LivingEntity`, `Entity`) the moment the handler is created. During `transform()` that would put those classes beyond anyone's reach to patch (8.4). So the library does its patching up front (9.3), and mods only hand over their handlers later, when using game classes is safe.
 
-Subscribing before launch (any `Omens` method, a change on a `Blessing` (`multiply`, `add`, `clamp`, `set`), `Sermons.preach`, `Scripture.reveal`, `Creation.item`/`block`, a channel's `onServer`/`onClient`, `Gestures.key`) MUST fail with an error that says to use `onLaunch()`. Merely building a `Blessing` (`Blessings.jumpPower()`, `forPlayers()`, `when(...)`) doesn't. `Commandments`, `Proclamations`, `Telepathy.channel(...)` and `Scroll`s involve no hooks and MAY be used any time (`Proclamations` and sending need a live game, of course).
+Subscribing before launch (any `Omens` method, a change on a `Blessing` (`multiply`, `add`, `clamp`, `set`), `Sermons.preach`, `Scripture.reveal`, `Creation.item`/`block`/`entity`, a channel's `onServer`/`onClient`, `Gestures.key`) MUST fail with an error that says to use `onLaunch()`. Merely building a `Blessing` (`Blessings.jumpPower()`, `forPlayers()`, `when(...)`) doesn't. `Commandments`, `Proclamations`, `Telepathy.channel(...)`, `Communion.bothSides()`/`eitherSide()` and `Scroll`s involve no hooks and MAY be used any time (`Proclamations` and sending need a live game, of course).
 
 A handler's *parameters* MUST NOT be client-only classes (`Minecraft`, `LocalPlayer`...): `onLaunch()` also runs on dedicated servers, where creating such a handler fails because the class doesn't exist. That's why `clientTick` takes a `Runnable`; reach for `Minecraft.getInstance()` inside.
 
@@ -529,15 +553,15 @@ What it reads: every `.class` entry of the mod jar outside `META-INF/`. What cou
 | a change whose value can't be traced within its method (the `Blessing` came from a field or a parameter) | that change for every value the mod names anywhere |
 | `Sermons.preach` or `ChatCommands.preach` | the command-tree hook |
 | `Scripture.reveal` or `Resources.reveal` | the pack hook |
-| `Creation.item`/`block` or `Content.item`/`block` | the registry and creative-tab hooks (library's name), and the pack hook, already revealed (the mod's things need their assets) |
+| `Creation.item`/`block`/`entity` or `Content.item`/`block`/`entity` | the registry and creative-tab hooks (library's name), and the pack hook, already revealed (the mod's things need their assets); with `entity`, also the attribute, data-fixer and (clients) renderer hooks |
 | any call on `Telepathy`, `Networking` or a `Telepathy.Channel` | the wire hooks (library's name) |
 | `Gestures.key` or `Keybinds.key` | the key hooks (library's name, clients only) |
 
-It logs one line per mod: `MiracleToolChain foresees for <id>: <what>`, and a warning for every `priority(...)` whose argument isn't a constant.
+It logs one line per mod: `MiracleToolChain foresees for <id>: <what>`, and a warning for every `priority(...)` whose argument isn't a constant. A mod foreseen to create things or use Telepathy is *bound* to both sides (9.14).
 
 A call written in the mod counts whether or not it ever runs; that costs a hook that never fires, nothing more. A call the Prophecy can't see (made by reflection, from generated classes, or from another jar that doesn't itself depend on the library) finds no hook prepared, and MUST fail with an error saying so. Parts no mod uses MUST NOT patch anything. (The one exception is the library's own `/smite`, 9.10, which has its own switch.)
 
-Creation, Telepathy and Gestures are shared machinery: one registry step, one wire, one keyboard, installed once in the library's own name when any dependent uses them. What each mod adds is still checked against what the Prophecy foresaw for that mod.
+Creation, Telepathy, Gestures and Communion are shared machinery: one registry step, one wire, one keyboard, one handshake, installed once in the library's own name when any dependent uses them (Communion: always, unless switched off). What each mod adds is still checked against what the Prophecy foresaw for that mod.
 
 At runtime, each hook loops over the handlers its mod added, in the order they were added. The mod calling is found from the call stack (the first class outside the library package) through `Mods.owner`.
 
@@ -667,7 +691,37 @@ Mechanics:
 | blocks, in call order, then items, registered after vanilla's and before the registries freeze; each new block state gets the next network id, in the same order on every side | `BuiltInRegistries#freeze()V` (head) |
 | items added to their tabs whenever the game fills a tab | `CreativeModeTab#buildContents(ItemDisplayParameters)V` (return) |
 
-Blocks, items and their states travel as numbers, so client and server MUST have the same mods creating the same things in the same order. A vanilla client can't join a server with new blocks.
+**Entities.**
+
+```java
+Being<Heretic> heretic = Creation.entity("heretic",
+        () -> EntityType.Builder.of(Heretic::new, MobCategory.MONSTER).sized(0.6f, 1.95f))
+    .attributes(() -> Zombie.createAttributes())
+    .looksLike("zombie")
+    .spawnEgg();
+Being<ThrownHolyWater> thrown = Creation.entity("thrown_holy_water",
+        () -> EntityType.Builder.<ThrownHolyWater>of(ThrownHolyWater::new, MobCategory.MISC).sized(0.25f, 0.25f))
+    .looksLikeItem();
+```
+
+- `entity(name, builder)` takes a *supplier* of the builder, called when the registries are built: the builder touches game classes that mustn't be touched in `onLaunch()`. Names and ids as for items; the same entity id twice MUST fail.
+- `Being` is to entity types what `Relic` is to items: `get()` (the `EntityType`, throws before the registries are built), `exists()`, `id()`. Its setters MUST be called before the registries are built:
+  - `attributes(supplier)`: the living entity's attributes, built the first time the game asks (attributes can't be read until the registries are frozen). A living entity without them can't be made; the game says so.
+  - `spawnEgg()`: an item `<name>_spawn_egg` (a `SpawnEggItem` carrying the type), in `spawn_eggs`; `egg()` is its `Relic`.
+  - Looks, by name so a dedicated server never loads a renderer: `looksLike("zombie")` borrows a vanilla entity's renderer (the entity SHOULD extend that entity's class, whose fields the renderer reads); `looksLikeItem()` draws the carried item (`ThrownItemRenderer`, for `ItemSupplier` entities such as `ThrowableItemProjectile`s); `renderedBy("com.example.MyRenderer")` makes the mod's own `EntityRenderer`, which needs a public constructor taking `EntityRendererProvider.Context`. With none, or a vanilla name the game can't draw, the entity is invisible and the log says so.
+- Names: `entity.<ns>.<name>` in the lang file. Drops: `data/<ns>/loot_table/entities/<name>.json`, none without one.
+
+Mechanics:
+
+| step | hook |
+|---|---|
+| blocks, in call order, then entity types, then items (spawn eggs need their type), registered after vanilla's and before the registries freeze; each new block state gets the next network id, in the same order on every side | `BuiltInRegistries#freeze()V` (head) |
+| items added to their tabs whenever the game fills a tab | `CreativeModeTab#buildContents(ItemDisplayParameters)V` (return) |
+| our types' attributes answer before vanilla's map | `DefaultAttributes#getSupplier(EntityType)` and `#hasSupplier(EntityType)` (head) |
+| our types need no save-data fixer, and the builder doesn't log an error about it | `Util#fetchChoiceType(TypeReference, String)` (head, for our ids) |
+| renderers join the game's providers before anyone reads them (clients) | `EntityRenderers#createEntityRenderers(Context)` and `#validateRegistrations()` (head) |
+
+Blocks, items, entity types and block states travel as numbers, so client and server MUST have the same mods creating the same things in the same order; Communion (9.14) checks it at the door.
 
 Everything besides code (models, textures, names, loot tables) comes from the jar's `resources/`: a mod that creates things has them revealed automatically (9.3). `miracle scribe` writes a starting set (5.2).
 
@@ -720,6 +774,41 @@ Gesture pray = Gestures.key("pray", "G", () -> PRAYER.toServer(new Scroll()));
 - The action runs on the client thread once per press, while no screen is open. `Gesture.isDown()` tells whether it's held. On a dedicated server everything here does nothing.
 - Hooks (clients only): `Options#load()V` (head: adds the gestures to the options' full key list, the longest `KeyMapping[]` it has, before `options.txt` is read), `Minecraft#tick()V` (return: presses become actions).
 
+### 9.14 Communion
+
+When a player joins, before they are in the world, the server and the client compare their mods; a mismatch ends with a list of what's wrong on the player's disconnect screen, instead of a crash on the first unknown block.
+
+**Bound mods.** A mod MUST be on both sides, in the same version, when it is *bound*:
+
+- the Prophecy foresaw it creating things or using Telepathy (9.3); a mod that creates things stays bound whatever it says;
+- it called `Communion.bothSides()` (a server mod whose client half matters);
+- not if it called `Communion.eitherSide()` (Telepathy that copes with silence), unless it creates things;
+- the library itself is bound whenever another mod is.
+
+Everything else (omens, blessings, commands, keys) is one side's business.
+
+**The manifest** (payload `miracle:communion`, both directions): `Scroll` values `int 0x4D434D31`, `string` library version, `int n`, then per mod `string id`, `string version`, `boolean bound`, then `long` creation fingerprint (FNV-1a, 64 bits, over `block|entity|item <id>` lines in registration order) and `int` creation count.
+
+**The judgement**, the same on both sides, in the player's words:
+
+| finding | line |
+|---|---|
+| a server-bound mod the client lacks | `Missing: <id> <version>` |
+| a bound mod in another version | `Different version: <id> (yours <v>, the server's <v>)` |
+| a client-bound mod the server lacks | `The server doesn't have: <id> <version> (remove it to join)` |
+| none of those, but different creations | `Same mods, different creations: ...` |
+
+A refusal reads `Communion refused. Your mods and the server's don't match:`, the lines, and `No miracle today.`
+
+**The rite.**
+
+1. Server: a configuration task (`miracle:communion`) added after the game's optional ones (hook: `ServerConfigurationPacketListenerImpl#addOptionalTasks()V`, return) sends the server's manifest. If the server has no bound mods, the task ends at once: any client may join, vanilla included.
+2. Client (hook: `ClientConfigurationPacketListenerImpl#handleCustomPayload(CustomPacketPayload)V`, head): answers with its own manifest, judges, and on findings disconnects itself with the refusal.
+3. Server (hook: `ServerCommonPacketListenerImpl#handleCustomPayload(ServerboundCustomPayloadPacket)V`, head): logs the answer's verdict when it arrives (`Communion: <player> shares our faith (n mod(s))`, or `... refused: <findings>`), and the task disconnects a refused player with the same refusal. With bound mods and no answer within `communion_timeout` seconds (default 10), it disconnects with the list of mods to install (a vanilla client, or one without the library). An answer that doesn't parse is refused.
+4. Client (hook: `ClientConfigurationPacketListenerImpl#handleConfigurationFinished(...)V`, head): a connection that finishes configuration without ever being offered communion, while the client has bound mods, is left, with `This server doesn't offer communion (no MiracleToolChain there, or it's switched off), but these mods of yours need the same on both sides:` and the list.
+
+`Communion.modsOf(player)` returns what a player's game said it has (id to version), empty for a game that never answered; `Communion.has(player, id)` asks about one mod. `communion` (default `true`) in `config/miracle-toolchain.toml` switches all of it off; nothing is hooked then.
+
 ## 10. Templates
 
 `miracle genesis <name> --template <t>` writes one of these as the mod's class. Each MUST compile against every supported unobfuscated version and bake for every supported obfuscated one without fallbacks. In the template sources `__PACKAGE__`, `__CLASS__` and `__ID__` are replaced with the project's package, class and id.
@@ -738,26 +827,27 @@ State other than these files is kept in memory and resets when the server restar
 
 | version | obfuscated | status |
 |---|---|---|
-| 26.3 | no | primary; everything in section 9 checked; client and dedicated server run, client also headless in tests |
+| 26.3 | no | primary; everything in section 9 checked; client and dedicated server run, client also headless in tests, multiplayer included |
 | 26.2 | no | checked; client and dedicated server run |
 | 26.1, 26.1.1, 26.1.2 | no | checked (every library and example reference present) |
-| 1.21.11 | yes | baked; client (through Prism, and headless in tests) and dedicated server run |
+| 1.21.11 | yes | baked; client (through Prism, and headless in tests, multiplayer included) and dedicated server run |
 
 Every game method named in section 9 has the same name and descriptor in all of them. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.
 
-"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer`, a test mod pressing keys and forging packets from inside: new blocks load in chunks, items show in their tabs with their names, keys save and fire, messages go both ways, forged batches are caught. What needs eyes (textures, titles, meters) still wants a person.
+"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer` or onto a local server with `--quickPlayMultiplayer`, a test mod pressing keys, throwing things and forging packets from inside: new blocks load in chunks, items and spawn eggs show in their tabs with their names, entities spawn, save, take hits and are drawn by the renderers they asked for, keys save and fire, messages go both ways, forged batches are caught, and Communion lets matching games in and turns away the rest (a missing mod, an extra one, no library at all, a server without it) with the right lines. What needs eyes (textures, titles, meters) still wants a person.
 
 ## 12. Versioning and stability
 
 - The loader, the toolchain and the library share one version number, `MAJOR.MINOR.PATCH`. While `MAJOR` is 0, a minor release MAY change anything, and says what in its notes.
-- A mod states what it needs with `depends` (`"miracle>=0.2.0"`, `"miracle-toolchain>=0.2.0"`).
+- A mod states what it needs with `depends` (`"miracle>=0.3.0"`, `"miracle-toolchain>=0.3.0"`).
 - Stable within 0.x, unless a release note says otherwise: the file formats in sections 3.2, 3.3, 6.5 and 8.1; command names and aliases; the solemn and boring names in Appendix B.
 - Output wording is not an interface, apart from these markers, which scripts MAY rely on: `HERESY:`, `Baked:`, `Amen.`, `YOU DIED`, `BONFIRE LIT` (from `bonfire`/`backup`), and `[ok]`/`[!!]` in `confess`.
 
 ## 13. Known limits
 
-- The library has no block entities, menus (screens), new entities or custom rendering yet.
-- New blocks and items need the same mods on both sides (9.11); there is no handshake that says so politely before the join fails.
+- The library has no block entities or menus (screens) yet; new entities look like a vanilla one, like their item, or bring their own renderer class, but the library offers no models or textures for them.
+- New entities don't spawn by themselves in the world; spawn eggs and commands only.
+- Communion asks bound mods for exactly the same version; there is no way yet to declare a range of compatible versions.
 - Mappings are Mojang's only; no Yarn.
 - `miracle bake` does not fail on holes (6.5); read its report.
 - The Prophecy sees only calls written in the dependent mod's own classes (9.3); `Blessing.priority` needs a constant.
@@ -800,6 +890,8 @@ Every game method named in section 9 has the same name and descriptor in all of 
 | `Creation` | `Content` | library |
 | `Telepathy` | `Networking` | library |
 | `Gestures` | `Keybinds` | library |
+| `Communion` | `Handshake` | library |
+| `Being` | entity type | library (9.11) |
 | `scribe` | `assets` | command |
 | `dictionary` | `mappings` | command |
 | the Inquisition | packet tripwire | library (9.12) |

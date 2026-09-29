@@ -11,10 +11,11 @@ import java.util.Map;
 import java.util.TreeMap;
 
 /**
- * {@code miracle scribe item|block <name>} (alias {@code assets}): writes the files a new item or
- * block needs besides code: model definitions, models, a placeholder texture, the English name,
- * and for blocks a blockstate and a loot table that drops the block. Existing files are kept,
- * unless {@code --force}.
+ * {@code miracle scribe item|block|entity <name>} (alias {@code assets}): writes the files a new
+ * item, block or entity needs besides code: model definitions, models, a placeholder texture, the
+ * English name, for blocks a blockstate and a loot table that drops the block, and for entities
+ * an empty loot table and a spawn egg (its own placeholder, or a vanilla egg's look with
+ * {@code --egg zombie}). Existing files are kept, unless {@code --force}.
  *
  * <p>Paths follow the game's layout since 1.21.4 ({@code assets/<ns>/items/<id>.json} names the
  * model), which is what every supported version reads.
@@ -24,9 +25,15 @@ final class Scribe {
     private Scribe() {
     }
 
-    static int run(Path dir, List<String> args, String title, boolean force) throws IOException {
-        if (args.size() < 2 || !(args.get(0).equals("item") || args.get(0).equals("block"))) {
-            throw new Miracle.Heresy("scribe what? miracle scribe item <name>, or miracle scribe block <name>");
+    static int run(Path dir, List<String> args, String title, String egg, boolean force) throws IOException {
+        if (args.size() < 2 || !List.of("item", "block", "entity").contains(args.get(0))) {
+            throw new Miracle.Heresy("scribe what? miracle scribe item <name>, block <name>, or entity <name>");
+        }
+        if (egg != null && !args.get(0).equals("entity")) {
+            throw new Miracle.Heresy("--egg is for entities: their spawn egg can borrow a vanilla one's look");
+        }
+        if (egg != null && !egg.isEmpty() && !egg.matches("[a-z0-9_]+")) {
+            throw new Miracle.Heresy("--egg " + egg + ": a vanilla entity's name, like zombie or pig");
         }
         Project p = Project.find(dir);
         String kind = args.get(0);
@@ -55,6 +62,40 @@ final class Scribe {
                     }
                     """.formatted(ns, name), force, wrote, kept, res);
             texture(assets.resolve("textures/item/" + name + ".png"), id, false, force, wrote, kept, res);
+        } else if (kind.equals("entity")) {
+            String eggName = name + "_spawn_egg";
+            if (egg != null && egg.isEmpty()) {
+                // --no-egg: a projectile or the like. Just its name.
+            } else if (egg != null) {
+                write(assets.resolve("items/" + eggName + ".json"), """
+                        {
+                          "model": { "type": "minecraft:model", "model": "minecraft:item/%s_spawn_egg" }
+                        }
+                        """.formatted(egg), force, wrote, kept, res);
+            } else {
+                write(assets.resolve("items/" + eggName + ".json"), """
+                        {
+                          "model": { "type": "minecraft:model", "model": "%s:item/%s" }
+                        }
+                        """.formatted(ns, eggName), force, wrote, kept, res);
+                write(assets.resolve("models/item/" + eggName + ".json"), """
+                        {
+                          "parent": "minecraft:item/generated",
+                          "textures": { "layer0": "%s:item/%s" }
+                        }
+                        """.formatted(ns, eggName), force, wrote, kept, res);
+                texture(assets.resolve("textures/item/" + eggName + ".png"), id, false, force, wrote, kept, res);
+            }
+            if (egg == null || !egg.isEmpty()) {
+                write(res.resolve("data/" + ns + "/loot_table/entities/" + name + ".json"), """
+                        {
+                          "type": "minecraft:entity",
+                          "pools": []
+                        }
+                        """, force, wrote, kept, res);
+                lang(assets.resolve("lang/en_us.json"), "item." + ns + "." + eggName.replace('/', '.'),
+                        pretty + " Spawn Egg", force, wrote, kept, res);
+            }
         } else {
             write(assets.resolve("blockstates/" + name + ".json"), """
                     {
@@ -86,13 +127,17 @@ final class Scribe {
                     }
                     """.formatted(id), force, wrote, kept, res);
         }
-        lang(assets.resolve("lang/en_us.json"), (kind.equals("item") ? "item." : "block.") + ns + "." + name.replace('/', '.'),
-                pretty, force, wrote, kept, res);
+        String prefix = switch (kind) {
+            case "item" -> "item.";
+            case "block" -> "block.";
+            default -> "entity.";
+        };
+        lang(assets.resolve("lang/en_us.json"), prefix + ns + "." + name.replace('/', '.'), pretty, force, wrote, kept, res);
 
         wrote.forEach(f -> System.out.println("  wrote " + f));
         kept.forEach(f -> System.out.println("  kept  " + f + " (exists; --force to overwrite)"));
         System.out.println("It is written. " + id + " has its scripture; now make it in code: Creation."
-                + kind + "(\"" + name + "\", ...).");
+                + kind + "(\"" + name + "\", ...)" + (kind.equals("entity") && !"".equals(egg) ? ".spawnEgg()" : "") + ".");
         return 0;
     }
 

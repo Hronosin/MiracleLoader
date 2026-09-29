@@ -8,10 +8,18 @@ import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
 import net.minecraft.resources.ResourceKey;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.EntityRenderers;
+import net.minecraft.client.renderer.entity.NoopRenderer;
+import net.minecraft.client.renderer.entity.ThrownItemRenderer;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
@@ -19,19 +27,24 @@ import net.minecraft.world.level.block.state.BlockState;
 import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.IdentityHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 /**
- * Creation: new items and blocks. Known as {@link Content} to the uninspired.
+ * Creation: new items, blocks and entities. Known as {@link Content} to the uninspired.
  *
  * <pre>{@code
- * static final Relic<Item> HOLY_WATER = ...;
+ * static Relic<Item> HOLY_WATER;
  *
  * public void onLaunch() {
  *     HOLY_WATER = Creation.item("holy_water", p -> new Item(p.stacksTo(16))).inTab("food_and_drinks");
  *     ALTAR = Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+ *     HERETIC = Creation.entity("heretic", () -> EntityType.Builder.of(Heretic::new, MobCategory.MONSTER))
+ *             .attributes(() -> Zombie.createAttributes()).looksLike("zombie").spawnEgg();
  * }
  * }</pre>
  *
@@ -48,8 +61,12 @@ import java.util.function.Function;
  * ({@code data/<namespace>/loot_table/blocks/<name>.json}) or they drop nothing.
  * {@code miracle scribe item|block <name>} writes a starting set.
  *
- * <p>Blocks and items travel between client and server as numbers, so both sides need the same
- * mods: a vanilla client can't join a server with new blocks.
+ * <p>Entities are {@link Being}s: their attributes, spawn egg and looks are set there. Their
+ * names are {@code entity.<namespace>.<name>} in the lang file, and a mob's drops come from
+ * {@code data/<namespace>/loot_table/entities/<name>.json}.
+ *
+ * <p>Blocks, items and entities travel between client and server as numbers, so both sides need
+ * the same mods: {@link Communion} checks that when a player joins.
  */
 public class Creation {
 
@@ -59,6 +76,7 @@ public class Creation {
     private static final List<Function<BlockBehaviour.Properties, ? extends Block>> BLOCK_MAKERS = new ArrayList<>();
     private static final List<Relic<Item>> ITEMS = new ArrayList<>();
     private static final List<Function<Item.Properties, ? extends Item>> ITEM_MAKERS = new ArrayList<>();
+    private static final List<Being<?>> BEINGS = new ArrayList<>();
     private static volatile boolean done;
 
     protected Creation() {
@@ -97,7 +115,64 @@ public class Creation {
         return r;
     }
 
-    private static <T> Relic<T> relic(String what, String name) {
+    /**
+     * A new kind of entity, made from the builder {@code builder} gives when the game builds its
+     * registries (a supplier, because the builder touches game classes that can't be touched
+     * this early). Set its attributes, spawn egg and looks on the {@link Being} this returns.
+     */
+    public static synchronized <T extends Entity> Being<T> entity(String name, Supplier<EntityType.Builder<T>> builder) {
+        Mods.Mod mod = open("Creation.entity", name);
+        String ns = namespace(mod.id());
+        for (Being<?> b : BEINGS) {
+            if (b.namespace().equals(ns) && b.path().equals(name)) {
+                throw new IllegalArgumentException(ns + ":" + name + " was already created. Once is enough.");
+            }
+        }
+        Being<T> b = new Being<>(ns, name, builder);
+        BEINGS.add(b);
+        return b;
+    }
+
+    /** The spawn egg of a being: an item like any other, made once the entity exists. */
+    static synchronized Relic<Item> egg(Being<?> being) {
+        Relic<Item> r = relic("Being.spawnEgg", being.path() + "_spawn_egg");
+        ITEMS.add(r);
+        ITEM_MAKERS.add(p -> new SpawnEggItem(p.spawnEgg(being.get())));
+        return r.inTab("spawn_eggs");
+    }
+
+    /** Throws if the registries are already built. For the setters on Relic and Being. */
+    static void checkOpen(String what) {
+        if (done) {
+            throw new IllegalStateException(what + " after the game built its registries: too late. Do it in onLaunch().");
+        }
+    }
+
+    /** True for the id of an entity some mod created ("hallelujah:heretic"). */
+    static boolean isBeing(Object id) {
+        if (!(id instanceof String s)) {
+            return false;
+        }
+        synchronized (Creation.class) {
+            for (Being<?> b : BEINGS) {
+                if (b.toString().equals(s)) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** Every id created, in the order the game numbers them. The same on both sides, or they can't play. */
+    static synchronized List<String> inventory() {
+        List<String> ids = new ArrayList<>();
+        BLOCKS.forEach(r -> ids.add("block " + r));
+        BEINGS.forEach(b -> ids.add("entity " + b));
+        ITEMS.forEach(r -> ids.add("item " + r));
+        return ids;
+    }
+
+    private static Mods.Mod open(String what, String name) {
         Mods.Mod mod = Faithful.check(what, KEY);
         if (done) {
             throw new IllegalStateException(mod.id() + " calls " + what + "(\"" + name + "\") after the game built its"
@@ -106,6 +181,11 @@ public class Creation {
         if (!name.matches("[a-z0-9_./-]+")) {
             throw new IllegalArgumentException("'" + name + "': names are lowercase letters, digits and _ . / -");
         }
+        return mod;
+    }
+
+    private static <T> Relic<T> relic(String what, String name) {
+        Mods.Mod mod = open(what, name);
         String ns = namespace(mod.id());
         for (Relic<?> r : ITEMS) {
             if (r.namespace().equals(ns) && r.path().equals(name)) {
@@ -122,7 +202,7 @@ public class Creation {
 
     // --- installation (startup, in the library's name) ------------------------------------------
 
-    static void install(Rgct rgct) {
+    static void install(Rgct rgct, boolean beings, boolean client) {
         // After vanilla's own contents, before the registries freeze.
         rgct.target("net.minecraft.core.registries.BuiltInRegistries")
                 .method("freeze", "()V")
@@ -130,6 +210,44 @@ public class Creation {
         rgct.target("net.minecraft.world.item.CreativeModeTab")
                 .method("buildContents", "(Lnet/minecraft/world/item/CreativeModeTab$ItemDisplayParameters;)V")
                 .atReturn(self -> Workshop.fillTab(self));
+        if (!beings) {
+            return;
+        }
+        // Vanilla's entity types each have a save-data fixer; ours don't need one, and shouldn't
+        // make the builder log an ERROR saying so.
+        rgct.target("net.minecraft.util.Util")
+                .method("fetchChoiceType", "(Lcom/mojang/datafixers/DSL$TypeReference;Ljava/lang/String;)Lcom/mojang/datafixers/types/Type;")
+                .interceptHead(ctx -> {
+                    if (isBeing(ctx.arg(1))) {
+                        ctx.cancel(null);
+                    }
+                });
+        // Living entities get their attributes from a map vanilla fills once; ours answer first.
+        rgct.target("net.minecraft.world.entity.ai.attributes.DefaultAttributes")
+                .method("getSupplier", "(Lnet/minecraft/world/entity/EntityType;)Lnet/minecraft/world/entity/ai/attributes/AttributeSupplier;")
+                .interceptHead(ctx -> {
+                    Object a = Workshop.attributesOf(ctx.arg(0));
+                    if (a != null) {
+                        ctx.cancel(a);
+                    }
+                });
+        rgct.target("net.minecraft.world.entity.ai.attributes.DefaultAttributes")
+                .method("hasSupplier", "(Lnet/minecraft/world/entity/EntityType;)Z")
+                .interceptHead(ctx -> {
+                    if (Workshop.attributesOf(ctx.arg(0)) != null) {
+                        ctx.cancel(true);
+                    }
+                });
+        if (client) {
+            // Renderers are made from a map of providers; ours join it before anyone reads it.
+            rgct.target("net.minecraft.client.renderer.entity.EntityRenderers")
+                    .method("createEntityRenderers",
+                            "(Lnet/minecraft/client/renderer/entity/EntityRendererProvider$Context;)Ljava/util/Map;")
+                    .atHead(self -> Studio.enlist());
+            rgct.target("net.minecraft.client.renderer.entity.EntityRenderers")
+                    .method("validateRegistrations", "()Z")
+                    .atHead(self -> Studio.enlist());
+        }
     }
 
     /**
@@ -145,6 +263,25 @@ public class Creation {
         static void create() {
             synchronized (Creation.class) {
                 createLocked();
+            }
+        }
+
+        /** Our entity types' attributes: the recipe until first asked for, then the result. */
+        private static final Map<EntityType<?>, Object> ATTRIBUTES = new IdentityHashMap<>();
+
+        /**
+         * Built on first use, not at registration: attributes are registry entries that can't be
+         * read until the registries are frozen, which is right after we register.
+         */
+        @SuppressWarnings("unchecked")
+        static Object attributesOf(Object type) {
+            synchronized (ATTRIBUTES) {
+                Object a = ATTRIBUTES.get(type);
+                if (a instanceof Supplier<?> recipe) {
+                    a = ((Supplier<AttributeSupplier.Builder>) recipe).get().build();
+                    ATTRIBUTES.put((EntityType<?>) type, a);
+                }
+                return a;
             }
         }
 
@@ -165,6 +302,9 @@ public class Creation {
                     state.initCache();
                 }
             }
+            for (Being<?> b : BEINGS) {
+                createBeing(b);
+            }
             for (int i = 0; i < ITEMS.size(); i++) {
                 Relic<Item> r = ITEMS.get(i);
                 ResourceKey<Item> key = ResourceKey.create(Registries.ITEM, r.id());
@@ -180,8 +320,20 @@ public class Creation {
                 }
                 r.set(Registry.register(BuiltInRegistries.ITEM, key, item));
             }
-            if (!BLOCKS.isEmpty() || !ITEMS.isEmpty()) {
-                Log.info("MiracleToolChain: created " + BLOCKS.size() + " block(s) and " + ITEMS.size() + " item(s). And it was good.");
+            if (!BLOCKS.isEmpty() || !ITEMS.isEmpty() || !BEINGS.isEmpty()) {
+                Log.info("MiracleToolChain: created " + BLOCKS.size() + " block(s), " + ITEMS.size() + " item(s) and "
+                        + BEINGS.size() + " kind(s) of entity. And it was good.");
+            }
+        }
+
+        private static <T extends Entity> void createBeing(Being<T> b) {
+            ResourceKey<EntityType<?>> key = ResourceKey.create(Registries.ENTITY_TYPE, b.id());
+            EntityType<T> type = b.builder.get().build(key);
+            b.set(Registry.register(BuiltInRegistries.ENTITY_TYPE, key, type));
+            if (b.attributes != null) {
+                synchronized (ATTRIBUTES) {
+                    ATTRIBUTES.put(type, b.attributes);
+                }
             }
         }
 
@@ -241,6 +393,80 @@ public class Creation {
                 }
                 throw new IllegalStateException("CreativeModeTab has no " + type.getSimpleName() + " field in this version");
             }
+        }
+    }
+
+    /** The client-only half: renderers. Loaded only on a client, once the game runs. */
+    private static final class Studio {
+
+        private static boolean enlisted;
+
+        private Studio() {
+        }
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        static synchronized void enlist() {
+            if (enlisted || BEINGS.isEmpty()) {
+                return;
+            }
+            enlisted = true;
+            Map<EntityType<?>, EntityRendererProvider<?>> providers;
+            try {
+                providers = (Map<EntityType<?>, EntityRendererProvider<?>>) staticMap(EntityRenderers.class).get(null);
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                Log.warn("MiracleToolChain: couldn't reach the entity renderers, new entities will be invisible: " + e);
+                return;
+            }
+            for (Being<?> b : BEINGS) {
+                if (!b.exists() || providers.containsKey(b.get())) {
+                    continue;
+                }
+                EntityRendererProvider<?> p = switch (b.looks) {
+                    case VANILLA -> {
+                        EntityType<?> like = BuiltInRegistries.ENTITY_TYPE.getValue(Identifier.parse(b.looksLike));
+                        EntityRendererProvider<?> theirs = like == null ? null : providers.get(like);
+                        if (theirs == null) {
+                            Log.warn("MiracleToolChain: " + b + " wants to look like " + b.looksLike
+                                    + ", which this game can't draw. It will be invisible.");
+                            yield NoopRenderer::new;
+                        }
+                        yield theirs;
+                    }
+                    case ITEM -> ctx -> new ThrownItemRenderer(ctx);
+                    case CUSTOM -> custom(b);
+                    case NONE -> {
+                        Log.warn("MiracleToolChain: " + b + " has no looks (looksLike, looksLikeItem or renderedBy),"
+                                + " so it's invisible. Spooky, but probably not what you meant.");
+                        yield NoopRenderer::new;
+                    }
+                };
+                providers.put(b.get(), p);
+            }
+        }
+
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        private static EntityRendererProvider<?> custom(Being<?> b) {
+            return (EntityRendererProvider) ctx -> {
+                try {
+                    Class<?> cls = Class.forName(b.looksLike, true, b.loader);
+                    return (net.minecraft.client.renderer.entity.EntityRenderer)
+                            cls.getConstructor(EntityRendererProvider.Context.class).newInstance(ctx);
+                } catch (ReflectiveOperationException | ClassCastException e) {
+                    Log.error("MiracleToolChain: " + b + " is rendered by " + b.looksLike + ", which couldn't be made"
+                            + " (an EntityRenderer with a constructor taking EntityRendererProvider.Context?): " + e);
+                    return new NoopRenderer<>(ctx);
+                }
+            };
+        }
+
+        private static Field staticMap(Class<?> owner) throws NoSuchFieldException {
+            for (Field f : owner.getDeclaredFields()) {
+                if (f.getType() == Map.class && java.lang.reflect.Modifier.isStatic(f.getModifiers())) {
+                    f.setAccessible(true);
+                    return f;
+                }
+            }
+            throw new NoSuchFieldException(owner.getSimpleName() + " has no static Map in this version");
         }
     }
 }

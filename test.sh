@@ -444,7 +444,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.2.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.3.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -478,6 +478,8 @@ if [ -f build/miracle-toolchain.jar ]; then
     expect_code selftest 0
     expect selftest " 0 failed"
     expect selftest "ok    names never cross the wire"
+    expect selftest "ok    a missing mod is named"
+    expect selftest "ok    one-sided mods are nobody's business"
 fi
 
 cli confess
@@ -505,7 +507,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.2.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.3.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
@@ -519,6 +521,47 @@ expect imposter "the id 'miracle' belongs to the loader itself."
 run_with cycle "$T/cycle-a.jar" "$T/cycle-b.jar"
 expect_code cycle 1
 expect cycle "These mods depend on each other in a circle: cycle-a -> cycle-b -> cycle-a."
+
+# --- miracle.lock: pinned patches, diffs, strictness --------------------------------------------
+# run_in <dir> <mod jars...>: like run_with, but keeps the folder (and its miracle.lock) between runs.
+run_in() {
+    local dir="$1"; shift
+    rm -rf "$dir/mods" && mkdir -p "$dir/mods"
+    for j in "$@"; do cp "$j" "$dir/mods/"; done
+    # shellcheck disable=SC2086
+    out="$(cd "$dir" && "$JAVA" ${JAVA_OPTS:-} -cp "$ROOT/build/miracle-loader.jar:$ROOT/build/fake-minecraft.jar" \
+        io.github.hronosin.miracle.MiracleMain --username Steve 2>&1)"
+    code=$?
+}
+LOCK_DIR="$ROOT/build/test-runs/lock"
+rm -rf "$LOCK_DIR"
+run_in "$LOCK_DIR" "$M/hello-mod.jar"
+expect_code lock-first 0
+expect lock-first "miracle.lock: pinned what 1 mod(s) patch"
+lock="$(cat "$LOCK_DIR/miracle.lock" 2>/dev/null)"
+out="$lock"
+expect lock-file "mod hello-mod 0.1.0"
+expect lock-file "  net.minecraft.world.entity.player.Player#jumpFromGround @HEAD [observes]"
+run_in "$LOCK_DIR" "$M/hello-mod.jar"
+expect lock-same "miracle.lock: every mod patches exactly what it did when pinned."
+run_in "$LOCK_DIR" "$M/hello-mod.jar" "$M/chaos-mod.jar"
+expect_code lock-diff 0
+expect lock-diff "miracle.lock: what the mods patch has changed since it was pinned:"
+expect lock-diff "chaos-mod 0.1.0 (new)"
+expect lock-diff "  + net.minecraft.world.entity.player.Player raw [whole class]"
+expect lock-diff "miracle.lock: pinned the new state."
+JAVA_OPTS=-Dmiracle.lock=strict run_in "$LOCK_DIR" "$M/hello-mod.jar"
+expect_code lock-strict 1
+expect lock-strict "chaos-mod 0.1.0 (gone)"
+expect lock-strict "miracle.lock is strict (-Dmiracle.lock=strict), so nothing starts"
+out="$(cat "$LOCK_DIR/miracle.lock")"
+expect lock-strict-keeps "mod chaos-mod 0.1.0"
+JAVA_OPTS=-Dmiracle.lock=off run_in "$LOCK_DIR" "$M/hello-mod.jar"
+expect_code lock-off 0
+expect_not lock-off "miracle.lock:"
+JAVA_OPTS=-Dmiracle.lock=maybe run_in "$LOCK_DIR" "$M/hello-mod.jar"
+expect_code lock-bad-mode 1
+expect lock-bad-mode "-Dmiracle.lock=maybe: that's not a mode. update, strict or off."
 
 echo
 echo "passed: $pass, failed: $fail"

@@ -1,5 +1,8 @@
 {
   "block.hallelujah.altar": "Altar of Miracles",
+  "entity.hallelujah.heretic": "Heretic",
+  "entity.hallelujah.thrown_holy_water": "Holy Water",
+  "item.hallelujah.heretic_spawn_egg": "Heretic Spawn Egg",
   "item.hallelujah.holy_water": "Holy Water",
   "key.category.hallelujah.keys": "Hallelujah",
   "key.hallelujah.pray": "Pray"

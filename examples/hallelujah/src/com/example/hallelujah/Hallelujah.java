@@ -3,6 +3,7 @@ package com.example.hallelujah;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import io.github.hronosin.miracle.api.MiracleMod;
 import io.github.hronosin.miracle.api.Mods;
+import io.github.hronosin.miracle.toolchain.Being;
 import io.github.hronosin.miracle.toolchain.Blessings;
 import io.github.hronosin.miracle.toolchain.Commandments;
 import io.github.hronosin.miracle.toolchain.Creation;
@@ -17,6 +18,9 @@ import io.github.hronosin.miracle.toolchain.Telepathy;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.level.block.Block;
 
@@ -36,8 +40,8 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>a sanctuary around 0,0 where only operators may break blocks (Omens, cancellable);</li>
  *   <li>higher jumps and softer landings for players (Blessings, stacking with other mods);</li>
  *   <li>{@code /hallelujah} and {@code /miracles} (Sermons);</li>
- *   <li>holy water and an altar (Creation), with models, textures and names from
- *       {@code resources/} (written by {@code miracle scribe});</li>
+ *   <li>holy water to throw, an altar, and heretics (Creation), with models, textures and names
+ *       from {@code resources/} (written by {@code miracle scribe});</li>
  *   <li>a key, G, to pray (Gestures): the client asks, the server decides (Telepathy);</li>
  *   <li>the settings themselves (Commandments).</li>
  * </ul>
@@ -55,6 +59,8 @@ public final class Hallelujah implements MiracleMod {
 
     static Relic<Item> holyWater;
     static Relic<Block> altar;
+    static Being<ThrownHolyWater> thrownHolyWater;
+    static Being<Heretic> heretic;
     private static final Map<UUID, Integer> LAST_PRAYER = new ConcurrentHashMap<>();
     private static volatile int tick;
 
@@ -93,8 +99,19 @@ public final class Hallelujah implements MiracleMod {
         Blessings.fallDamage().forPlayers().multiply(landing);
 
         // New things. Their models, textures, names and the altar's loot table are in resources/.
-        holyWater = Creation.item("holy_water", p -> new Item(p.stacksTo(16))).inTab("food_and_drinks");
+        holyWater = Creation.item("holy_water", p -> new HolyWaterItem(p.stacksTo(16))).inTab("food_and_drinks");
         altar = Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+        // Holy water in flight, drawn as the item it carries.
+        thrownHolyWater = Creation.entity("thrown_holy_water", () -> EntityType.Builder
+                        .<ThrownHolyWater>of(ThrownHolyWater::new, MobCategory.MISC)
+                        .sized(0.25f, 0.25f).clientTrackingRange(4).updateInterval(10))
+                .looksLikeItem();
+        // A zombie with opinions. Holy water hits it twice as hard.
+        heretic = Creation.entity("heretic", () -> EntityType.Builder
+                        .of(Heretic::new, MobCategory.MONSTER).sized(0.6f, 1.95f).clientTrackingRange(8))
+                .attributes(() -> Zombie.createAttributes())
+                .looksLike("zombie")
+                .spawnEgg();
 
         // Press G to pray. The client only asks; the server decides whether anything happens,
         // how much, and how often. Never let the client say how much to heal.

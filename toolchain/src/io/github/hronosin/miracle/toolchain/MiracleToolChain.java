@@ -27,8 +27,15 @@ public final class MiracleToolChain implements MiracleMod {
                         + "\nchannels, garbage): \"log\" and carry on, \"drop\" the batch, or \"kick\" the player.");
         Telepathy.batchesPerTick = (int) settings.integer("inquisition_batches_per_tick", 4,
                 "Telepathy batches a client may send in one tick before the Inquisition takes an interest.");
+        Communion.enabled = settings.flag("communion", true,
+                "Compare mods with the other side when a player joins, and turn them away with a list of what's"
+                        + "\nmissing instead of letting them crash on the first unknown block.");
+        Communion.timeoutSeconds = (int) Math.max(1, settings.integer("communion_timeout", 10,
+                "Seconds the server waits for a joining game to answer communion before deciding it's vanilla"
+                        + "\n(only when the server has mods the client must have too)."));
 
         boolean creation = false;
+        boolean beings = false;
         boolean telepathy = false;
         boolean gestures = false;
         for (Mods.Mod mod : Mods.all()) {
@@ -55,10 +62,14 @@ public final class MiracleToolChain implements MiracleMod {
             if (f.creation()) {
                 Faithful.foresee(mod.id(), Creation.KEY);
                 creation = true;
+                beings |= f.beings();
             }
             if (f.telepathy()) {
                 Faithful.foresee(mod.id(), Telepathy.KEY);
                 telepathy = true;
+            }
+            if (f.creation() || f.telepathy()) {
+                Communion.bind(mod.id(), f.creation()); // both sides need it, and in the same version
             }
             if (f.gestures()) {
                 Faithful.foresee(mod.id(), Gestures.KEY);
@@ -70,7 +81,10 @@ public final class MiracleToolChain implements MiracleMod {
         // The shared machinery, in the library's own name: one registry, one wire, one keyboard.
         boolean client = Mods.game().client();
         if (creation) {
-            Creation.install(rgct);
+            Creation.install(rgct, beings, client);
+        }
+        if (Communion.enabled) {
+            Communion.install(rgct, client);
         }
         if (telepathy) {
             Telepathy.install(rgct, client);

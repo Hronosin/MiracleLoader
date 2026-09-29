@@ -74,8 +74,44 @@ final class SelfTest {
                 && Gestures.keyName("key.mouse.middle").equals("key.mouse.middle"));
         check("unknown keys are refused", throwsWith(() -> Gestures.keyName("ANY"), "isn't a key this library knows"));
 
+        // Communion: the manifest and the judgement.
+        Communion.Manifest server = manifest(7, 3, "miracle-toolchain 0.3.0 bound", "hallelujah 0.3.0 bound",
+                "smite-only 1.0", "shared 2.0 bound");
+        Communion.Manifest back = Communion.Manifest.read(server.bytes());
+        check("communion manifest round trip", back.equals(server));
+        check("communion refuses garbage", throwsWith(() -> Communion.Manifest.read(new Scroll().writeInt(1).bytes()),
+                "not a communion manifest"));
+        check("same bound mods, same creations: welcome", Communion.judge(server,
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "hallelujah 0.3.0 bound", "shared 2.0 bound",
+                        "minimap 4.2")).isEmpty());
+        List<String> sins = Communion.judge(server,
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 1.9 bound", "chaos 0.1 bound"));
+        check("a missing mod is named", sins.contains("Missing: hallelujah 0.3.0"));
+        check("a different version is named", sins.contains("Different version: shared (yours 1.9, the server's 2.0)"));
+        check("a mod the server lacks is named", sins.contains("The server doesn't have: chaos 0.1 (remove it to join)"));
+        check("one-sided mods are nobody's business", sins.size() == 3);
+        check("same mods, different creations", Communion.judge(server,
+                manifest(8, 4, "miracle-toolchain 0.3.0 bound", "hallelujah 0.3.0 bound", "shared 2.0 bound"))
+                .getFirst().startsWith("Same mods, different creations: 4 new things in your game, 3 on the server"));
+        check("the refusal says it all", Communion.refusal(sins).startsWith("Communion refused.")
+                && Communion.refusal(sins).contains("\n  Missing: hallelujah 0.3.0"));
+        check("strangers get the list to install", Communion.strangerRefusal(server).contains("hallelujah 0.3.0")
+                && !Communion.strangerRefusal(server).contains("smite-only"));
+        check("creation fingerprints follow order", Communion.fingerprint(List.of("item a:b", "item a:c"))
+                != Communion.fingerprint(List.of("item a:c", "item a:b")));
+
         System.out.println(passed + " passed, " + failed + " failed");
         System.exit(failed == 0 ? 0 : 1);
+    }
+
+    /** "id version [bound]" per mod. */
+    private static Communion.Manifest manifest(long hash, int creations, String... mods) {
+        List<Communion.Manifest.Entry> entries = new ArrayList<>();
+        for (String m : mods) {
+            String[] p = m.split(" ");
+            entries.add(new Communion.Manifest.Entry(p[0], p[1], p.length > 2));
+        }
+        return new Communion.Manifest("0.3.0", entries, hash, creations);
     }
 
     private static void check(String what, boolean ok) {

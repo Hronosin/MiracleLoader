@@ -193,6 +193,38 @@ public final class TransformRegistry {
         return lines;
     }
 
+    /**
+     * What each mod patches, one sorted line per patch, in readable names where the baked
+     * variants gave them: what {@code miracle.lock} pins. Two identical hooks of one mod on one
+     * place read as one line with {@code x2}.
+     */
+    public synchronized Map<String, List<String>> pins() {
+        Map<String, Map<String, Integer>> counted = new TreeMap<>();
+        for (var e : byClass.entrySet()) {
+            String cls = readable.getOrDefault(e.getKey(), e.getKey());
+            for (HookPatch h : e.getValue().hooks) {
+                String nice = readable.get(e.getKey() + "#" + h.label());
+                String what = h.effects() == null
+                        ? (h.where() == Where.HEAD || h.where() == Where.RETURN ? "observes" : "effects unknown")
+                        : h.effects().isEmpty() ? "reads only"
+                        : h.effects().stream().map(k -> k.label).collect(java.util.stream.Collectors.joining(", "));
+                String line = cls + "#" + (nice != null ? nice : h.label()) + " " + h.where().label + " [" + what
+                        + (h.priority() != 0 ? ", priority " + h.priority() : "") + "]";
+                counted.computeIfAbsent(h.modId(), k -> new TreeMap<>()).merge(line, 1, Integer::sum);
+            }
+            for (RawPatch r : e.getValue().raws) {
+                counted.computeIfAbsent(r.modId(), k -> new TreeMap<>()).merge(cls + " raw [whole class]", 1, Integer::sum);
+            }
+            for (RawBytesPatch r : e.getValue().rawBytes) {
+                counted.computeIfAbsent(r.modId(), k -> new TreeMap<>()).merge(cls + " rawBytes [whole class]", 1, Integer::sum);
+            }
+        }
+        Map<String, List<String>> out = new TreeMap<>();
+        counted.forEach((mod, lines) -> out.put(mod,
+                lines.entrySet().stream().map(x -> x.getKey() + (x.getValue() > 1 ? " x" + x.getValue() : "")).toList()));
+        return out;
+    }
+
     private static String details(HookPatch h) {
         if (h.where() == Where.HEAD || h.where() == Where.RETURN) {
             return "";

@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.2.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 0.3.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -118,7 +118,7 @@ More examples live in `examples/`.
 ### Dependencies and libraries
 
 ```toml
-depends = ["miracle-toolchain>=0.2.0", "some-other-mod", "miracle>=0.2.0"]
+depends = ["miracle-toolchain>=0.3.0", "some-other-mod", "miracle>=0.3.0"]
 ```
 
 Every mod listed must be in `mods/`, at least that version if one is given, and loads before the mod that needs it. `miracle` means the loader itself. A missing or outdated dependency, or a circle of mods waiting for each other, stops the game before it starts, with every problem listed at once.
@@ -453,9 +453,10 @@ Everything you need, and several things you don't, in `miracle-toolchain.jar`. E
 | `Commandments` | `Config` | `config/<mod id>.toml`, written with defaults and comments the first time |
 | `Scripture` | `Resources` | the `data/` and `assets/` in your jar, loaded as if they were the game's own |
 | `Proclamations` | `Notices` | overlay lines, titles and broadcasts, the same on every version (the game renamed these; the packets stayed) |
-| `Creation` | `Content` | new items and blocks, with block items and creative tabs; `miracle scribe` writes their models, placeholder textures, names and loot tables |
+| `Creation` | `Content` | new items, blocks and entities, with block items, spawn eggs and creative tabs; entities look like a vanilla mob, like their item, or like your own renderer; `miracle scribe` writes models, placeholder textures, names and loot tables |
 | `Telepathy` | `Networking` | messages between client and server: per-tick batches, hashed channel names, typed `Scroll`s, and the Inquisition watching for forged packets |
 | `Gestures` | `Keybinds` | keys players can rebind in Controls, by name (`"G"`, `"LEFT_ALT"`, `"F6"`) |
+| `Communion` | `Handshake` | before a player joins, both sides compare mods; a mismatch ends with a list of what's missing instead of a crash. Runs by itself |
 
 ```java
 public final class Hallelujah implements MiracleMod {
@@ -472,8 +473,12 @@ public final class Hallelujah implements MiracleMod {
         Blessings.jumpPower().forPlayers().multiply(jump);
         Blessings.damageTaken().when(e -> e instanceof Cow).clamp(0, 2);
 
-        Creation.item("holy_water", p -> new Item(p.stacksTo(16))).inTab("food_and_drinks");
+        Creation.item("holy_water", p -> new HolyWaterItem(p.stacksTo(16))).inTab("food_and_drinks");
         Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+        Creation.entity("heretic", () -> EntityType.Builder.of(Heretic::new, MobCategory.MONSTER).sized(0.6f, 1.95f))
+                .attributes(() -> Zombie.createAttributes())
+                .looksLike("zombie")
+                .spawnEgg();
 
         // Press G: the client asks, the server decides.
         Gestures.key("pray", "G", () -> PRAYER.toServer(new Scroll().writeString("hallelujah")));
@@ -487,7 +492,7 @@ public final class Hallelujah implements MiracleMod {
 }
 ```
 
-With `depends = ["miracle-toolchain"]` in `miracle.mod.toml`. That's `examples/hallelujah`, give or take a sanctuary where only operators may break blocks and a cooldown on prayers. Its textures, models, names and the altar's loot table came from `miracle scribe item holy_water` and `miracle scribe block altar`. `miracle genesis` starts every project like this (`--ascetic` for plain RGCT).
+With `depends = ["miracle-toolchain"]` in `miracle.mod.toml`. That's `examples/hallelujah`, give or take a sanctuary where only operators may break blocks, a cooldown on prayers, and holy water you can throw (a projectile drawn as its item, which heals the living, burns the undead and hits heretics twice as hard). Its textures, models, names and loot tables came from `miracle scribe item holy_water`, `miracle scribe block altar` and `miracle scribe entity heretic --egg zombie`. `miracle genesis` starts every project like this (`--ascetic` for plain RGCT).
 
 **Why `onLaunch()`, and the Prophecy.** A handler that takes a `ServerPlayer` loads the `ServerPlayer` class the moment the handler is created, and with it `Player`, `LivingEntity` and `Entity`. Do that in `transform()` and those classes can no longer be patched, by you or anyone. So handlers are added in `onLaunch()`, when the game classes are fair game. The patches they need must exist before that, though, and that's the Prophecy: at startup the library reads the classes of every mod that depends on it (reads, not loads) and sees which omens, values and commands each one uses. It patches exactly those methods, in that mod's name.
 
@@ -502,18 +507,41 @@ Parts nobody uses patch nothing. The startup report, conflict checks and crash b
 
 **Blessings merge.** A blessing is RGCT's layers with the targets filled in: `clamp((vanilla + adds) × factors)`, so ten mods multiplying jump power all get their way, and `set` only where you mean it. The library knows where each value lives in every supported version, including where vanilla computes it twice: a player's speed comes from a different method than a mob's, and `movementSpeed` covers both.
 
+**Communion, briefly.** A mod that creates things or talks over Telepathy has to be on both sides, in the same version; the library works that out at startup, and checks it when a player joins, during the game's configuration phase. What the player sees when it doesn't match:
+
+```
+Communion refused. Your mods and the server's don't match:
+  Missing: hallelujah 0.3.0
+
+No miracle today.
+```
+
+A vanilla client meeting a server with such mods gets the list of what to install; a modded client meeting a server that never heard of Miracle leaves on its own, saying which of its mods need the other side. Server-only mods (commands, omens, blessings) don't count: vanilla clients still join those servers. `Communion.bothSides()` and `eitherSide()` adjust it, and `Communion.modsOf(player)` tells the server what a player has.
+
 **Telepathy, briefly.** Each side collects what it has to say during a tick and sends it as one batch, in one custom payload packet, at the end of the tick. Channel names never cross the wire, only a hash of them; what crosses is data, never code, and a message can only reach a handler the receiving side registered itself. The server's Inquisition expects a client's batches numbered 1, 2, 3... and a few per tick at most; anything else (replayed, forged, flooded, garbage, unknown channels) is logged, and dropped or kicked as `config/miracle-toolchain.toml` says (`inquisition = "drop"`). It's a tripwire for crude packet injectors, not an anti-cheat: the server should still check everything it's told.
 
-Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. Players' eyes are still needed for textures, titles and meters.
+Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. For 0.3, both versions again: heretics summoned, hit by thrown holy water (thrown by the item's real right-click code, too), killed, looted, saved with the world and loaded back; on the client, the heretic drawn by the zombie renderer and the holy water by the thrown-item renderer, the spawn egg in its tab. On a local server, with 26.3 and 1.21.11 clients: matching mods walk in (and Telepathy still works), a client missing a mod, a client with a mod the server lacks, a client without the library, and a client facing a server without it are each turned away with the right lines. Players' eyes are still needed for textures, titles and meters.
 
 ## Lifecycle
 
 1. Find mods in `mods/`, check their `depends`, and order them: dependencies first, otherwise by id, so load order never depends on the file system's mood.
    Read the game version from `version.json`, and put each mod's baked variant for it (if any) in front of the mod's own classes.
 2. Call `transform(Rgct)` on every mod (libraries without an entrypoint have none). MiracleToolChain's Prophecy runs here.
-3. Freeze RGCT, print the report of who layered what onto which method, and warn about possible conflicts.
+3. Freeze RGCT, print the report of who layered what onto which method, and warn about possible conflicts. Compare with `miracle.lock` (below).
 4. Call `onLaunch()` on every mod. Game classes may be used from here on.
 5. Run the game's `main`. Classes get patched as they load.
+
+### `miracle.lock`
+
+After step 3 the loader writes down what every mod patches, one line per patch, in `miracle.lock` next to `mods/`, and every start compares against it. Commit it with your modpack or server, and a mod update that starts patching something new, stops, or starts cancelling where it used to only read, shows up as a diff, in the log and in `git diff`:
+
+```
+[Miracle/WARN] miracle.lock: what the mods patch has changed since it was pinned:
+    miracle-toolchain 0.3.0 (same version, different patches: a setting?)
+      + net.minecraft.util.Util#fetchChoiceType(...) intercept@HEAD [cancels with a value]
+```
+
+`-Dmiracle.lock=update` (the default) prints and pins the new state; `strict` refuses to start until someone deletes the file or starts once with `update`; `off` skips it. Patches a library makes for a mod are listed under that mod.
 
 ## Roadmap
 
@@ -527,14 +555,16 @@ Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar 
 - [x] OSHI: fallback functions, and readable API jars to compile them against
 - [ ] Yarn dictionaries
 - [x] Merge rules for well-known game values (MiracleToolChain's Blessings)
-- [ ] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
+- [x] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [ ] Direct calls instead of the dispatcher when a method has a single hook
 - [x] Mod dependencies in `miracle.mod.toml`, library mods, patching on behalf of dependents
 - [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
 - [ ] MiracleToolChain: `ide`, `ascend` (publish)
 - [x] MiracleToolChain library: events, well-known values, commands, configs, data and assets
 - [x] MiracleToolChain library: registries (items, blocks), networking, keybinds
-- [ ] MiracleToolChain library: block entities, menus, entities, custom rendering
+- [x] MiracleToolChain library: entities (attributes, spawn eggs, vanilla or custom renderers)
+- [x] MiracleToolChain library: Communion, a join-time mod check with readable refusals
+- [ ] MiracleToolChain library: block entities, menus, custom models, natural spawning
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 
 ## License
