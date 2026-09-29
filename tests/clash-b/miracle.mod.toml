@@ -1,0 +1,2 @@
+id = "clash-b"
+entrypoint = "test.clashb.ClashB"

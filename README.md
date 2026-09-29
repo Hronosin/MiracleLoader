@@ -10,7 +10,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there will be **MiracleToolChain**: a separate library mod with events, registries and the rest of the Forge-style comforts. It will be an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.1.0-mvp.** Runs on real Minecraft 26.2: the client through Prism Launcher and the dedicated server. RGCT hooks can observe a method, change its arguments and return value, or cancel it outright; raw ClassFile transforms are there for everything else.
+> **Status: 0.1.0-mvp.** Runs on real Minecraft 26.2: the client through Prism Launcher and the dedicated server. RGCT hooks can observe a method, change its arguments and return value, or cancel it outright, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. Raw ClassFile transforms are there for everything else.
 
 ---
 
@@ -104,23 +104,35 @@ The same builder also assembles the client's vanilla *resource* pack, so the hoo
 
 On a dedicated 26.2 server the recipe count at startup goes from 1585 to 1586, and stays there after `/reload`.
 
-### `examples/super-jump`
+### `examples/super-jump` + `examples/sprint-jump`: two mods, one method
 
-Players jump 1.5x as fast, about 2.6 blocks high: over a 2-block wall, and still no fall damage on the way down. Mobs are unaffected. The whole mod:
+Both hook `LivingEntity#getJumpPower`. super-jump multiplies players' jump power by 1.5; sprint-jump adds 0.1 while sprinting. Neither overwrites the other: RGCT merges them into `(vanilla + 0.1) × 1.5`, in whatever order they load.
 
 ```java
-rgct.target("net.minecraft.world.entity.LivingEntity")
-    .method("getJumpPower", "()F")
-    .interceptReturn(ctx -> {
-        if (ctx.self() instanceof Player) {
-            ctx.setReturnValue((float) ctx.returnValue() * 1.5f);
-        }
-    });
+// super-jump
+.interceptReturn(ctx -> {
+    if (ctx.self() instanceof Player) ctx.multiplyReturnValue(1.5f);
+})
+// sprint-jump
+.interceptReturn(ctx -> {
+    if (ctx.self() instanceof Player p && p.isSprinting()) ctx.addToReturnValue(0.1f);
+})
 ```
+
+Easy to check in game:
+
+| installed | jump height |
+|---|---|
+| vanilla | 1.25 blocks |
+| sprint-jump, sprinting | 1.84 |
+| super-jump | 2.59 (over a 2-block wall, no fall damage) |
+| both, sprinting | 3.79 (onto a 3-block wall; landing on flat ground costs half a heart) |
+
+Only with both mods can you sprint-jump onto a 3-block wall.
 
 ### Compiling against Minecraft
 
-Both mods above compile directly against the Minecraft client. `build.sh` finds the newest 26.x client jar Prism has downloaded, and reads Prism's metadata for that version to put exactly its libraries on the class path (Minecraft's classes extend Brigadier, DataFixerUpper and friends, so javac needs them too). Jars left over from other instances, like an old Forge, stay out. Elsewhere: `MC_JAR=/path/to/client.jar MC_LIBS=/folder/with/that/versions/jars ./build.sh`.
+The mods above compile directly against the Minecraft client. `build.sh` finds the newest 26.x client jar Prism has downloaded, and reads Prism's metadata for that version to put exactly its libraries on the class path (Minecraft's classes extend Brigadier, DataFixerUpper and friends, so javac needs them too). Jars left over from other instances, like an old Forge, stay out. Elsewhere: `MC_JAR=/path/to/client.jar MC_LIBS=/folder/with/that/versions/jars ./build.sh`.
 
 ## RGCT
 
@@ -143,31 +155,69 @@ The hook gets `self`, the object the method was called on. It is `null` for stat
 
 ### Intercepting: `interceptHead` / `interceptReturn`
 
-The hook gets a `HookContext`:
+The hook gets a `HookContext`. It can read the call, and ask for **effects**:
 
-| | at the head | at a return |
+| | `interceptHead` | `interceptReturn` |
 |---|---|---|
-| `self()` | yes (`null` if static) | yes |
-| `arg(i)` / `setArg(i, v)` | changes what the method body sees | read the arguments; changes only affect later hooks |
-| `returnValue()` / `setReturnValue(v)` | no | yes |
-| `cancel()` / `cancel(value)` | skips the method (and its return hooks) | no |
+| read | `self()`, `arg(i)` | `self()`, `arg(i)`, `returnValue()` |
+| set | `setArg(i, v)` | `setReturnValue(v)` |
+| stack | `addToArg`, `multiplyArg`, `clampArg` | `addToReturnValue`, `multiplyReturnValue`, `clampReturnValue` |
+| skip | `cancel()`, `cancel(value)` | |
 
 ```java
 // (method names are illustrative)
-.method("damage").interceptHead(ctx -> ctx.setArg(0, (float) ctx.arg(0) / 2f)) // half damage
-.method("explode").interceptHead(ctx -> ctx.cancel())                          // no explosions
-.method("getMaxHealth").interceptReturn(ctx -> ctx.setReturnValue(40f))        // double health
+.method("damage").interceptHead(ctx -> ctx.multiplyArg(0, 0.5))                 // half damage
+.method("explode").interceptHead(ctx -> ctx.cancel())                           // no explosions
+.method("getMaxHealth").interceptReturn(ctx -> ctx.addToReturnValue(20))        // +10 hearts
 ```
 
+### Layers: many mods, one method
+
+This is the part MiracleLoader exists for. Hooks don't change the game directly. **Every hook on a method sees the same snapshot**, the values as vanilla produced them, and only declares what it wants. Once all hooks have run, RGCT merges their effects by fixed rules and applies the result once:
+
+1. **set** replaces the base value.
+2. **addTo** amounts are summed onto it.
+3. **multiply** factors are all multiplied in.
+4. **clamp** ranges are intersected and applied last.
+5. **cancel**: if any mod cancels, the method doesn't run.
+
+So `result = clamp((base + Σ adds) × Π factors)`, and it never depends on which mod loaded first. Three mods that give ×2, ×1.5 and +0.1 to jump power always give `(v + 0.1) × 3`.
+
+**Conflicts.** Adding and multiplying always stack. Setting is exclusive, so when several mods `set` the same value (or `cancel` with a value):
+
+- if they set the same value, fine;
+- otherwise the highest `priority` wins: `.method("motd").priority(10).interceptReturn(...)`;
+- a tie with different values stops the game with an error naming every mod involved:
+
+```
+RgctConflictException: RGCT conflict at Player#motd()Ljava/lang/String;, return value (priority 0):
+'clash-a' sets "A", 'clash-b' sets "B". Mods that set the same value must agree, or one of them
+needs a higher priority
+```
+
+Crashing sounds harsh, but the alternative is one mod silently not working and nobody knowing why.
+
+**Checked before the game starts.** RGCT reads each hook's bytecode at startup (following calls into helper methods of the same class) to see which effects it can produce. The startup report shows it next to every hook, and possible conflicts are flagged before a single block is rendered:
+
+```
+[Miracle]   net.minecraft.world.entity.LivingEntity
+[Miracle]     getJumpPower()F   intercept@RETURN  <- sprint-jump  [modifies return]
+[Miracle]     getJumpPower()F   intercept@RETURN  <- super-jump  [modifies return]
+[Miracle/WARN] RGCT: mods 'clash-a', 'clash-b' may all set its return value (...#motd) at priority 0.
+               Fine while they agree; if they ever don't, the game stops with a conflict error.
+```
+
+It's a warning, not an error, because hooks usually set things conditionally (only for players, only while sprinting...) and two mods may never actually disagree.
+
+Details:
+
 - Primitives travel boxed: an `int` argument is an `Integer`, a `float` return is a `Float`. Plain Java casts unbox them: `(float) ctx.returnValue()`.
-- Setting the wrong type (a `Double` where the game expects a `float`) fails right away with an error that names the method, the expected type and your mod, instead of a mysterious crash deep inside the game.
-- When several mods intercept the same method, their hooks run in mod-id order and each sees what the previous ones changed. Layered merging will replace this later without changing the API.
-- Interception costs an `Object[]` of boxed arguments per call. Fine for most methods; for something called millions of times per tick, prefer observing.
-- Not supported on constructor heads.
+- `set` needs exactly the right type, and a wrong one (a `Double` where the game wants a `float`) fails right away with an error that names the method, the expected type and your mod. The stacking effects take any `Number`; integral results are rounded to the nearest value.
+- Interception boxes the arguments into an `Object[]` on every call. Fine for most methods; for something called millions of times per tick, prefer observing.
+- Not supported on constructor heads. Raw transforms are outside the layer system entirely.
 
 ### General
 
-- Every hook goes through a single dispatcher. That's where layers and effect merging will grow later (see the roadmap) without breaking the API.
 - If a hook throws, the exception keeps its type, but gets a note attached saying which mod is to blame.
 - If a target method doesn't exist, RGCT warns you. The mod was most likely built for another game version.
 
@@ -179,7 +229,7 @@ The hook gets a `HookContext`:
 
 1. Find mods in `mods/` and sort them by id, so load order never depends on the file system's mood.
 2. Call `transform(Rgct)` on every mod.
-3. Freeze RGCT and print the report of who layered what.
+3. Freeze RGCT, print the report of who layered what onto which method, and warn about possible conflicts.
 4. Call `onLaunch()` on every mod.
 5. Run the game's `main`. Classes get patched as they load.
 
@@ -187,10 +237,11 @@ The hook gets a `HookContext`:
 
 - [x] Run the real 26.x client and server, Prism Launcher integration
 - [x] Hook access to arguments and return values, cancellation
-- [ ] **Layers**: hooks don't mutate the game, they return effects that merge by rules, so the result doesn't depend on mod order
-- [ ] Merge rules: declared by the target, by the mod, or inferred by heuristics from the hook's bytecode
-- [ ] `miracle.lock`: inferred rules get pinned, modpacks stay reproducible
-- [ ] Priorities as a tie-breaker, clear conflict errors
+- [x] **Layers**: hooks declare effects that merge by fixed rules, so the result doesn't depend on mod order
+- [x] Priorities as a tie-breaker, clear conflict errors naming the mods
+- [x] Startup conflict check from the hooks' bytecode
+- [ ] Merge rules declared per target (e.g. by MiracleToolChain for well-known game values)
+- [ ] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [ ] Direct calls instead of the dispatcher when a method has a single hook
 - [ ] Mod dependencies in `miracle.mod.toml`
 - [ ] **MiracleToolChain**: events, registries, networking, configs

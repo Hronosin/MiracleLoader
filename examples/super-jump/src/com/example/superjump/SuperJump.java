@@ -8,7 +8,8 @@ import net.minecraft.world.entity.player.Player;
  * Players jump higher. Mobs stay grounded.
  *
  * <p>LivingEntity#jumpFromGround asks getJumpPower() how hard to jump. We let it answer, then
- * multiply the answer for players. 1.5x jump speed is about 2.5 blocks of height: enough to
+ * multiply the answer for players. Because it's a multiply effect, it stacks with other mods
+ * (see sprint-jump) instead of overwriting them. 1.5x jump speed is about 2.5 blocks of height: enough to
  * clear a 2-block wall, not enough to take fall damage on the way down.
  */
 public final class SuperJump implements MiracleMod {
@@ -21,7 +22,8 @@ public final class SuperJump implements MiracleMod {
                 .method("getJumpPower", "()F")
                 .interceptReturn(ctx -> {
                     if (ctx.self() instanceof Player) {
-                        ctx.setReturnValue((float) ctx.returnValue() * MULTIPLIER);
+                        // multiply, not set: stacks with any other mod that touches jump power
+                        ctx.multiplyReturnValue(MULTIPLIER);
                     }
                 });
     }

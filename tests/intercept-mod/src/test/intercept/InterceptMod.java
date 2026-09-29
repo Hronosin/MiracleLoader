@@ -12,12 +12,12 @@ public final class InterceptMod implements MiracleMod {
         rgct.target("net.minecraft.world.entity.player.Player")
                 // float return value
                 .method("getJumpPower")
-                .interceptReturn(ctx -> ctx.setReturnValue((float) ctx.returnValue() * 2f))
+                .interceptReturn(ctx -> ctx.multiplyReturnValue(2f))
                 .and()
                 // change a primitive and a reference argument
                 .method("damage")
                 .interceptHead(ctx -> {
-                    ctx.setArg(0, (float) ctx.arg(0) / 2f);
+                    ctx.multiplyArg(0, 0.5);
                     ctx.setArg(1, "reduced " + ctx.arg(1));
                 })
                 .and()
@@ -31,12 +31,12 @@ public final class InterceptMod implements MiracleMod {
                 // long/double slots, boolean arg, double return
                 .method("move")
                 .interceptHead(ctx -> {
-                    ctx.setArg(0, (long) ctx.arg(0) * 10L);
+                    ctx.multiplyArg(0, 10);
                     ctx.setArg(2, true);
                 })
                 .interceptReturn(ctx -> {
                     System.out.println("[intercept-mod] move args at return: " + ctx.arg(0) + " " + ctx.arg(3));
-                    ctx.setReturnValue((double) ctx.returnValue() + 0.25);
+                    ctx.addToReturnValue(0.25);
                 })
                 .and()
                 // static method, reference return
@@ -53,7 +53,7 @@ public final class InterceptMod implements MiracleMod {
                 .and()
                 // static int return
                 .method("ticks")
-                .interceptReturn(ctx -> ctx.setReturnValue((int) ctx.returnValue() + 100))
+                .interceptReturn(ctx -> ctx.addToReturnValue(100))
                 .and()
                 // not supported: should warn and be skipped
                 .method("<init>")

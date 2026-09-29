@@ -13,7 +13,7 @@ import java.lang.classfile.ClassTransform;
  *
  * rgct.target("net.minecraft.world.entity.LivingEntity")
  *     .method("getJumpPower", "()F")
- *     .interceptReturn(ctx -> ctx.setReturnValue((float) ctx.returnValue() * 1.5f));
+ *     .interceptReturn(ctx -> ctx.multiplyReturnValue(1.5f));
  * }</pre>
  */
 public final class Rgct {
@@ -76,6 +76,7 @@ public final class Rgct {
         private final ClassTarget owner;
         private final String name;
         private final String descriptor;
+        private int priority;
 
         private MethodTarget(ClassTarget owner, String name, String descriptor) {
             this.owner = owner;
@@ -83,34 +84,44 @@ public final class Rgct {
             this.descriptor = descriptor;
         }
 
-        /** Runs the hook before the first instruction of the method. */
-        public MethodTarget atHead(Hook hook) {
-            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.HEAD, hook);
+        /**
+         * Priority for the intercept hooks registered after this call (default 0). Only matters
+         * when mods {@code set} the same value or cancel with different values: the highest
+         * priority wins. Stacking effects (addTo, multiply, clamp) always all apply.
+         */
+        public MethodTarget priority(int priority) {
+            this.priority = priority;
             return this;
         }
 
-        /** Runs the hook before every normal return (not on exceptions). */
+        /** Runs the hook before the first instruction of the method. Observes only. */
+        public MethodTarget atHead(Hook hook) {
+            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.HEAD, hook, 0);
+            return this;
+        }
+
+        /** Runs the hook before every normal return (not on exceptions). Observes only. */
         public MethodTarget atReturn(Hook hook) {
-            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.RETURN, hook);
+            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.RETURN, hook, 0);
             return this;
         }
 
         /**
-         * Runs the hook before the first instruction, with access to the arguments. It can change
-         * them ({@link HookContext#setArg}) or skip the method entirely ({@link HookContext#cancel}).
-         * Not supported on constructors.
+         * Runs the hook before the first instruction. It sees the original arguments and can ask
+         * to change them or to skip the method; see {@link HookContext} for how requests from
+         * several mods are merged. Not supported on constructors.
          */
         public MethodTarget interceptHead(ContextHook hook) {
-            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.INTERCEPT_HEAD, hook);
+            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.INTERCEPT_HEAD, hook, priority);
             return this;
         }
 
         /**
-         * Runs the hook before every normal return, with access to the arguments and the return
-         * value, which it can replace ({@link HookContext#setReturnValue}).
+         * Runs the hook before every normal return. It sees the arguments and the value vanilla
+         * returns, and can ask to change that value; see {@link HookContext}.
          */
         public MethodTarget interceptReturn(ContextHook hook) {
-            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.INTERCEPT_RETURN, hook);
+            registry.addHook(owner.className, modId, name, descriptor, TransformRegistry.Where.INTERCEPT_RETURN, hook, priority);
             return this;
         }
 

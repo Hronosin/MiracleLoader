@@ -47,7 +47,9 @@ public final class TransformRegistry {
         }
     }
 
-    record HookPatch(String modId, String method, String descriptor, Where where, int hookId) {
+    /** {@code effects} is null for observe hooks and for intercept hooks RGCT couldn't read. */
+    record HookPatch(String modId, String method, String descriptor, Where where, int hookId,
+                     int priority, Set<EffectScan.Kind> effects) {
         boolean matches(MethodModel mm) {
             return mm.methodName().equalsString(method)
                     && (descriptor == null || mm.methodType().equalsString(descriptor));
@@ -67,9 +69,8 @@ public final class TransformRegistry {
     }
 
     private static final ClassDesc DISPATCH = ClassDesc.of(HookDispatch.class.getName());
-    private static final ClassDesc CONTEXT = ClassDesc.of(HookContext.class.getName());
     private static final MethodTypeDesc FIRE = MethodTypeDesc.ofDescriptor("(ILjava/lang/Object;)V");
-    private static final MethodTypeDesc INTERCEPT_HEAD = MethodTypeDesc.of(CONTEXT,
+    private static final MethodTypeDesc INTERCEPT_HEAD = MethodTypeDesc.of(ConstantDescs.CD_Object,
             ConstantDescs.CD_int, ConstantDescs.CD_Object, ConstantDescs.CD_Object.arrayType());
     private static final MethodTypeDesc INTERCEPT_RETURN = MethodTypeDesc.of(ConstantDescs.CD_Object,
             ConstantDescs.CD_int, ConstantDescs.CD_Object, ConstantDescs.CD_Object.arrayType(), ConstantDescs.CD_Object);
@@ -90,7 +91,7 @@ public final class TransformRegistry {
     }
 
     synchronized void addHook(String className, String modId, String method, String descriptor,
-                              Where where, Object hook) {
+                              Where where, Object hook, int priority) {
         checkOpen();
         if (hook == null) {
             throw new IllegalArgumentException("hook is null");
@@ -102,8 +103,10 @@ public final class TransformRegistry {
             MethodTypeDesc.ofDescriptor(descriptor); // fail now on a typo, not at class load
         }
         String at = className + "#" + method + (descriptor == null ? "" : descriptor) + " " + where.label;
-        int id = HookDispatch.register(modId, at, hook);
-        patchesFor(className).hooks.add(new HookPatch(modId, method, descriptor, where, id));
+        int id = HookDispatch.register(modId, at, hook, priority);
+        boolean intercept = where == Where.INTERCEPT_HEAD || where == Where.INTERCEPT_RETURN;
+        Set<EffectScan.Kind> effects = intercept ? EffectScan.scan(hook) : null;
+        patchesFor(className).hooks.add(new HookPatch(modId, method, descriptor, where, id, priority, effects));
     }
 
     synchronized void addRaw(String className, String modId, ClassTransform transform) {
@@ -148,14 +151,78 @@ public final class TransformRegistry {
         lines.add("RGCT: patches on " + byClass.size() + " class(es):");
         for (var e : new TreeMap<>(byClass).entrySet()) {
             lines.add("  " + e.getKey());
-            for (HookPatch h : e.getValue().hooks) {
-                lines.add(String.format("    %-28s %-17s <- %s", h.label(), h.where().label, h.modId()));
+            // Grouped by method, so everything layered onto one method sits together.
+            List<HookPatch> sorted = new ArrayList<>(e.getValue().hooks);
+            sorted.sort(java.util.Comparator.comparing(HookPatch::method)
+                    .thenComparing(h -> h.descriptor() == null ? "" : h.descriptor())
+                    .thenComparing(HookPatch::where)
+                    .thenComparing(HookPatch::modId));
+            for (HookPatch h : sorted) {
+                lines.add(String.format("    %-28s %-17s <- %s%s", h.label(), h.where().label, h.modId(), details(h)));
             }
             for (RawPatch r : e.getValue().raws) {
                 lines.add(String.format("    %-28s %-17s <- %s (raw: you're on your own)", "<whole class>", "", r.modId()));
             }
         }
         return lines;
+    }
+
+    private static String details(HookPatch h) {
+        if (h.where() == Where.HEAD || h.where() == Where.RETURN) {
+            return "";
+        }
+        String what;
+        if (h.effects() == null) {
+            what = "effects unknown (not a lambda)";
+        } else if (h.effects().isEmpty()) {
+            what = "reads only";
+        } else {
+            what = h.effects().stream().map(k -> k.label).collect(java.util.stream.Collectors.joining(", "));
+        }
+        return "  [" + what + (h.priority() != 0 ? ", priority " + h.priority() : "") + "]";
+    }
+
+    /**
+     * Possible conflicts, found before the game starts: several mods that may {@code set} the same
+     * value (or cancel with a value) at the same priority. Only a warning, because hooks usually
+     * set things conditionally; if they ever actually disagree, the game stops with a conflict
+     * error naming them.
+     */
+    public List<String> lint() {
+        List<String> warnings = new ArrayList<>();
+        for (var e : new TreeMap<>(byClass).entrySet()) {
+            Map<String, List<HookPatch>> byMethod = new TreeMap<>();
+            for (HookPatch h : e.getValue().hooks) {
+                if (h.effects() != null) {
+                    byMethod.computeIfAbsent(h.method(), k -> new ArrayList<>()).add(h);
+                }
+            }
+            for (var m : byMethod.entrySet()) {
+                String label = e.getKey() + "#" + m.getKey();
+                clash(warnings, m.getValue(), Where.INTERCEPT_RETURN, EffectScan.Kind.SETS_RETURN, label, "set its return value");
+                clash(warnings, m.getValue(), Where.INTERCEPT_HEAD, EffectScan.Kind.SETS_ARGS, label, "set its arguments");
+                clash(warnings, m.getValue(), Where.INTERCEPT_HEAD, EffectScan.Kind.CANCELS_WITH_VALUE, label, "cancel it with a value");
+            }
+        }
+        return warnings;
+    }
+
+    private static void clash(List<String> out, List<HookPatch> hooks, Where where, EffectScan.Kind kind,
+                              String label, String doing) {
+        Map<Integer, java.util.Set<String>> modsByPriority = new TreeMap<>();
+        for (HookPatch h : hooks) {
+            if (h.where() == where && h.effects().contains(kind)) {
+                modsByPriority.computeIfAbsent(h.priority(), p -> new java.util.TreeSet<>()).add(h.modId());
+            }
+        }
+        modsByPriority.forEach((priority, mods) -> {
+            if (mods.size() > 1) {
+                out.add("RGCT: mods " + String.join(", ", mods.stream().map(x -> "'" + x + "'").toList())
+                        + " may all " + doing + " (" + label + ") at priority " + priority
+                        + ". Fine while they agree; if they ever don't, the game stops with a conflict error."
+                        + " Give one of them a higher priority to decide.");
+            }
+        });
     }
 
     /**
@@ -371,16 +438,15 @@ public final class TransformRegistry {
             loadSelf(b, selfAvailableAtHead());
             b.aload(argsSlot);
             b.invokestatic(DISPATCH, "interceptHead", INTERCEPT_HEAD);
-            // stack: ctx
+            // stack: result (PROCEED, or the value to return because the method was cancelled)
             b.dup();
-            b.invokevirtual(CONTEXT, "isCancelled", MethodTypeDesc.of(ConstantDescs.CD_boolean));
+            b.getstatic(DISPATCH, "PROCEED", ConstantDescs.CD_Object);
             Label proceed = b.newLabel();
-            b.ifeq(proceed);
+            b.if_acmpeq(proceed);
             if (shape.returnsVoid()) {
                 b.pop();
                 b.return_();
             } else {
-                b.invokevirtual(CONTEXT, "cancelReturnValue", MethodTypeDesc.of(ConstantDescs.CD_Object));
                 unboxOrCast(b, shape.returnType());
                 b.return_(TypeKind.from(shape.returnType()));
             }

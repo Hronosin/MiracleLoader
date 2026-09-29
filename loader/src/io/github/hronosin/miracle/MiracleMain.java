@@ -98,6 +98,7 @@ public final class MiracleMain {
         }
         rgct.freeze();
         rgct.report().forEach(Log::info);
+        rgct.lint().forEach(Log::warn);
 
         List<String> tooEarly = new ArrayList<>();
         for (String cls : rgct.targetedClasses()) {

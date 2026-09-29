@@ -127,7 +127,7 @@ GAME_DIR="$INSTANCE/minecraft"
 mkdir -p "$GAME_DIR/mods"
 cp build/title-mod.jar "$GAME_DIR/mods/"
 extra=""
-for m in dirt-diamonds super-jump; do
+for m in dirt-diamonds super-jump sprint-jump; do
     if [ -f "build/$m.jar" ]; then
         cp "build/$m.jar" "$GAME_DIR/mods/"
         extra="$extra + $m.jar"

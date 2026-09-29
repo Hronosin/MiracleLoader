@@ -1,0 +1,2 @@
+id = "stack-b"
+entrypoint = "test.stackb.StackB"

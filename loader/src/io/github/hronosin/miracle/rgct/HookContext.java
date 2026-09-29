@@ -1,28 +1,57 @@
 package io.github.hronosin.miracle.rgct;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * What an intercepting hook sees and can change.
+ * What an intercepting hook sees, and the effects it asks for.
+ *
+ * <h2>Layers</h2>
+ * Hooks don't change the game directly. Every hook on a method sees the same snapshot (the
+ * arguments and return value as vanilla produced them) and declares <em>effects</em>. Once all
+ * hooks have run, RGCT merges the effects by fixed rules and applies the result once:
+ *
+ * <ol>
+ *   <li><b>set</b> replaces the base value. Several mods may set it only if they agree, or if one
+ *       has a higher {@code priority}. Otherwise: a conflict error naming both mods.</li>
+ *   <li><b>addTo</b> amounts are summed onto the base.</li>
+ *   <li><b>multiply</b> factors are all multiplied in.</li>
+ *   <li><b>clamp</b> ranges are intersected and applied last.</li>
+ *   <li><b>cancel</b> (at the head) wins if any mod asks for it.</li>
+ * </ol>
+ *
+ * So the result never depends on which mod happens to load first: two mods that multiply jump
+ * power by 1.5 and 2 give 3x, whatever their order.
  *
  * <p>Primitive values travel boxed: an {@code int} argument is an {@link Integer}, a
- * {@code float} return value is a {@link Float}. Java's casts do the unboxing for you:
- * {@code (float) ctx.returnValue()}. Setting a value of the wrong box type fails immediately
- * with an error naming your mod, instead of a confusing crash inside the game.
- *
- * <p>When several mods intercept the same method, their hooks run in mod-id order and each one
- * sees what the previous ones changed. (That is the plan for today; layered merging comes later
- * and will keep this API.)
+ * {@code float} return value is a {@link Float}. Java's casts unbox them:
+ * {@code (float) ctx.returnValue()}. {@code set} needs exactly the right box type;
+ * {@code addTo}/{@code multiply}/{@code clamp} take any {@link Number}. Integral results are
+ * rounded to the nearest value.
  */
 public final class HookContext {
+
+    enum Op { SET, ADD, MULTIPLY, CLAMP, CANCEL }
+
+    /** One requested change. {@code slot} is an argument index or {@link #RETURN}. */
+    record Effect(Op op, int slot, Object a, Object b, int hookId, String modId, int priority) {
+    }
+
+    static final int RETURN = -1;
 
     private final Object self;
     private final Object[] args;
     private final String argKinds;
     private final char returnKind;
     private final boolean atHead;
+    private final Object returnValue;
     private final String methodLabel;
 
-    private Object returnValue;
-    private boolean cancelled;
+    final List<Effect> effects = new ArrayList<>();
+
+    private int hookId = -1;
+    private String modId = "?";
+    private int priority;
 
     HookContext(Object self, Object[] args, String argKinds, char returnKind, boolean atHead,
                 Object returnValue, String methodLabel) {
@@ -35,9 +64,16 @@ public final class HookContext {
         this.methodLabel = methodLabel;
     }
 
-    /**
-     * The object the method was called on; {@code null} for static methods.
-     */
+    /** Called by the dispatcher before each hook, so effects know whose they are. */
+    void enter(int hookId, String modId, int priority) {
+        this.hookId = hookId;
+        this.modId = modId;
+        this.priority = priority;
+    }
+
+    // --- the snapshot ---------------------------------------------------------------------------
+
+    /** The object the method was called on; {@code null} for static methods. */
     public Object self() {
         return self;
     }
@@ -46,20 +82,10 @@ public final class HookContext {
         return args.length;
     }
 
-    /** Argument {@code i} (0-based, {@code this} not counted). Primitives come boxed. */
+    /** Argument {@code i} (0-based, {@code this} not counted), as the method received it. */
     public Object arg(int i) {
         checkIndex(i);
         return args[i];
-    }
-
-    /**
-     * Replaces argument {@code i}. At the head this changes what the method body sees. At a
-     * return it only changes what later hooks see.
-     */
-    public void setArg(int i, Object value) {
-        checkIndex(i);
-        checkType(argKinds.charAt(i), value, "argument " + i);
-        args[i] = value;
     }
 
     /** True at the method head, false at a return. */
@@ -67,7 +93,7 @@ public final class HookContext {
         return atHead;
     }
 
-    /** The value the method is about to return. Only available at a return. */
+    /** The value vanilla is about to return, before any mod's effects. Only at a return. */
     public Object returnValue() {
         if (atHead) {
             throw new IllegalStateException(methodLabel + ": there is no return value at the head yet. "
@@ -76,61 +102,156 @@ public final class HookContext {
         return returnValue;
     }
 
-    /** Replaces the value the method returns. Only available at a return. */
-    public void setReturnValue(Object value) {
-        if (atHead) {
-            throw new IllegalStateException(methodLabel + ": setReturnValue() only works at a return. "
-                    + "To skip the method from its head, use cancel(value).");
-        }
-        if (returnKind == 'V') {
-            throw new IllegalStateException(methodLabel + " returns void, there is nothing to set");
-        }
-        checkType(returnKind, value, "return value");
-        returnValue = value;
+    // --- effects on arguments (head only) --------------------------------------------------------
+
+    /** Replaces argument {@code i}. */
+    public void setArg(int i, Object value) {
+        requireHead("setArg");
+        checkIndex(i);
+        checkType(argKinds.charAt(i), value, "argument " + i);
+        add(Op.SET, i, value, null);
     }
 
-    /** Skips the rest of a void method. Only at the head. */
+    /** Adds {@code amount} to numeric argument {@code i}. Stacks with other mods. */
+    public void addToArg(int i, Number amount) {
+        requireHead("addToArg");
+        checkIndex(i);
+        requireNumeric(argKinds.charAt(i), "argument " + i, amount);
+        add(Op.ADD, i, amount, null);
+    }
+
+    /** Multiplies numeric argument {@code i} by {@code factor}. Stacks with other mods. */
+    public void multiplyArg(int i, Number factor) {
+        requireHead("multiplyArg");
+        checkIndex(i);
+        requireNumeric(argKinds.charAt(i), "argument " + i, factor);
+        add(Op.MULTIPLY, i, factor, null);
+    }
+
+    /** Keeps numeric argument {@code i} within [min, max]; either bound may be null. */
+    public void clampArg(int i, Number min, Number max) {
+        requireHead("clampArg");
+        checkIndex(i);
+        checkClamp(argKinds.charAt(i), "argument " + i, min, max);
+        add(Op.CLAMP, i, min, max);
+    }
+
+    // --- effects on the return value (return only) ------------------------------------------------
+
+    /** Replaces the return value. */
+    public void setReturnValue(Object value) {
+        requireReturn("setReturnValue");
+        checkType(returnKind, value, "return value");
+        add(Op.SET, RETURN, value, null);
+    }
+
+    /** Adds {@code amount} to a numeric return value. Stacks with other mods. */
+    public void addToReturnValue(Number amount) {
+        requireReturn("addToReturnValue");
+        requireNumeric(returnKind, "return value", amount);
+        add(Op.ADD, RETURN, amount, null);
+    }
+
+    /** Multiplies a numeric return value by {@code factor}. Stacks with other mods. */
+    public void multiplyReturnValue(Number factor) {
+        requireReturn("multiplyReturnValue");
+        requireNumeric(returnKind, "return value", factor);
+        add(Op.MULTIPLY, RETURN, factor, null);
+    }
+
+    /** Keeps a numeric return value within [min, max]; either bound may be null. */
+    public void clampReturnValue(Number min, Number max) {
+        requireReturn("clampReturnValue");
+        checkClamp(returnKind, "return value", min, max);
+        add(Op.CLAMP, RETURN, min, max);
+    }
+
+    // --- cancelling (head only) -----------------------------------------------------------------
+
+    /** Skips a void method. If any mod cancels, the method doesn't run. */
     public void cancel() {
+        requireHead("cancel");
         if (returnKind != 'V') {
             throw new IllegalStateException(methodLabel + " returns a value: use cancel(value)");
         }
-        cancelAt();
+        add(Op.CANCEL, RETURN, null, null);
     }
 
-    /** Skips the rest of the method and returns {@code value} instead. Only at the head. */
+    /**
+     * Skips the method and returns {@code value} instead. If several mods cancel with different
+     * values, priority decides, and a tie is a conflict.
+     */
     public void cancel(Object value) {
+        requireHead("cancel");
         if (returnKind == 'V') {
             throw new IllegalStateException(methodLabel + " returns void: use cancel()");
         }
         checkType(returnKind, value, "return value");
-        cancelAt();
-        returnValue = value;
+        add(Op.CANCEL, RETURN, value, null);
     }
 
-    public boolean isCancelled() {
-        return cancelled;
+    // --- internals --------------------------------------------------------------------------------
+
+    String methodLabel() {
+        return methodLabel;
     }
 
-    private void cancelAt() {
+    char returnKind() {
+        return returnKind;
+    }
+
+    String argKinds() {
+        return argKinds;
+    }
+
+    private void add(Op op, int slot, Object a, Object b) {
+        effects.add(new Effect(op, slot, a, b, hookId, modId, priority));
+    }
+
+    private void requireHead(String what) {
         if (!atHead) {
-            throw new IllegalStateException(methodLabel + ": cancel() only works at the head, "
+            throw new IllegalStateException(methodLabel + ": " + what + "() only works in interceptHead, "
                     + "the method has already run by the time it returns");
         }
-        cancelled = true;
     }
 
-    // Called from patched bytecode after a cancelled head.
-    public Object cancelReturnValue() {
-        return returnValue;
-    }
-
-    Object currentReturnValue() {
-        return returnValue;
+    private void requireReturn(String what) {
+        if (atHead) {
+            throw new IllegalStateException(methodLabel + ": " + what + "() only works in interceptReturn. "
+                    + "To skip the method from its head, use cancel(value).");
+        }
+        if (returnKind == 'V') {
+            throw new IllegalStateException(methodLabel + " returns void, there is no return value to change");
+        }
     }
 
     private void checkIndex(int i) {
         if (i < 0 || i >= args.length) {
             throw new IndexOutOfBoundsException(methodLabel + " has " + args.length + " argument(s), asked for " + i);
+        }
+    }
+
+    static boolean isNumeric(char kind) {
+        return kind == 'I' || kind == 'J' || kind == 'F' || kind == 'D' || kind == 'S' || kind == 'B';
+    }
+
+    private void requireNumeric(char kind, String what, Number n) {
+        if (!isNumeric(kind)) {
+            throw new IllegalStateException(methodLabel + ": " + what + " is a " + typeName(kind)
+                    + ", not a number. Only set can change it.");
+        }
+        if (n == null) {
+            throw new IllegalArgumentException(methodLabel + ": null amount for " + what);
+        }
+    }
+
+    private void checkClamp(char kind, String what, Number min, Number max) {
+        if (min == null && max == null) {
+            throw new IllegalArgumentException(methodLabel + ": clamp on " + what + " needs at least one bound");
+        }
+        requireNumeric(kind, what, min != null ? min : max);
+        if (min != null && max != null && min.doubleValue() > max.doubleValue()) {
+            throw new IllegalArgumentException(methodLabel + ": clamp on " + what + " has min " + min + " > max " + max);
         }
     }
 
@@ -151,13 +272,13 @@ public final class HookContext {
         }
         if (value == null || value.getClass() != box) {
             throw new IllegalArgumentException(methodLabel + ": " + what + " must be a " + box.getSimpleName()
-                    + " (primitive " + primitiveName(kind) + "), got "
+                    + " (primitive " + typeName(kind) + "), got "
                     + (value == null ? "null" : value.getClass().getName() + " " + value)
                     + ". Hint: 2 is an Integer, 2f a Float, 2.0 a Double, 2L a Long.");
         }
     }
 
-    private static String primitiveName(char kind) {
+    static String typeName(char kind) {
         return switch (kind) {
             case 'Z' -> "boolean";
             case 'B' -> "byte";
@@ -167,6 +288,7 @@ public final class HookContext {
             case 'J' -> "long";
             case 'F' -> "float";
             case 'D' -> "double";
+            case 'V' -> "void";
             default -> "reference";
         };
     }

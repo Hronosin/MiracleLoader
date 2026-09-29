@@ -16,7 +16,8 @@ run_with() {
     local dir="$ROOT/build/test-runs/$name"
     rm -rf "$dir" && mkdir -p "$dir/mods"
     for j in "$@"; do cp "$j" "$dir/mods/"; done
-    out="$(cd "$dir" && "$JAVA" -Dmiracle.dump=dump \
+    # shellcheck disable=SC2086
+    out="$(cd "$dir" && "$JAVA" ${JAVA_OPTS:-} -Dmiracle.dump=dump \
         -cp "$ROOT/build/miracle-loader.jar:$ROOT/build/fake-minecraft.jar" \
         io.github.hronosin.miracle.MiracleMain --username Steve 2>&1)"
     code=$?
@@ -155,6 +156,42 @@ expect_code badtype 1
 expect badtype "NO MIRACLE OCCURRED"
 expect badtype "return value must be a Float (primitive float), got java.lang.Double 2.0"
 expect badtype "thrown by a hook of mod 'badtype-mod'"
+
+# --- layers: effects from several mods stack, whatever the load order ------------------------
+run_with stack "$T/stack-a.jar" "$T/stack-b.jar"
+expect_code stack 0
+expect stack "jumpPower=0.78"                                       # (0.42 + 0.1) * 1.5
+expect stack "[stack-b] sees jump power 0.42"
+expect stack "ticks=1"                                              # clamp [0,50] leaves 1 alone
+expect stack "<- stack-a  [modifies return]"
+expect stack "<- stack-b  [modifies return]"                         # found through a helper method
+expect stack "<- stack-a  [cancels]"
+expect_not stack "may all"
+
+run_with stack3 "$T/intercept-mod.jar" "$T/stack-a.jar" "$T/stack-b.jar"
+expect_code stack3 0
+expect stack3 "jumpPower=1.56"                                      # (0.42 + 0.1) * 2 * 1.5
+expect stack3 "[stack-b] sees jump power 0.42"                      # snapshot, not intercept-mod's 0.84
+expect stack3 "ticks=50"                                            # 1 + 100, clamped to 50
+expect stack3 "Steve takes 5.0 damage from reduced zombie"
+expect_not stack3 "[FakeMinecraft] BOOM"                            # both cancel: still cancelled
+
+# --- layers: conflicts -----------------------------------------------------------------------
+run_with clash "$T/clash-a.jar" "$T/clash-b.jar"
+expect_code clash 1
+expect clash "mods 'clash-a', 'clash-b' may all set its return value (net.minecraft.world.entity.player.Player#motd) at priority 0"
+expect clash "NO MIRACLE OCCURRED"
+expect clash "RgctConflictException: RGCT conflict at net.minecraft.world.entity.player.Player#motd()Ljava/lang/String;, return value (priority 0): 'clash-a' sets \"A\", 'clash-b' sets \"B\""
+expect_not clash "motd="
+
+JAVA_OPTS=-Dclash.b=A run_with agree "$T/clash-a.jar" "$T/clash-b.jar"
+expect_code agree 0
+expect agree "motd=A"                                               # same value: no conflict
+
+run_with prio "$T/clash-a.jar" "$T/clash-b.jar" "$T/clash-hi.jar"
+expect_code prio 0
+expect prio "motd=HI"                                               # priority 5 beats the tie at 0
+expect prio "<- clash-hi  [sets return, priority 5]"
 
 echo
 echo "passed: $pass, failed: $fail"

@@ -17,8 +17,10 @@ OUT=build
 rm -rf "$OUT"
 mkdir -p "$OUT/classes" "$OUT/mods" "$OUT/test-mods"
 
-# -path: a stale jar manifest somewhere on the class path is not a reason to fail the build
-javac_() { "$JAVAC" --release 25 -encoding UTF-8 -Xlint:all,-serial,-path -Werror "$@"; }
+# Lint everything in our code, but not the environment's quirks:
+#   -path:      a stale jar manifest somewhere on the class path
+#   -classfile: annotations inside Minecraft's jar whose classes aren't shipped (JetBrains @Contract)
+javac_() { "$JAVAC" --release 25 -encoding UTF-8 -Xlint:all,-serial,-path,-classfile -Werror "$@"; }
 
 # $1 = source root, $2 = output jar, $3 = extra class path (optional)
 build_jar() {
@@ -81,12 +83,14 @@ if [ -n "$MC_CP" ]; then
     MC_CP="$MC_JAR:$MC_CP"
     build_jar examples/dirt-diamonds "$OUT/dirt-diamonds.jar" "$OUT/miracle-loader.jar:$MC_CP"
     build_jar examples/super-jump "$OUT/super-jump.jar" "$OUT/miracle-loader.jar:$MC_CP"
+    build_jar examples/sprint-jump "$OUT/sprint-jump.jar" "$OUT/miracle-loader.jar:$MC_CP"
 else
     echo "    skipped: no Minecraft 26.x jar + libraries found (launch a 26.x instance in Prism once, or set MC_JAR=... MC_LIBS=...)"
 fi
 
 echo "==> test mods"
-for m in tests/*-mod; do
+for m in tests/*/; do
+    m="${m%/}"
     build_jar "$m" "$OUT/test-mods/$(basename "$m").jar" "$API"
 done
 

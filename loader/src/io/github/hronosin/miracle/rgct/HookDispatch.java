@@ -11,10 +11,18 @@ import java.util.Arrays;
  */
 public final class HookDispatch {
 
-    record Entry(String modId, String where, Object hook) {
+    /** Returned by {@link #interceptHead} when the method should run normally. */
+    public static final Object PROCEED = new Object() {
+        @Override
+        public String toString() {
+            return "PROCEED";
+        }
+    };
+
+    record Entry(String modId, String where, Object hook, int priority) {
     }
 
-    /** One intercepted method position: every context hook that runs there, in order. */
+    /** One intercepted method position: every context hook that runs there. */
     record Site(int[] hookIds, String argKinds, char returnKind, boolean head, String methodLabel) {
     }
 
@@ -25,11 +33,11 @@ public final class HookDispatch {
     private HookDispatch() {
     }
 
-    static int register(String modId, String where, Object hook) {
+    static int register(String modId, String where, Object hook, int priority) {
         synchronized (LOCK) {
             Entry[] old = entries;
             Entry[] grown = Arrays.copyOf(old, old.length + 1);
-            grown[old.length] = new Entry(modId, where, hook);
+            grown[old.length] = new Entry(modId, where, hook, priority);
             entries = grown;
             return old.length;
         }
@@ -55,31 +63,33 @@ public final class HookDispatch {
         }
     }
 
-    /** Called from patched bytecode at a method head. {@code args} is written back afterwards. */
-    public static HookContext interceptHead(int siteId, Object self, Object[] args) {
+    /**
+     * Called from patched bytecode at a method head. Every hook sees the original arguments; the
+     * merged arguments are then written back into {@code args}. Returns {@link #PROCEED}, or the
+     * value to return right away if the method was cancelled.
+     */
+    public static Object interceptHead(int siteId, Object self, Object[] args) {
         Site site = sites[siteId];
         HookContext ctx = new HookContext(self, args, site.argKinds(), site.returnKind(), true, null, site.methodLabel());
         for (int id : site.hookIds()) {
             run(id, ctx);
-            if (ctx.isCancelled()) {
-                break; // the method won't run, so neither do hooks meant for its head
-            }
         }
-        return ctx;
+        return Layers.head(ctx, args);
     }
 
-    /** Called from patched bytecode before a return. Returns the (possibly replaced) value. */
+    /** Called from patched bytecode before a return. Returns the value the method finally returns. */
     public static Object interceptReturn(int siteId, Object self, Object[] args, Object returnValue) {
         Site site = sites[siteId];
         HookContext ctx = new HookContext(self, args, site.argKinds(), site.returnKind(), false, returnValue, site.methodLabel());
         for (int id : site.hookIds()) {
             run(id, ctx);
         }
-        return ctx.currentReturnValue();
+        return Layers.ret(ctx, returnValue);
     }
 
     private static void run(int id, HookContext ctx) {
         Entry e = entries[id];
+        ctx.enter(id, e.modId(), e.priority());
         try {
             ((ContextHook) e.hook()).run(ctx);
         } catch (RuntimeException ex) {

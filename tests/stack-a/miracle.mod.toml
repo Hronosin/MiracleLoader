@@ -1,0 +1,2 @@
+id = "stack-a"
+entrypoint = "test.stacka.StackA"
