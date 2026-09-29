@@ -177,10 +177,50 @@ final class Runner {
         if (Boolean.getBoolean("miracle.showCommand")) {
             System.out.println(String.join(" ", cmd));
         }
+        long started = System.currentTimeMillis();
         Process proc = new ProcessBuilder(cmd).directory(run.toFile()).inheritIO().start();
         int code = proc.waitFor();
-        System.out.println(code == 0 ? "Amen." : "The game left with exit code " + code + ".");
-        return code;
+        // A crashed dedicated server still exits with 0; the fresh crash report gives it away.
+        Path report = newestCrashReport(run, started);
+        if (code == 0 && report == null) {
+            System.out.println("Amen.");
+            return 0;
+        }
+        youDied(code, report);
+        return code == 0 ? 1 : code;
+    }
+
+    /** The game didn't leave peacefully. Say so the way it deserves, and point at the evidence. */
+    private static void youDied(int code, Path report) {
+        System.out.println("""
+
+                ==================================================
+                                   YOU DIED
+                ==================================================""");
+        System.out.println(code != 0 ? "The game left with exit code " + code + "." : "The game crashed, then left politely.");
+        if (report != null) {
+            System.out.println("Crash report: " + report);
+        }
+        System.out.println("Read the log above, fix, and pray again. (Light a bonfire first next time: miracle bonfire)");
+    }
+
+    /** A crash report written since {@code since}, or null. */
+    private static Path newestCrashReport(Path run, long since) throws IOException {
+        Path reports = run.resolve("crash-reports");
+        if (!Files.isDirectory(reports)) {
+            return null;
+        }
+        try (Stream<Path> s = Files.list(reports)) {
+            return s.filter(f -> f.toString().endsWith(".txt"))
+                    .filter(f -> {
+                        try {
+                            return Files.getLastModifiedTime(f).toMillis() >= since;
+                        } catch (IOException e) {
+                            return false;
+                        }
+                    })
+                    .max(Rituals.newestFirst().reversed()).orElse(null);
+        }
     }
 
     private static String classpath(List<Path> cp) {

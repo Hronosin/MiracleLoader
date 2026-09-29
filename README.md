@@ -365,7 +365,40 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle bake` | `build` | compiles, adds fallbacks, then checks and bakes against every target |
 | `miracle pray client` | `run` | bakes, then plays the mod: offline, singleplayer |
 | `miracle pray server` | `run` | bakes, then hosts it (asks you to accept Mojang's EULA first, with `--eula`) |
-| `miracle confess` | `doctor` | lists what's wrong with your setup, then absolves you anyway |
+| `miracle confess` | `doctor` | lists what's wrong with your setup and your Aura (RWBY), then absolves you anyway |
+| `miracle bonfire [list\|rest [name]]` | `backup` | Dark Souls: checkpoints the worlds in `run/`; `rest` brings one back (the world you leave is kept too) |
+| `miracle grace ...` | | the same, for the Tarnished |
+| `miracle messages` | `todo` | Elden Ring: your TODO/FIXME/HACK/XXX comments as messages on the ground ("Try repent", "Be wary of the mixins") |
+| `miracle zandatsu [jar]` | `inspect` | Metal Gear Rising: Blade Mode for a mod jar. What it patches, which library parts it uses, what it was baked for |
+| `miracle exorcise [--yes]` | `clean` | casts out `build/`, logs and crash reports. Worlds, bonfires and configs are spared |
+
+`bake` grades itself Devil May Cry style, from `D Dismal` to `SSS Smokin' Sexy Style!!`, by how long it took. A game that crashes under `pray` gets a proper `YOU DIED` and the path to its crash report, even when a dedicated server exits politely afterwards.
+
+And the rituals nobody needs, because Forge's toolchain has plenty you don't need and ours shouldn't be outdone:
+
+| command | does |
+|---|---|
+| `miracle gradle [--really]` | a faithful reenactment of a Gradle build: daemon, configuring, remapping, decompiling, `BUILD SUCCESSFUL in 5m 3s`. Builds nothing. `--really` takes the full five minutes |
+| `miracle forge` | did you mean: miracle? (also answers to `neoforge`, `fabric`, `loom`) |
+| `miracle heresy` | finds Forge, NeoForge, Fabric, Quilt, Mixin and Architectury imports in your sources and assigns penance |
+| `miracle fast [--seconds 40]` | the Great Lent of the build: forty seconds of doing nothing, with feeling |
+| `miracle tithe` | offers 10% of your cache to the heavens. Symbolically: deletes nothing |
+
+In the game, operators get `/smite [reason]`: it crashes the server on purpose, the proper way (a crash report blaming `Smitten by MiracleToolChain: <reason>`, then a normal shutdown). `smite = false` in `config/miracle-toolchain.toml` turns it off.
+
+### Templates
+
+`miracle genesis <name> --template <t>` starts from a small, working mod instead of the default sample. All of them use the library, check on 26.2 and 26.3, and bake for 1.21.11 as they are:
+
+| template | after | what |
+|---|---|---|
+| `aura` | RWBY | an Aura shield that soaks up hits until it breaks, then regenerates when you're out of combat. `/aura` |
+| `stylish` | Devil May Cry | a style meter from D to SSS: variety and kills climb, taking hits drops a rank, idling drains it. `/style` |
+| `zandatsu` | Metal Gear Rising | sneak-kills tear out full health ("cut and take"); nanomachines cancel a killing blow now and then. `/nanomachines` |
+| `you-died` | Dark Souls | `YOU DIED` across the screen, a death tally that survives restarts, `VICTORY ACHIEVED` for bosses, and praising the sun. `/deaths` |
+| `grace` | Elden Ring | "Rise, Tarnished" on joining; `/message` leaves a message on the ground for others to find, `/appraise` rates it; `GREAT ENEMY FELLED` |
+
+`miracle genesis --templates` lists them.
 
 A project is two small files:
 
@@ -407,11 +440,12 @@ Everything you need, and several things you don't, in `miracle-toolchain.jar`. E
 
 | part | alias | what |
 |---|---|---|
-| `Omens` | `Events` | things that happen: `serverStarted`, `serverStopping`, `serverTick`, `playerJoined`, `playerLeft`, `playerJumped`, `chat` (cancellable), `blockBroken` (cancellable), `clientTick` |
+| `Omens` | `Events` | things that happen: `serverStarted`, `serverStopping`, `serverTick`, `playerJoined`, `playerLeft`, `playerJumped`, `chat` (cancellable), `blockBroken` (cancellable), `entityHurt` (cancellable), `entityDied`, `clientTick` |
 | `Blessings` | `Tweaks` | well-known values with merge rules: `jumpPower`, `movementSpeed`, `fallDamage`, `damageTaken` |
 | `Sermons` | `ChatCommands` | commands, in plain Brigadier; they survive `/reload` |
 | `Commandments` | `Config` | `config/<mod id>.toml`, written with defaults and comments the first time |
 | `Scripture` | `Resources` | the `data/` and `assets/` in your jar, loaded as if they were the game's own |
+| `Proclamations` | `Notices` | overlay lines, titles and broadcasts, the same on every version (the game renamed these; the packets stayed) |
 
 ```java
 public final class Hallelujah implements MiracleMod {
@@ -449,7 +483,7 @@ Parts nobody uses patch nothing. The startup report, conflict checks and crash b
 
 **Blessings merge.** A blessing is RGCT's layers with the targets filled in: `clamp((vanilla + adds) × factors)`, so ten mods multiplying jump power all get their way, and `set` only where you mean it. The library knows where each value lives in every supported version, including where vanilla computes it twice: a player's speed comes from a different method than a mob's, and `movementSpeed` covers both.
 
-Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers, 26.3 and 1.21.11: the Prophecy's patches, commands before and after `/reload`, `serverStarted`, `serverTick` and `serverStopping`, damage multiplied then clamped (4 → 2, 10 → 5 → 3), and a cow dropped from y=200 walking away from a `fallDamage().set(0)`. Joins, chat, block breaking and jumps need a player and wait for a desktop run.
+Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers, 26.3 and 1.21.11: the Prophecy's patches, commands before and after `/reload`, `serverStarted`, `serverTick` and `serverStopping`, damage multiplied then clamped (4 → 2, 10 → 5 → 3), a cow dropped from y=200 walking away from a `fallDamage().set(0)`, `entityHurt` and `entityDied` on mobs, all five templates loaded together, and `/smite` ending in a crash report. On a real desktop (26.3 client): the join greeting, the sample command and higher jumps. Chat, block breaking and the templates' player-facing parts still wait for someone to play them.
 
 ## Lifecycle
 

@@ -16,6 +16,11 @@ public final class MiracleToolChain implements MiracleMod {
 
     @Override
     public void transform(Rgct rgct) {
+        if (Commandments.of(ID).flag("smite", true,
+                "/smite [reason]: operators may crash the server on purpose, with a crash report blaming the heavens."
+                        + "\nUseless, and it stays that way.")) {
+            Smite.install(rgct);
+        }
         for (Mods.Mod mod : Mods.all()) {
             if (!mod.depends().contains(ID)) {
                 continue;

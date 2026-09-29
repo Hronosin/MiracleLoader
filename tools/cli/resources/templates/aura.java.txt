@@ -1,0 +1,98 @@
+package __PACKAGE__;
+
+import io.github.hronosin.miracle.api.MiracleMod;
+import io.github.hronosin.miracle.toolchain.Commandments;
+import io.github.hronosin.miracle.toolchain.Omens;
+import io.github.hronosin.miracle.toolchain.Omens.Verdict;
+import io.github.hronosin.miracle.toolchain.Proclamations;
+import io.github.hronosin.miracle.toolchain.Sermons;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Aura, as on Remnant: a shield made of your own soul. (Template: aura, after RWBY.)
+ *
+ * <p>Every player has an Aura pool. While it lasts, hits drain the Aura instead of your health.
+ * A hit bigger than what's left breaks it: the hit lands, and the Aura only starts coming back
+ * after a few calm seconds. Tune it in config/__ID__.toml.
+ */
+public final class __CLASS__ implements MiracleMod {
+
+    private static final Map<UUID, Float> AURA = new ConcurrentHashMap<>();
+    private static final Map<UUID, Integer> LAST_HIT = new ConcurrentHashMap<>();
+    private static volatile int now;
+
+    @Override
+    public void onLaunch() {
+        Commandments config = Commandments.mine();
+        float max = (float) config.number("max_aura", 20, "Aura pool in half-hearts. 20 = a second health bar.");
+        float regen = (float) config.number("regen_per_second", 1, "Aura regained per second while calm.");
+        long calm = config.integer("calm_seconds", 5, "Seconds without being hit before Aura starts to regenerate.");
+
+        Omens.playerJoined(p -> {
+            AURA.put(p.getUUID(), max);
+            Proclamations.overlay(p, bar(max, max));
+        });
+
+        Omens.entityHurt((victim, source, amount) -> {
+            if (!(victim instanceof ServerPlayer p) || amount <= 0) {
+                return Verdict.SPARE;
+            }
+            UUID id = p.getUUID();
+            LAST_HIT.put(id, now);
+            float aura = AURA.getOrDefault(id, max);
+            if (aura <= 0) {
+                return Verdict.SPARE; // broken: nothing between you and the Grimm
+            }
+            if (amount < aura) {
+                AURA.put(id, aura - amount);
+                Proclamations.overlay(p, bar(aura - amount, max));
+                return Verdict.SMITE; // the Aura took it
+            }
+            AURA.put(id, 0f);
+            Proclamations.title(p, Component.literal("AURA BROKEN").withStyle(ChatFormatting.RED),
+                    Component.literal("Fall back, Huntsman."), 5, 40, 10);
+            return Verdict.SPARE;
+        });
+
+        Omens.serverTick(server -> {
+            now = server.getTickCount();
+            if (now % 20 != 0) {
+                return;
+            }
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                UUID id = p.getUUID();
+                float aura = AURA.getOrDefault(id, max);
+                if (aura >= max || now - LAST_HIT.getOrDefault(id, Integer.MIN_VALUE / 2) < calm * 20) {
+                    continue;
+                }
+                float next = Math.min(max, aura + regen);
+                AURA.put(id, next);
+                Proclamations.overlay(p, bar(next, max));
+            }
+        });
+
+        Sermons.preach(d -> d.register(Commands.literal("aura").executes(c -> {
+            ServerPlayer p = c.getSource().getPlayer();
+            if (p == null) {
+                Sermons.rebuke(c.getSource(), "The server has no soul to project.");
+                return 0;
+            }
+            Sermons.reply(c.getSource(), bar(AURA.getOrDefault(p.getUUID(), max), max).getString());
+            return 1;
+        })));
+    }
+
+    private static Component bar(float aura, float max) {
+        int cells = 10;
+        int full = Math.round(aura / max * cells);
+        String text = "Aura " + "|".repeat(full) + ".".repeat(cells - full) + " " + Math.round(aura) + "/" + Math.round(max);
+        return Component.literal(text).withStyle(aura > 0 ? ChatFormatting.GOLD : ChatFormatting.DARK_RED);
+    }
+}

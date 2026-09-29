@@ -9,11 +9,14 @@ import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.server.level.ServerPlayerGameMode;
 import net.minecraft.server.network.ServerGamePacketListenerImpl;
+import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.LivingEntity;
 
 import java.lang.invoke.MethodHandles;
 import java.lang.invoke.VarHandle;
 import java.lang.reflect.Field;
 import java.util.List;
+import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 /**
@@ -65,6 +68,12 @@ public class Omens {
         Verdict judge(ServerPlayer player, BlockPos pos);
     }
 
+    /** Something alive about to take damage. */
+    @FunctionalInterface
+    public interface HurtJudge {
+        Verdict judge(LivingEntity victim, DamageSource source, float amount);
+    }
+
     /** Every omen there is. The names match the methods. */
     enum Omen {
         SERVER_STARTED("serverStarted"),
@@ -75,6 +84,8 @@ public class Omens {
         PLAYER_JUMPED("playerJumped"),
         CHAT("chat"),
         BLOCK_BROKEN("blockBroken"),
+        ENTITY_HURT("entityHurt"),
+        ENTITY_DIED("entityDied"),
         CLIENT_TICK("clientTick");
 
         final String method;
@@ -141,6 +152,22 @@ public class Omens {
     /** A player is about to break a block. {@link Verdict#SMITE} and the block stays. */
     public static void blockBroken(BlockJudge judge) {
         Faithful.join("Omens.blockBroken", Omen.BLOCK_BROKEN, judge);
+    }
+
+    // --- anything alive ---------------------------------------------------------------------
+
+    /**
+     * Something alive (a player, a mob, an armor stand...) is about to take damage.
+     * {@code amount} is the damage before armor, and before any mod's {@link Blessings}.
+     * {@link Verdict#SMITE} and the hit never lands. Server side.
+     */
+    public static void entityHurt(HurtJudge judge) {
+        Faithful.join("Omens.entityHurt", Omen.ENTITY_HURT, judge);
+    }
+
+    /** Something alive has died, players included. The source says who or what did it. Server side. */
+    public static void entityDied(BiConsumer<LivingEntity, DamageSource> handler) {
+        Faithful.join("Omens.entityDied", Omen.ENTITY_DIED, handler);
     }
 
     // --- the client -------------------------------------------------------------------------
@@ -229,6 +256,33 @@ public class Omens {
                                 }
                             }
                         });
+            }
+            case ENTITY_HURT -> {
+                List<HurtJudge> hs = Faithful.list(mod, omen);
+                rgct.target("net.minecraft.world.entity.LivingEntity")
+                        .method("hurtServer", "(Lnet/minecraft/server/level/ServerLevel;"
+                                + "Lnet/minecraft/world/damagesource/DamageSource;F)Z")
+                        .interceptHead(ctx -> {
+                            LivingEntity victim = (LivingEntity) ctx.self();
+                            DamageSource source = (DamageSource) ctx.arg(1);
+                            float amount = (Float) ctx.arg(2);
+                            for (HurtJudge h : hs) {
+                                if (h.judge(victim, source, amount) == Verdict.SMITE) {
+                                    ctx.cancel(false);
+                                    return;
+                                }
+                            }
+                        });
+            }
+            case ENTITY_DIED -> {
+                // ServerPlayer does its own dying without calling LivingEntity's, so both.
+                List<BiConsumer<LivingEntity, DamageSource>> hs = Faithful.list(mod, omen);
+                rgct.target("net.minecraft.world.entity.LivingEntity")
+                        .method("die", "(Lnet/minecraft/world/damagesource/DamageSource;)V")
+                        .interceptHead(ctx -> hs.forEach(h -> h.accept((LivingEntity) ctx.self(), (DamageSource) ctx.arg(0))));
+                rgct.target("net.minecraft.server.level.ServerPlayer")
+                        .method("die", "(Lnet/minecraft/world/damagesource/DamageSource;)V")
+                        .interceptHead(ctx -> hs.forEach(h -> h.accept((LivingEntity) ctx.self(), (DamageSource) ctx.arg(0))));
             }
             case CLIENT_TICK -> {
                 if (Mods.game().client()) {

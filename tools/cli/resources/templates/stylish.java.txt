@@ -1,0 +1,115 @@
+package __PACKAGE__;
+
+import io.github.hronosin.miracle.api.MiracleMod;
+import io.github.hronosin.miracle.toolchain.Commandments;
+import io.github.hronosin.miracle.toolchain.Omens;
+import io.github.hronosin.miracle.toolchain.Omens.Verdict;
+import io.github.hronosin.miracle.toolchain.Proclamations;
+import io.github.hronosin.miracle.toolchain.Sermons;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * A style meter. (Template: stylish, after Devil May Cry.)
+ *
+ * <p>Hit things to climb from D to SSS. Variety pays: hitting a different kind of mob than last
+ * time counts double, and a kill is a bonus. Getting hit drops you a rank; standing around lets
+ * the meter drain. The rank shows above the hotbar whenever it changes; /style shows it any time.
+ */
+public final class __CLASS__ implements MiracleMod {
+
+    private static final String[] RANKS = {"D  Dismal", "C  Crazy!", "B  Badass!", "A  Apocalyptic!",
+            "S  Savage!", "SS  Sick Skills!!", "SSS  Smokin' Sexy Style!!!"};
+    private static final double[] NEEDS = {0, 10, 25, 45, 70, 100, 140};
+
+    /** Style points, the last thing you hit, and the rank last shown. */
+    private static final class Style {
+        double points;
+        Object lastVictim;
+        int shown;
+    }
+
+    private static final Map<UUID, Style> STYLE = new ConcurrentHashMap<>();
+
+    @Override
+    public void onLaunch() {
+        Commandments config = Commandments.mine();
+        double decay = config.number("decay_per_second", 4, "Style points lost every second.");
+        double killBonus = config.number("kill_bonus", 15, "Style points for finishing something off.");
+
+        Omens.entityHurt((victim, source, amount) -> {
+            if (source.getEntity() instanceof ServerPlayer p && victim != p) {
+                Style s = style(p);
+                s.points += amount * (victim.getType() != s.lastVictim ? 2 : 1);
+                s.lastVictim = victim.getType();
+                show(p, s);
+            }
+            if (victim instanceof ServerPlayer p) {
+                Style s = style(p);
+                s.points = NEEDS[Math.max(0, rank(s.points) - 1)]; // a hit taken costs a rank
+                show(p, s);
+            }
+            return Verdict.SPARE;
+        });
+
+        Omens.entityDied((victim, source) -> {
+            if (source.getEntity() instanceof ServerPlayer p && victim != p) {
+                Style s = style(p);
+                s.points += killBonus;
+                show(p, s);
+            }
+        });
+
+        Omens.serverTick(server -> {
+            if (server.getTickCount() % 20 != 0) {
+                return;
+            }
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                Style s = STYLE.get(p.getUUID());
+                if (s != null && s.points > 0) {
+                    s.points = Math.max(0, s.points - decay);
+                    show(p, s);
+                }
+            }
+        });
+
+        Sermons.preach(d -> d.register(Commands.literal("style").executes(c -> {
+            ServerPlayer p = c.getSource().getPlayer();
+            if (p == null) {
+                Sermons.rebuke(c.getSource(), "The console has no style. It never did.");
+                return 0;
+            }
+            Style s = style(p);
+            Sermons.reply(c.getSource(), RANKS[rank(s.points)] + " (" + Math.round(s.points) + " points)");
+            return 1;
+        })));
+    }
+
+    private static Style style(ServerPlayer p) {
+        return STYLE.computeIfAbsent(p.getUUID(), id -> new Style());
+    }
+
+    private static int rank(double points) {
+        int r = 0;
+        while (r + 1 < NEEDS.length && points >= NEEDS[r + 1]) {
+            r++;
+        }
+        return r;
+    }
+
+    /** Only when the rank changes: the meter talks, it doesn't spam. */
+    private static void show(ServerPlayer p, Style s) {
+        int r = rank(s.points);
+        if (r != s.shown) {
+            s.shown = r;
+            ChatFormatting color = r >= 4 ? ChatFormatting.GOLD : r >= 2 ? ChatFormatting.RED : ChatFormatting.GRAY;
+            Proclamations.overlay(p, Component.literal(RANKS[r]).withStyle(color, ChatFormatting.BOLD));
+        }
+    }
+}

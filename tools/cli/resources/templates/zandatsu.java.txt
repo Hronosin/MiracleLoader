@@ -1,0 +1,84 @@
+package __PACKAGE__;
+
+import io.github.hronosin.miracle.api.MiracleMod;
+import io.github.hronosin.miracle.toolchain.Commandments;
+import io.github.hronosin.miracle.toolchain.Omens;
+import io.github.hronosin.miracle.toolchain.Omens.Verdict;
+import io.github.hronosin.miracle.toolchain.Proclamations;
+import io.github.hronosin.miracle.toolchain.Sermons;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
+
+import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * Blade Mode. (Template: zandatsu, after Metal Gear Rising: Revengeance.)
+ *
+ * <ul>
+ *   <li><b>Zandatsu</b>, "cut and take": finish a mob while sneaking (that's Blade Mode) and you
+ *       tear out what kept it going. Full health, on the spot.</li>
+ *   <li><b>Nanomachines</b>: a blow that would kill you doesn't, once in a while. They harden in
+ *       response to physical trauma. Then they need a few minutes.</li>
+ * </ul>
+ * /nanomachines tells you whether they're ready. Tune it in config/__ID__.toml.
+ */
+public final class __CLASS__ implements MiracleMod {
+
+    private static final Map<UUID, Integer> HARDENED_AT = new ConcurrentHashMap<>();
+    private static volatile int now;
+
+    @Override
+    public void onLaunch() {
+        Commandments config = Commandments.mine();
+        long cooldown = config.integer("nanomachine_cooldown_seconds", 300,
+                "How long the nanomachines need between saves.");
+        boolean zandatsuHeals = config.flag("zandatsu_heals", true, "Sneak-kills restore full health.");
+
+        Omens.serverTick(server -> now = server.getTickCount());
+
+        Omens.entityDied((victim, source) -> {
+            if (zandatsuHeals && source.getEntity() instanceof ServerPlayer p && p.isShiftKeyDown()
+                    && !(victim instanceof Player)) {
+                p.setHealth(p.getMaxHealth());
+                Proclamations.overlay(p, Component.literal("ZANDATSU!  Cut and take.")
+                        .withStyle(ChatFormatting.AQUA, ChatFormatting.BOLD));
+            }
+        });
+
+        Omens.entityHurt((victim, source, amount) -> {
+            if (victim instanceof ServerPlayer p && amount >= p.getHealth() && ready(p, cooldown)) {
+                HARDENED_AT.put(p.getUUID(), now);
+                p.setHealth(Math.min(p.getMaxHealth(), 4));
+                Proclamations.title(p, Component.literal("Nanomachines, son.").withStyle(ChatFormatting.RED),
+                        Component.literal("They harden in response to physical trauma."), 5, 50, 15);
+                return Verdict.SMITE;
+            }
+            return Verdict.SPARE;
+        });
+
+        Sermons.preach(d -> d.register(Commands.literal("nanomachines").executes(c -> {
+            ServerPlayer p = c.getSource().getPlayer();
+            if (p == null) {
+                Sermons.rebuke(c.getSource(), "The console is not a cyborg. Yet.");
+                return 0;
+            }
+            if (ready(p, cooldown)) {
+                Sermons.reply(c.getSource(), "Nanomachines: ready.");
+            } else {
+                int left = (int) (cooldown - (now - HARDENED_AT.get(p.getUUID())) / 20);
+                Sermons.reply(c.getSource(), "Nanomachines: recovering, " + left + "s. Don't die.");
+            }
+            return 1;
+        })));
+    }
+
+    private static boolean ready(ServerPlayer p, long cooldown) {
+        Integer at = HARDENED_AT.get(p.getUUID());
+        return at == null || now - at >= cooldown * 20;
+    }
+}

@@ -1,0 +1,176 @@
+package __PACKAGE__;
+
+import io.github.hronosin.miracle.api.MiracleMod;
+import io.github.hronosin.miracle.toolchain.Commandments;
+import io.github.hronosin.miracle.toolchain.Omens;
+import io.github.hronosin.miracle.toolchain.Proclamations;
+import io.github.hronosin.miracle.toolchain.Sermons;
+import com.mojang.brigadier.arguments.StringArgumentType;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.Commands;
+import net.minecraft.core.BlockPos;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.monster.ElderGuardian;
+import net.minecraft.world.entity.monster.warden.Warden;
+
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
+
+/**
+ * Rise, Tarnished. (Template: grace, after Elden Ring.)
+ *
+ * <ul>
+ *   <li>A title greets everyone who joins.</li>
+ *   <li>Messages: /message &lt;text&gt; leaves one on the ground where you stand. Walk near it and it
+ *       shows above your hotbar; /appraise rates the nearest one. Kept in
+ *       config/__ID__-messages.txt, so they outlive restarts. "Try jumping" is traditional.</li>
+ *   <li>GREAT ENEMY FELLED for everyone when a boss dies (the Wither, the Ender Dragon, the
+ *       Warden, an Elder Guardian).</li>
+ * </ul>
+ */
+public final class __CLASS__ implements MiracleMod {
+
+    /** A message on the ground. */
+    private static final class Message {
+        final String dimension;
+        final BlockPos pos;
+        final String author;
+        final String text;
+        int appraisals;
+
+        Message(String dimension, BlockPos pos, String author, String text, int appraisals) {
+            this.dimension = dimension;
+            this.pos = pos;
+            this.author = author;
+            this.text = text;
+            this.appraisals = appraisals;
+        }
+    }
+
+    private static final Path FILE = Path.of(System.getProperty("miracle.configDir", "config"), "__ID__-messages.txt");
+    private static final List<Message> MESSAGES = new CopyOnWriteArrayList<>();
+
+    @Override
+    public void onLaunch() {
+        Commandments config = Commandments.mine();
+        String greeting = config.text("greeting", "Rise, Tarnished.", "The title every joining player sees.");
+        long reach = config.integer("message_reach", 3, "How close (in blocks) you must be to read a message.");
+        load();
+
+        Omens.playerJoined(p -> Proclamations.title(p, Component.literal(greeting).withStyle(ChatFormatting.GOLD),
+                Component.literal(MESSAGES.size() + " message(s) lie on the ground of this world"), 20, 60, 20));
+
+        Omens.serverTick(server -> {
+            if (server.getTickCount() % 10 != 0 || MESSAGES.isEmpty()) {
+                return;
+            }
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                Message m = nearest(p, reach);
+                if (m != null) {
+                    Proclamations.overlay(p, Component.literal(m.text + "   - " + m.author + ", appraised " + m.appraisals)
+                            .withStyle(ChatFormatting.GOLD));
+                }
+            }
+        });
+
+        Omens.entityDied((victim, source) -> {
+            if (isBoss(victim) && source.getEntity() instanceof ServerPlayer killer) {
+                for (ServerPlayer p : killer.level().getServer().getPlayerList().getPlayers()) {
+                    Proclamations.title(p, Component.literal("GREAT ENEMY FELLED").withStyle(ChatFormatting.GOLD),
+                            victim.getName().copy().withStyle(ChatFormatting.GRAY), 10, 80, 30);
+                }
+            }
+        });
+
+        Sermons.preach(d -> {
+            d.register(Commands.literal("message").then(Commands.argument("text", StringArgumentType.greedyString())
+                    .executes(c -> {
+                        ServerPlayer p = c.getSource().getPlayer();
+                        if (p == null) {
+                            Sermons.rebuke(c.getSource(), "Messages must be written on the ground. The console has none.");
+                            return 0;
+                        }
+                        String text = StringArgumentType.getString(c, "text").replace('\n', ' ');
+                        MESSAGES.add(new Message(dimension(p), p.blockPosition(), p.getName().getString(), text, 0));
+                        save();
+                        Sermons.reply(c.getSource(), "Message written. Others may now be misled.");
+                        return 1;
+                    })));
+            d.register(Commands.literal("appraise").executes(c -> {
+                ServerPlayer p = c.getSource().getPlayer();
+                Message m = p == null ? null : nearest(p, reach);
+                if (m == null) {
+                    Sermons.rebuke(c.getSource(), "No message nearby to appraise.");
+                    return 0;
+                }
+                m.appraisals++;
+                save();
+                Sermons.reply(c.getSource(), "You appraised the message. Somewhere, " + m.author + " feels a warmth.");
+                return 1;
+            }));
+        });
+    }
+
+    private static Message nearest(ServerPlayer p, long reach) {
+        String dim = dimension(p);
+        BlockPos at = p.blockPosition();
+        Message best = null;
+        double bestDist = reach * reach + 0.5;
+        for (Message m : MESSAGES) {
+            double dist = m.pos.distSqr(at);
+            if (m.dimension.equals(dim) && dist <= bestDist) {
+                best = m;
+                bestDist = dist;
+            }
+        }
+        return best;
+    }
+
+    private static String dimension(ServerPlayer p) {
+        return p.level().dimension().toString();
+    }
+
+    private static boolean isBoss(LivingEntity e) {
+        return e instanceof WitherBoss || e instanceof EnderDragon || e instanceof Warden || e instanceof ElderGuardian;
+    }
+
+    /** One message per line: dimension|x|y|z|appraisals|author|text. */
+    private static void load() {
+        if (!Files.isRegularFile(FILE)) {
+            return;
+        }
+        try {
+            for (String line : Files.readAllLines(FILE)) {
+                String[] f = line.split("\\|", 7);
+                if (f.length == 7) {
+                    MESSAGES.add(new Message(f[0], new BlockPos(Integer.parseInt(f[1]), Integer.parseInt(f[2]),
+                            Integer.parseInt(f[3])), f[5], f[6], Integer.parseInt(f[4])));
+                }
+            }
+        } catch (IOException | NumberFormatException e) {
+            System.out.println("[__ID__] couldn't read " + FILE + ": " + e.getMessage());
+        }
+    }
+
+    private static synchronized void save() {
+        List<String> lines = new ArrayList<>();
+        for (Message m : MESSAGES) {
+            lines.add(String.join("|", m.dimension, String.valueOf(m.pos.getX()), String.valueOf(m.pos.getY()),
+                    String.valueOf(m.pos.getZ()), String.valueOf(m.appraisals), m.author, m.text));
+        }
+        try {
+            Files.createDirectories(FILE.toAbsolutePath().getParent());
+            Files.write(FILE, lines);
+        } catch (IOException e) {
+            System.out.println("[__ID__] couldn't save messages: " + e.getMessage());
+        }
+    }
+}

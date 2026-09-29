@@ -347,9 +347,101 @@ expect unknown "HERESY: 'smite' is not in the scripture."
 expect_code pray-what 1
 expect pray-what "pray for what? miracle pray client, or miracle pray server"
 
+# --- rituals and the useful ones -------------------------------------------------------------
+export MIRACLE_IMPATIENT=1
+pcli() { out="$(cd "$CLI_HOME/holy-hops" && MIRACLE_HOME="$CLI_HOME/cache" "$JAVA" -jar "$ROOT/build/miracle.jar" "$@" 2>&1)"; code=$?; }
+
+cli gradle
+expect_code gradle 0
+expect gradle "Starting a Gradle Daemon (subsequent builds will be faster)"
+expect gradle "BUILD SUCCESSFUL in 5m 3s"
+expect gradle "...just kidding. There is no Gradle here, and nothing was built."
+
+cli forge
+expect_code forge 1
+expect forge "'forge' is not a miracle command. Did you mean:"
+
+cli fast --seconds 1
+expect_code fast 0
+expect fast "The fast is over. You have built nothing, and you are better for it."
+
+cli tithe
+expect tithe "has been offered."
+expect tithe "Nothing was deleted."
+
+pcli heresy
+expect_code heresy-clean 0
+expect heresy-clean "No heresy found"
+mkdir -p "$CLI_HOME/holy-hops/src/org/example/hops"
+printf 'package org.example.hops;\nimport net.minecraftforge.fml.common.Mod;\nimport org.spongepowered.asm.mixin.Mixin;\n// TODO: repent\n// FIXME the mixins /* */\nclass Sinner {}\n' \
+    > "$CLI_HOME/holy-hops/src/org/example/hops/Sinner.java"
+pcli heresy
+expect_code heresy 1
+expect heresy "The Inquisition has found 2 heresies:"
+expect heresy "Forge. The hammer has fallen"
+expect heresy "Mixin. Cringe, as foretold"
+expect heresy "Penance: 2 Hail Maries, and a rewrite with RGCT."
+
+pcli messages
+expect messages "2 message(s) left by past Tarnished:"
+expect messages "Try repent"
+expect messages "Be wary of the mixins"
+expect_not messages "/*"
+rm "$CLI_HOME/holy-hops/src/org/example/hops/Sinner.java"
+
+pcli bonfire
+expect_code bonfire-nothing 1
+expect bonfire-nothing "No worlds yet"
+mkdir -p "$CLI_HOME/holy-hops/run/server-26.2/world/region" "$CLI_HOME/holy-hops/run/server-26.2/logs"
+echo "old" > "$CLI_HOME/holy-hops/run/server-26.2/world/level.dat"
+echo "log" > "$CLI_HOME/holy-hops/run/server-26.2/logs/latest.log"
+pcli bonfire
+expect_code bonfire 0
+expect bonfire "BONFIRE LIT"
+echo "wrecked" > "$CLI_HOME/holy-hops/run/server-26.2/world/level.dat"
+pcli grace rest
+expect_code grace-rest 0
+expect grace-rest "You rested at the site of grace."
+grep -qx old "$CLI_HOME/holy-hops/run/server-26.2/world/level.dat" && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [grace-rest]: world not restored"; }
+pcli bonfire list
+expect bonfire-list "_before-rest"
+
+pcli exorcise
+expect_code exorcise-dry 0
+expect exorcise-dry "run/server-26.2/logs"
+expect exorcise-dry "Say the words to cast them out: miracle exorcise --yes"
+pcli exorcise --yes
+expect exorcise "The power of Miracle compels you!"
+[ ! -e "$CLI_HOME/holy-hops/run/server-26.2/logs" ] && [ -e "$CLI_HOME/holy-hops/run/server-26.2/world/level.dat" ] \
+    && [ -d "$CLI_HOME/holy-hops/run/server-26.2/bonfires" ] && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [exorcise]: took the wrong things"; }
+
+cli zandatsu "$ROOT/build/test-mods/needs-lib.jar"
+expect_code zandatsu 0
+expect zandatsu "BLADE MODE. Cutting needs-lib.jar"
+expect zandatsu "Spine:      org.test.needslib.NeedsLib"
+expect zandatsu "ZANDATSU! 1 class(es) taken. Rules of Nature."
+cli zandatsu "$ROOT/build/test-mods/patron-lib.jar"
+expect zandatsu-patches "Patches:    Player"
+
+cli genesis --templates
+expect templates "grace       Elden Ring"
+cli genesis stylish-mod --template stylish --minecraft 26.2
+expect_code template 0
+grep -q 'depends = \["miracle-toolchain>=0.2.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+    && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
+    && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
+cli genesis nope --template bloodborne
+expect_code template-bad 1
+expect template-bad "No template called 'bloodborne'."
+unset MIRACLE_IMPATIENT
+
 cli confess
 expect confess "Forgive me, Father, for I have built mods."
 expect confess "not inside a mod project"
+expect confess "Aura: "
 
 # --- depends: libraries, order, versions, patrons ----------------------------------------------
 run_with depends "$T/needs-lib.jar" "$T/dep-lib.jar" "$T/patron-lib.jar" "$T/victim-mod.jar"

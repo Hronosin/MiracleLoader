@@ -11,6 +11,7 @@ import java.util.stream.Stream;
 final class Confess {
 
     private final List<String> sins = new ArrayList<>();
+    private int virtues;
 
     private Confess() {
     }
@@ -24,6 +25,7 @@ final class Confess {
         c.project();
         c.display();
         System.out.println();
+        System.out.println(c.aura());
         if (c.sins.isEmpty()) {
             System.out.println("No sins found. Go forth and mod.");
             return 0;
@@ -34,7 +36,17 @@ final class Confess {
         return 1;
     }
 
+    /** Your setup's Aura, RWBY style: what share of the checks passed. */
+    private String aura() {
+        int total = virtues + sins.size();
+        int pct = total == 0 ? 100 : virtues * 100 / total;
+        String state = pct == 100 ? "Semblance unlocked."
+                : pct >= 75 ? "Holding." : pct >= 40 ? "Flickering." : "Broken. Retreat and fix it.";
+        return "Aura: " + pct + "%. " + state;
+    }
+
     private void virtue(String what) {
+        virtues++;
         System.out.println("  [ok]  " + what);
     }
 

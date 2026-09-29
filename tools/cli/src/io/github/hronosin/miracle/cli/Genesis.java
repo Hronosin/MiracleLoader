@@ -11,8 +11,37 @@ final class Genesis {
     private Genesis() {
     }
 
-    /** {@code ascetic}: a bare RGCT mod, without the MiracleToolChain library. */
-    static Path create(Path where, String name, String pkg, String minecraft, boolean ascetic) throws IOException {
+    /** Starting points beyond the default, by name. Each one is a small, working mod. */
+    static final java.util.Map<String, String> TEMPLATES = new java.util.LinkedHashMap<>();
+
+    static {
+        TEMPLATES.put("aura", "RWBY: an Aura shield that soaks hits until it breaks, then regenerates");
+        TEMPLATES.put("stylish", "Devil May Cry: a style meter from D to SSS");
+        TEMPLATES.put("zandatsu", "Metal Gear Rising: sneak-kills heal you, nanomachines cheat death");
+        TEMPLATES.put("you-died", "Dark Souls: YOU DIED, a death tally, VICTORY ACHIEVED on bosses");
+        TEMPLATES.put("grace", "Elden Ring: Rise, Tarnished; messages on the ground; GREAT ENEMY FELLED");
+    }
+
+    static void listTemplates() {
+        System.out.println("Templates (miracle genesis <name> --template <template>):");
+        System.out.println("  (none)      the default: a little of every part of the library");
+        TEMPLATES.forEach((k, v) -> System.out.println("  " + k + " ".repeat(Math.max(1, 12 - k.length())) + v));
+        System.out.println("  --ascetic   no library at all, just RGCT and you");
+    }
+
+    /**
+     * {@code ascetic}: a bare RGCT mod, without the MiracleToolChain library. {@code template}:
+     * one of {@link #TEMPLATES}, or null for the default.
+     */
+    static Path create(Path where, String name, String pkg, String minecraft, boolean ascetic, String template)
+            throws IOException {
+        if (template != null && !TEMPLATES.containsKey(template)) {
+            throw new Miracle.Heresy("No template called '" + template + "'. There's " + String.join(", ", TEMPLATES.keySet())
+                    + " (miracle genesis --templates describes them).");
+        }
+        if (template != null && ascetic) {
+            throw new Miracle.Heresy("--ascetic and --template: the templates all use the library. Pick one.");
+        }
         Path dir = where.resolve(name).toAbsolutePath().normalize();
         if (Files.exists(dir) && (!Files.isDirectory(dir) || Files.list(dir).findAny().isPresent())) {
             throw new Miracle.Heresy(dir + " already exists and isn't empty. Creation happens ex nihilo.");
@@ -54,7 +83,12 @@ final class Genesis {
                 targets = ["%s"]
                 """.formatted(minecraft, minecraft));
 
-        write(src.resolve(cls + ".java"), (ascetic ? ASCETIC : BLESSED).formatted(pkg, cls, id));
+        if (template != null) {
+            write(src.resolve(cls + ".java"), template(template).replace("__PACKAGE__", pkg)
+                    .replace("__CLASS__", cls).replace("__ID__", id));
+        } else {
+            write(src.resolve(cls + ".java"), (ascetic ? ASCETIC : BLESSED).formatted(pkg, cls, id));
+        }
 
         write(dir.resolve(".gitignore"), "build/\nrun/\n");
         write(dir.resolve("fallback/README.md"), """
@@ -161,6 +195,15 @@ final class Genesis {
             System.out.println("(couldn't ask Mojang for the latest version: " + e.getMessage() + ")");
         }
         return "26.2";
+    }
+
+    private static String template(String name) throws IOException {
+        try (var in = Genesis.class.getResourceAsStream("/templates/" + name + ".java.txt")) {
+            if (in == null) {
+                throw new Miracle.Heresy("The template '" + name + "' is missing from this toolchain build. Rebuild it.");
+            }
+            return new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+        }
     }
 
     private static String camel(String id) {

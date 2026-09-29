@@ -51,9 +51,16 @@ public final class Miracle {
         List<String> rest = new ArrayList<>(Arrays.asList(args).subList(1, args.length));
         switch (args[0]) {
             case "genesis", "new" -> {
-                String name = positional(rest, "genesis needs a name: miracle genesis my-mod");
+                if (rest.remove("--templates")) {
+                    Genesis.listTemplates();
+                    return 0;
+                }
                 boolean ascetic = rest.remove("--ascetic");
-                Genesis.create(Path.of(""), name, option(rest, "--package"), option(rest, "--minecraft"), ascetic);
+                String template = option(rest, "--template");
+                String pkg = option(rest, "--package");
+                String minecraft = option(rest, "--minecraft");
+                String name = positional(rest, "genesis needs a name: miracle genesis my-mod");
+                Genesis.create(Path.of(""), name, pkg, minecraft, ascetic, template);
                 return 0;
             }
             case "classpath" -> {
@@ -87,6 +94,37 @@ public final class Miracle {
             case "confess", "doctor" -> {
                 return Confess.run();
             }
+            case "bonfire", "backup" -> {
+                return Bonfire.run(Path.of(""), rest, Bonfire.Voice.BONFIRE);
+            }
+            case "grace" -> {
+                return Bonfire.run(Path.of(""), rest, Bonfire.Voice.GRACE);
+            }
+            case "messages", "todo" -> {
+                return Messages.run(Path.of(""));
+            }
+            case "zandatsu", "inspect" -> {
+                return Zandatsu.run(Path.of(""), rest.isEmpty() ? null : rest.getFirst());
+            }
+            case "gradle" -> {
+                return Rituals.gradle(rest.remove("--really"));
+            }
+            case "forge", "neoforge", "fabric", "loom" -> {
+                return Rituals.forge();
+            }
+            case "heresy" -> {
+                return Rituals.heresy(Path.of(""));
+            }
+            case "fast" -> {
+                String secs = option(rest, "--seconds");
+                return Rituals.fast(secs == null ? 40 : Integer.parseInt(secs));
+            }
+            case "tithe" -> {
+                return Rituals.tithe();
+            }
+            case "exorcise", "clean" -> {
+                return Rituals.exorcise(Path.of(""), rest.remove("--yes"));
+            }
             case "--version", "version" -> {
                 System.out.println("MiracleToolChain " + VERSION);
                 return 0;
@@ -102,6 +140,9 @@ public final class Miracle {
                   miracle genesis <name>          (new)     create a mod project. Let there be mod.
                       --package com.you.mod  --minecraft 26.2
                       --ascetic           no MiracleToolChain library, just RGCT and you
+                      --template aura     start from a template: aura (RWBY), stylish (DMC),
+                                          zandatsu (MGR:R), you-died (Dark Souls), grace (Elden Ring)
+                      --templates         describe them
                   miracle bake                    (build)   compile, check against every target, bake
                   miracle pray client|server      (run)     bake, then play it with MiracleLoader
                       --version 1.21.11   run a target version (uses its baked variant)
@@ -109,7 +150,19 @@ public final class Miracle {
                       --eula              accept Mojang's EULA for the server (theirs is real)
                       --no-build          don't bake first
                       -- ...              anything after this goes to the game
-                  miracle confess                 (doctor)  list what's wrong with your setup
+                  miracle confess                 (doctor)  list what's wrong with your setup, and your Aura
+                  miracle bonfire [list|rest [name]]  (backup)  checkpoint the worlds in run/; rest to go back
+                  miracle grace ...                         the same, for the Tarnished
+                  miracle messages                (todo)    TODO/FIXME/HACK/XXX, as messages on the ground
+                  miracle zandatsu [jar]          (inspect) cut a mod jar open: patches, library use, bakes
+                  miracle exorcise [--yes]        (clean)   cast out build/, logs, crash reports (worlds spared)
+
+                Rituals nobody needs:
+                  miracle gradle [--really]       a faithful reenactment of a Gradle build. Builds nothing.
+                  miracle forge                   did you mean: miracle?
+                  miracle heresy                  find Forge/Fabric/Mixin imports, assign penance
+                  miracle fast [--seconds 40]     the Great Lent of the build: do nothing, with feeling
+                  miracle tithe                   offer 10%% of your cache to the heavens (deletes nothing)
 
                 Downloads are cached in ~/.cache/miracle ($MIRACLE_HOME).""".formatted(VERSION));
     }

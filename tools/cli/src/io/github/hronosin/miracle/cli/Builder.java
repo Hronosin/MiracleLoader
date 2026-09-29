@@ -27,6 +27,7 @@ final class Builder {
     }
 
     static Path build(Project p) throws IOException {
+        long started = System.nanoTime();
         Mojang.Version primary = Mojang.version(p.minecraft());
         if (primary.obfuscated()) {
             throw new Miracle.Heresy("minecraft = \"" + p.minecraft() + "\" is obfuscated. Write and compile against"
@@ -89,7 +90,29 @@ final class Builder {
         args.add(jar.toString());
         bake(args.toArray(String[]::new));
         System.out.println("Baked: " + p.dir().relativize(jar));
+        System.out.println(style((System.nanoTime() - started) / 1_000_000));
         return jar;
+    }
+
+    /** How stylish the bake was, by how long it took (Devil May Cry rules; Gradle scores D on a good day). */
+    static String style(long millis) {
+        String rank;
+        if (millis < 2500) {
+            rank = "SSS  Smokin' Sexy Style!!  Jackpot!";
+        } else if (millis < 4000) {
+            rank = "SS   Sick Skills!";
+        } else if (millis < 7000) {
+            rank = "S    Savage!";
+        } else if (millis < 12_000) {
+            rank = "A    Apocalyptic!";
+        } else if (millis < 20_000) {
+            rank = "B    Badass!";
+        } else if (millis < 40_000) {
+            rank = "C    Crazy!";
+        } else {
+            rank = "D    Dismal. (first bakes download Minecraft; it gets better)";
+        }
+        return "Style: " + rank + "  (" + String.format(java.util.Locale.ROOT, "%.1f", millis / 1000.0) + "s)";
     }
 
     /** A jar with readable names to compile against: the client itself, or an API jar made from the dictionary. */

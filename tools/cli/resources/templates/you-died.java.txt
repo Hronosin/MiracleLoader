@@ -1,0 +1,112 @@
+package __PACKAGE__;
+
+import io.github.hronosin.miracle.api.MiracleMod;
+import io.github.hronosin.miracle.toolchain.Commandments;
+import io.github.hronosin.miracle.toolchain.Omens;
+import io.github.hronosin.miracle.toolchain.Proclamations;
+import io.github.hronosin.miracle.toolchain.Sermons;
+import net.minecraft.ChatFormatting;
+import net.minecraft.commands.Commands;
+import net.minecraft.network.chat.Component;
+import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
+import net.minecraft.world.entity.boss.wither.WitherBoss;
+import net.minecraft.world.entity.monster.ElderGuardian;
+import net.minecraft.world.entity.monster.warden.Warden;
+
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.Map;
+import java.util.TreeMap;
+
+/**
+ * Prepare to die. (Template: you-died, after Dark Souls.)
+ *
+ * <ul>
+ *   <li>YOU DIED across the screen, every time. Counted per player, kept in
+ *       config/__ID__-deaths.txt; /deaths shows the tally.</li>
+ *   <li>Fell a boss (the Wither, the Ender Dragon, the Warden, an Elder Guardian) and everyone
+ *       sees VICTORY ACHIEVED.</li>
+ *   <li>Join the server and you're told to praise the sun. \[T]/</li>
+ * </ul>
+ */
+public final class __CLASS__ implements MiracleMod {
+
+    private static final Path TALLY = Path.of(System.getProperty("miracle.configDir", "config"), "__ID__-deaths.txt");
+    private static final Map<String, Integer> DEATHS = new TreeMap<>();
+
+    @Override
+    public void onLaunch() {
+        boolean praise = Commandments.mine().flag("praise_the_sun", true, "Greet joining players with the proper gesture.");
+        load();
+
+        Omens.playerJoined(p -> {
+            if (praise) {
+                Proclamations.overlay(p, Component.literal("Praise the Sun! \\[T]/").withStyle(ChatFormatting.GOLD));
+            }
+        });
+
+        Omens.entityDied((victim, source) -> {
+            if (victim instanceof ServerPlayer p) {
+                int n;
+                synchronized (DEATHS) {
+                    n = DEATHS.merge(p.getName().getString(), 1, Integer::sum);
+                    save();
+                }
+                Proclamations.title(p, Component.literal("YOU DIED").withStyle(ChatFormatting.DARK_RED),
+                        Component.literal("Deaths: " + n).withStyle(ChatFormatting.GRAY), 10, 70, 30);
+            } else if (isBoss(victim) && source.getEntity() instanceof ServerPlayer killer) {
+                MinecraftServer server = killer.level().getServer();
+                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                    Proclamations.title(p, Component.literal("VICTORY ACHIEVED").withStyle(ChatFormatting.GOLD),
+                            victim.getName().copy().withStyle(ChatFormatting.GRAY), 10, 80, 30);
+                }
+            }
+        });
+
+        Sermons.preach(d -> d.register(Commands.literal("deaths").executes(c -> {
+            synchronized (DEATHS) {
+                if (DEATHS.isEmpty()) {
+                    Sermons.reply(c.getSource(), "Nobody has died yet. Give it time.");
+                }
+                DEATHS.forEach((name, n) -> Sermons.reply(c.getSource(), name + ": " + n));
+            }
+            return 1;
+        })));
+    }
+
+    private static boolean isBoss(LivingEntity e) {
+        return e instanceof WitherBoss || e instanceof EnderDragon || e instanceof Warden || e instanceof ElderGuardian;
+    }
+
+    private static void load() {
+        if (!Files.isRegularFile(TALLY)) {
+            return;
+        }
+        try {
+            for (String line : Files.readAllLines(TALLY)) {
+                int eq = line.lastIndexOf('=');
+                if (eq > 0) {
+                    DEATHS.put(line.substring(0, eq), Integer.parseInt(line.substring(eq + 1).strip()));
+                }
+            }
+        } catch (IOException | NumberFormatException e) {
+            System.out.println("[__ID__] couldn't read " + TALLY + ": " + e.getMessage() + ". Starting the tally over.");
+        }
+    }
+
+    private static void save() {
+        StringBuilder sb = new StringBuilder();
+        DEATHS.forEach((name, n) -> sb.append(name).append('=').append(n).append('\n'));
+        try {
+            Files.createDirectories(TALLY.toAbsolutePath().getParent());
+            Files.writeString(TALLY, sb);
+        } catch (IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+}
