@@ -98,6 +98,13 @@ build_jar tools/bake "$OUT/miracle-bake.jar"
 printf 'Main-Class: io.github.hronosin.miracle.bake.Bake\n' > "$OUT/classes/bake-manifest.txt"
 "$JAR" --update --file "$OUT/miracle-bake.jar" --manifest "$OUT/classes/bake-manifest.txt"
 
+echo "==> miracle (MiracleToolChain command line)"
+mkdir -p "$OUT/classes/miracle"
+# shellcheck disable=SC2046
+javac_ -cp "$OUT/miracle-loader.jar" -d "$OUT/classes/miracle" $(find tools/cli/src tools/bake/src -name '*.java')
+printf 'Main-Class: io.github.hronosin.miracle.cli.Miracle\nClass-Path: miracle-loader.jar\n' > "$OUT/classes/cli-manifest.txt"
+"$JAR" --create --file "$OUT/miracle.jar" --manifest "$OUT/classes/cli-manifest.txt" -C "$OUT/classes/miracle" .
+
 echo "==> fake game"
 build_jar examples/fake-game "$OUT/fake-minecraft.jar"
 

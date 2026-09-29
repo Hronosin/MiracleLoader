@@ -10,19 +10,19 @@ import java.util.Map;
  * {@code key = ["a", "b"]}, and {@code #} comments. No tables, no numbers, no multiline strings —
  * the loader has zero dependencies and intends to keep it that way.
  */
-final class MiniToml {
+public final class MiniToml {
 
     private MiniToml() {
     }
 
-    static final class ParseException extends Exception {
+    public static final class ParseException extends Exception {
         ParseException(int line, String msg) {
             super("line " + line + ": " + msg);
         }
     }
 
     /** Values are {@code String} or {@code List<String>}. */
-    static Map<String, Object> parse(String text) throws ParseException {
+    public static Map<String, Object> parse(String text) throws ParseException {
         Map<String, Object> out = new LinkedHashMap<>();
         String[] lines = text.split("\r?\n", -1);
         for (int i = 0; i < lines.length; i++) {

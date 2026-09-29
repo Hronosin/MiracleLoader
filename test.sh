@@ -309,6 +309,48 @@ GAME_JAR="$OBF" run_with obf-unbaked "$M/hello-mod.jar"
 expect obf-unbaked "Mod hello-mod was never baked, and Minecraft fake-obf is obfuscated."
 expect obf-unbaked "RGCT: hello-mod hook(s) net.minecraft.world.entity.player.Player, but this game has no such class. Minecraft fake-obf is obfuscated: the mod needs a variant baked for it"
 
+# --- MiracleToolChain command line (offline parts) --------------------------------------------
+CLI_HOME="$ROOT/build/test-cli"
+rm -rf "$CLI_HOME" && mkdir -p "$CLI_HOME"
+cli() { out="$(cd "$CLI_HOME" && MIRACLE_HOME="$CLI_HOME/cache" "$JAVA" -jar "$ROOT/build/miracle.jar" "$@" 2>&1)"; code=$?; }
+
+cli help
+expect_code cli-help 0
+expect cli-help "Forge hammers, Fabric stitches, we just pray."
+expect cli-help "miracle genesis <name>          (new)"
+
+cli genesis holy-hops --minecraft 26.2 --package org.example.hops
+expect_code genesis 0
+expect genesis "In the beginning there was nothing. Then there was Holy Hops."
+for f in miracle.mod.toml miracle.project.toml src/org/example/hops/HolyHops.java .gitignore fallback/README.md; do
+    if [ -f "$CLI_HOME/holy-hops/$f" ]; then pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [genesis]: no $f"; fi
+done
+grep -q 'entrypoint = "org.example.hops.HolyHops"' "$CLI_HOME/holy-hops/miracle.mod.toml" && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [genesis]: wrong entrypoint"; }
+grep -q 'minecraft = "26.2"' "$CLI_HOME/holy-hops/miracle.project.toml" && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [genesis]: wrong minecraft"; }
+
+cli genesis holy-hops --minecraft 26.2
+expect_code genesis-again 1
+expect genesis-again "HERESY:"
+expect genesis-again "already exists and isn't empty. Creation happens ex nihilo."
+
+cli bake
+expect_code bake-nowhere 1
+expect bake-nowhere "HERESY: No miracle.project.toml here or in any parent folder. Start one with: miracle genesis my-mod"
+
+cli smite
+expect_code unknown 1
+expect unknown "HERESY: 'smite' is not in the scripture."
+
+(cd "$CLI_HOME/holy-hops" && MIRACLE_HOME="$CLI_HOME/cache" "$JAVA" -jar "$ROOT/build/miracle.jar" pray > "$CLI_HOME/pray.log" 2>&1); code=$?; out="$(cat "$CLI_HOME/pray.log")"
+expect_code pray-what 1
+expect pray-what "pray for what? miracle pray client, or miracle pray server"
+
+cli confess
+expect confess "Forgive me, Father, for I have built mods."
+expect confess "not inside a mod project"
+
 echo
 echo "passed: $pass, failed: $fail"
 [ "$fail" -eq 0 ]

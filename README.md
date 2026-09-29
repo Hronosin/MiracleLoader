@@ -14,7 +14,20 @@ For those who'd rather not write everything from scratch, there will be **Miracl
 
 ---
 
-## Quick start
+## Quick start: making a mod
+
+```bash
+git clone https://github.com/Hronosin/MiracleLoader && cd MiracleLoader
+ln -s "$PWD/miracle" ~/.local/bin/miracle     # the MiracleToolChain command line
+
+miracle genesis holy-hops                     # a new mod project. Let there be mod.
+cd holy-hops
+miracle pray client                           # compile, bake, and play it
+```
+
+That's the whole setup. No Gradle, no IDE plugin, no launcher: `miracle` downloads Minecraft, its libraries and assets from Mojang (cached in `~/.cache/miracle`), compiles the mod, runs the game with MiracleLoader and your mod, and logs you in offline. Details in [MiracleToolChain](#miracletoolchain).
+
+## Quick start: hacking on the loader
 
 You need **JDK 25+** (Minecraft 26.x requires it anyway). On Fedora: `sudo dnf install java-25-openjdk-devel`.
 
@@ -330,6 +343,52 @@ Limits, honestly:
 - Official Mojang mappings only, for now.
 - Fallbacks compile against the primary version's libraries (Brigadier, DFU...), not the target version's; that has been fine so far.
 
+## MiracleToolChain
+
+Forge's toolchain is huge and has everything you need, and plenty you don't. Ours aims for the same, minus the Gradle. One command, solemn names, boring aliases for scripts and people without a sense of humour:
+
+| command | alias | does |
+|---|---|---|
+| `miracle genesis <name>` | `new` | creates a mod project: sources, `miracle.mod.toml`, `miracle.project.toml`, a sample hook |
+| `miracle bake` | `build` | compiles, adds fallbacks, then checks and bakes against every target |
+| `miracle pray client` | `run` | bakes, then plays the mod: offline, singleplayer |
+| `miracle pray server` | `run` | bakes, then hosts it (asks you to accept Mojang's EULA first, with `--eula`) |
+| `miracle confess` | `doctor` | lists what's wrong with your setup, then absolves you anyway |
+
+A project is two small files:
+
+```toml
+# miracle.project.toml
+minecraft = "26.3"                       # written and compiled against: unobfuscated, readable names
+targets = ["26.3", "26.2", "1.21.11"]    # checked by bake; obfuscated ones get a baked variant
+```
+
+```
+$ miracle bake
+Baking Holy Hops 0.1.0 against Minecraft 26.3
+  libraries for 26.3: 66/66 (66 downloaded)
+  compiling main sources (1 file)
+[bake] holy-hops-0.1.0.jar (1 classes)
+         26.3      unobfuscated  ok, 3 game references present
+         26.2      unobfuscated  ok, 3 game references present
+         1.21.11   obfuscated    ok, 3 game references translated, baked
+Baked: build/holy-hops-0.1.0.jar
+
+$ miracle pray server --eula --version 1.21.11
+Praying for Minecraft 1.21.11 in run/server-1.21.11 ...
+[Miracle] Game: Minecraft 1.21.11 (obfuscated)
+[Miracle] OSHI: holy-hops uses its variant baked for 1.21.11
+```
+
+- `pray` runs in `run/<side>-<version>/`, so worlds and settings survive between runs. `--version` runs any target; `--username` names your offline player; `--no-build` skips the bake; anything after `--` goes to the game.
+- The first `pray server` writes a dev `server.properties`: bound to localhost, offline logins allowed, so `pray client` can join it.
+- Everything Mojang-sourced is cached by hash: the first client run downloads about half a gigabyte of assets, later ones nothing.
+- The toolchain has no dependencies either: its own JSON reader, javac through `javax.tools`, downloads through `java.net.http`.
+
+Verified here: `genesis`, `bake` and `pray server` end to end on 26.3 and 1.21.11. `pray client` downloads everything and starts the 26.3 client through MiracleLoader with the mod loaded; the only machine it was tried on so far had no display (and its virtual one no sRGB OpenGL), so the window itself is still waiting for its first real desktop.
+
+Next for the toolchain: `miracle ide` (IDE project files, including readable API jars for fallbacks) and `miracle ascend` (publish to Modrinth); then the library half: events, registries, networking, configs.
+
 ## Lifecycle
 
 1. Find mods in `mods/` and sort them by id, so load order never depends on the file system's mood.
@@ -354,7 +413,10 @@ Limits, honestly:
 - [ ] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [ ] Direct calls instead of the dispatcher when a method has a single hook
 - [ ] Mod dependencies in `miracle.mod.toml`
-- [ ] **MiracleToolChain**: events, registries, networking, configs
+- [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
+- [ ] MiracleToolChain: `ide`, `ascend` (publish)
+- [ ] MiracleToolChain library: events, registries, networking, configs
+- [ ] MiracleToolChain specification
 
 ## License
 

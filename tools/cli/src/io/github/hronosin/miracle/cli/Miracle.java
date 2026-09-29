@@ -1,0 +1,154 @@
+package io.github.hronosin.miracle.cli;
+
+import java.io.IOException;
+import java.net.URISyntaxException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
+
+/**
+ * MiracleToolChain's command line: {@code miracle}. Every command has a solemn name and a boring
+ * alias, for people without a sense of humour and for scripts.
+ */
+public final class Miracle {
+
+    static final String VERSION = "0.1.0";
+
+    /** A user error: printed without a stack trace. */
+    static final class Heresy extends RuntimeException {
+        Heresy(String message) {
+            super(message);
+        }
+    }
+
+    private Miracle() {
+    }
+
+    public static void main(String[] args) {
+        int code;
+        try {
+            code = run(args);
+        } catch (Heresy h) {
+            System.err.println("HERESY: " + h.getMessage());
+            code = 1;
+        } catch (IOException e) {
+            System.err.println("The heavens are silent: " + e.getMessage());
+            code = 1;
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            code = 130;
+        }
+        System.exit(code);
+    }
+
+    static int run(String[] args) throws IOException, InterruptedException {
+        if (args.length == 0 || args[0].equals("help") || args[0].equals("--help") || args[0].equals("-h")) {
+            help();
+            return 0;
+        }
+        List<String> rest = new ArrayList<>(Arrays.asList(args).subList(1, args.length));
+        switch (args[0]) {
+            case "genesis", "new" -> {
+                String name = positional(rest, "genesis needs a name: miracle genesis my-mod");
+                Genesis.create(Path.of(""), name, option(rest, "--package"), option(rest, "--minecraft"));
+                return 0;
+            }
+            case "bake", "build" -> {
+                Builder.build(Project.find(Path.of("")));
+                return 0;
+            }
+            case "pray", "run" -> {
+                List<String> extra = new ArrayList<>();
+                int dashes = rest.indexOf("--");
+                if (dashes >= 0) {
+                    extra.addAll(rest.subList(dashes + 1, rest.size()));
+                    rest = new ArrayList<>(rest.subList(0, dashes));
+                }
+                String version = option(rest, "--version");
+                String username = option(rest, "--username");
+                boolean noBuild = rest.remove("--no-build");
+                boolean eula = rest.remove("--eula");
+                String side = positional(rest, "pray for what? miracle pray client, or miracle pray server");
+                return Runner.pray(Project.find(Path.of("")), new Runner.Options(side, version, !noBuild, eula,
+                        username != null ? username : "Pilgrim", extra));
+            }
+            case "confess", "doctor" -> {
+                return Confess.run();
+            }
+            case "--version", "version" -> {
+                System.out.println("MiracleToolChain " + VERSION);
+                return 0;
+            }
+            default -> throw new Heresy("'" + args[0] + "' is not in the scripture. Try: miracle help");
+        }
+    }
+
+    private static void help() {
+        System.out.println("""
+                MiracleToolChain %s: Forge hammers, Fabric stitches, we just pray.
+
+                  miracle genesis <name>          (new)     create a mod project. Let there be mod.
+                      --package com.you.mod  --minecraft 26.2
+                  miracle bake                    (build)   compile, check against every target, bake
+                  miracle pray client|server      (run)     bake, then play it with MiracleLoader
+                      --version 1.21.11   run a target version (uses its baked variant)
+                      --username Name     offline name for the client (default: Pilgrim)
+                      --eula              accept Mojang's EULA for the server (theirs is real)
+                      --no-build          don't bake first
+                      -- ...              anything after this goes to the game
+                  miracle confess                 (doctor)  list what's wrong with your setup
+
+                Downloads are cached in ~/.cache/miracle ($MIRACLE_HOME).""".formatted(VERSION));
+    }
+
+    private static String option(List<String> args, String name) {
+        int i = args.indexOf(name);
+        if (i < 0) {
+            return null;
+        }
+        if (i + 1 >= args.size()) {
+            throw new Heresy(name + " needs a value");
+        }
+        String v = args.get(i + 1);
+        args.remove(i + 1);
+        args.remove(i);
+        return v;
+    }
+
+    private static String positional(List<String> args, String error) {
+        for (String a : args) {
+            if (!a.startsWith("--")) {
+                args.remove(a);
+                return a;
+            }
+        }
+        throw new Heresy(error);
+    }
+
+    /** MiracleLoader's jar: next to the toolchain's own jar, or wherever -Dmiracle.loaderJar says. */
+    static Path loaderJar() {
+        String prop = System.getProperty("miracle.loaderJar", System.getenv("MIRACLE_LOADER_JAR"));
+        Path jar;
+        if (prop != null) {
+            jar = Path.of(prop);
+        } else {
+            try {
+                Path self = Path.of(Miracle.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+                jar = self.resolveSibling("miracle-loader.jar");
+            } catch (URISyntaxException e) {
+                throw new IllegalStateException(e);
+            }
+        }
+        if (!Files.isRegularFile(jar)) {
+            throw new Heresy("MiracleLoader not found at " + jar + " (set -Dmiracle.loaderJar=...)");
+        }
+        return jar.toAbsolutePath();
+    }
+
+    static String javaExecutable() {
+        return ProcessHandle.current().info().command()
+                .orElse(Path.of(System.getProperty("java.home"), "bin", "java").toString());
+    }
+}

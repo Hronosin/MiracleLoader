@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# MiracleToolChain. Symlink this into your PATH: ln -s "$PWD/miracle" ~/.local/bin/miracle
+set -euo pipefail
+DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
+if [ ! -f "$DIR/build/miracle.jar" ] || [ ! -f "$DIR/build/miracle-loader.jar" ]; then
+    echo "First prayer: building the toolchain..." >&2
+    "$DIR/build.sh" > /dev/null
+fi
+exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$DIR/build/miracle.jar" "$@"
