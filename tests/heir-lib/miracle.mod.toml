@@ -1,0 +1,4 @@
+id = "heir-lib"
+name = "Heir Library"
+version = "1.0.0"
+library = true

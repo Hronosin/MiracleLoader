@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.3.0";
+    static final String VERSION = "0.4.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -91,6 +91,9 @@ public final class Miracle {
                 return Runner.pray(Project.find(Path.of("")), new Runner.Options(side, version, !noBuild, eula,
                         username != null ? username : "Pilgrim", extra));
             }
+            case "ascend", "publish" -> {
+                return Ascend.run(Path.of(""), rest);
+            }
             case "confess", "doctor" -> {
                 return Confess.run();
             }
@@ -163,6 +166,12 @@ public final class Miracle {
                       --eula              accept Mojang's EULA for the server (theirs is real)
                       --no-build          don't bake first
                       -- ...              anything after this goes to the game
+                  miracle ascend modrinth|github  (publish) bake, then publish the jar as a new version
+                      --dry-run           show what would go up, send nothing
+                      -m "text" | --notes CHANGES.md   the changelog   --type release|beta|alpha
+                      --project slug      Modrinth project (else modrinth = "..." in miracle.project.toml)
+                      --repo you/mod      GitHub repository (else github = "...")  --tag v1.0  --draft
+                      tokens: MODRINTH_TOKEN; GITHUB_TOKEN, GH_TOKEN or gh auth login
                   miracle confess                 (doctor)  list what's wrong with your setup, and your Aura
                   miracle dictionary <v|26.*|>=1.21.11|latest>...  (mappings)  fetch what baking needs; --list
                   miracle bonfire [list|rest [name]]  (backup)  checkpoint the worlds in run/; rest to go back

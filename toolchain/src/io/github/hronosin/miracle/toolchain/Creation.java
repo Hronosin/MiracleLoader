@@ -15,17 +15,25 @@ import net.minecraft.client.renderer.entity.ThrownItemRenderer;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.flag.FeatureFlagSet;
+import net.minecraft.world.inventory.AbstractContainerMenu;
+import net.minecraft.world.inventory.MenuType;
 import net.minecraft.world.item.BlockItem;
 import net.minecraft.world.item.CreativeModeTab;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.SpawnEggItem;
 import net.minecraft.world.level.block.Block;
+import net.minecraft.world.level.block.entity.BlockEntity;
+import net.minecraft.world.level.block.entity.BlockEntityType;
 import net.minecraft.world.level.block.state.BlockBehaviour;
 import net.minecraft.world.level.block.state.BlockState;
 
+import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.Proxy;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -35,7 +43,8 @@ import java.util.function.Function;
 import java.util.function.Supplier;
 
 /**
- * Creation: new items, blocks and entities. Known as {@link Content} to the uninspired.
+ * Creation: new items, blocks, entities, block entities and menus. Known as {@link Content} to
+ * the uninspired.
  *
  * <pre>{@code
  * static Relic<Item> HOLY_WATER;
@@ -65,8 +74,12 @@ import java.util.function.Supplier;
  * names are {@code entity.<namespace>.<name>} in the lang file, and a mob's drops come from
  * {@code data/<namespace>/loot_table/entities/<name>.json}.
  *
- * <p>Blocks, items and entities travel between client and server as numbers, so both sides need
- * the same mods: {@link Communion} checks that when a player joins.
+ * <p>Block entities are {@link Shrine}s, held by blocks that are {@link Sanctuary Sanctuaries}
+ * (or any {@code EntityBlock}); a {@link Reliquary} is one with an inventory. Menus are
+ * {@link Vision}s, with their screens.
+ *
+ * <p>All of these travel between client and server as numbers, so both sides need the same
+ * mods: {@link Communion} checks that when a player joins.
  */
 public class Creation {
 
@@ -77,6 +90,11 @@ public class Creation {
     private static final List<Relic<Item>> ITEMS = new ArrayList<>();
     private static final List<Function<Item.Properties, ? extends Item>> ITEM_MAKERS = new ArrayList<>();
     private static final List<Being<?>> BEINGS = new ArrayList<>();
+    private static final List<Shrine<?>> SHRINES = new ArrayList<>();
+    private static final List<Vision<?>> VISIONS = new ArrayList<>();
+    /** Filled when the registries are built; read by Sanctuaries and screens. */
+    private static final Map<Block, Shrine<?>> SHRINE_OF = new IdentityHashMap<>();
+    private static final Map<Object, Vision<?>> VISION_OF = new IdentityHashMap<>();
     private static volatile boolean done;
 
     protected Creation() {
@@ -133,6 +151,91 @@ public class Creation {
         return b;
     }
 
+    /**
+     * A new kind of block entity, held by {@code blocks} (at least one; they must be
+     * {@code EntityBlock}s, like a {@link Sanctuary}). {@code factory} makes one for a block at a
+     * position: usually your block entity's constructor, {@code AltarEntity::new}.
+     */
+    @SafeVarargs
+    public static synchronized <T extends BlockEntity> Shrine<T> shrine(String name, Shrine.Factory<T> factory,
+                                                                        Relic<Block>... blocks) {
+        Mods.Mod mod = open("Creation.shrine", name);
+        if (blocks.length == 0) {
+            throw new IllegalArgumentException(name + ": a shrine needs at least one block to stand in");
+        }
+        String ns = namespace(mod.id());
+        for (Shrine<?> s : SHRINES) {
+            if (s.namespace().equals(ns) && s.path().equals(name)) {
+                throw new IllegalArgumentException(ns + ":" + name + " was already created. Once is enough.");
+            }
+        }
+        for (Relic<Block> b : blocks) {
+            if (!BLOCKS.contains(b)) {
+                throw new IllegalArgumentException(b + " isn't a block made with Creation.block (an item, or a vanilla"
+                        + " block?): " + ns + ":" + name + " can only stand in blocks of your own");
+            }
+            for (Shrine<?> s : SHRINES) {
+                if (s.blocks.contains(b)) {
+                    throw new IllegalArgumentException(b + " already holds " + s + "; a block holds one kind of block entity");
+                }
+            }
+        }
+        List<Relic<Block>> holders = new ArrayList<>();
+        for (Relic<Block> b : blocks) {
+            holders.add(b);
+        }
+        Shrine<T> s = new Shrine<>(ns, name, factory, List.copyOf(holders));
+        SHRINES.add(s);
+        return s;
+    }
+
+    /**
+     * A block entity with an inventory of {@code rows} rows of nine (1 to 6), opened in the chest
+     * screen: a {@link Reliquary}, held by {@code blocks}. For a chest of your own with no other
+     * code; extend Reliquary and use {@link #shrine} for more.
+     */
+    @SafeVarargs
+    public static Shrine<Reliquary> reliquary(String name, int rows, Relic<Block>... blocks) {
+        if (rows < 1 || rows > 6) {
+            throw new IllegalArgumentException(name + ": " + rows + " rows; a reliquary has 1 to 6");
+        }
+        @SuppressWarnings("unchecked")
+        Shrine<Reliquary>[] self = (Shrine<Reliquary>[]) new Shrine<?>[1];
+        self[0] = shrine(name, (pos, state) -> new Reliquary(self[0].get(), pos, state, rows), blocks);
+        return self[0];
+    }
+
+    /**
+     * A new kind of menu. {@code factory} makes the client's half from an id and the player's
+     * inventory (usually a constructor, {@code AltarMenu::new}); see {@link Vision} for the rest.
+     */
+    public static synchronized <M extends AbstractContainerMenu> Vision<M> vision(String name, Vision.Factory<M> factory) {
+        Mods.Mod mod = open("Creation.vision", name);
+        String ns = namespace(mod.id());
+        for (Vision<?> v : VISIONS) {
+            if (v.namespace().equals(ns) && v.path().equals(name)) {
+                throw new IllegalArgumentException(ns + ":" + name + " was already created. Once is enough.");
+            }
+        }
+        Vision<M> v = new Vision<>(ns, name, factory);
+        VISIONS.add(v);
+        return v;
+    }
+
+    /** The shrine a block holds, or null. */
+    static Shrine<?> shrineOf(Block block) {
+        synchronized (SHRINE_OF) {
+            return SHRINE_OF.get(block);
+        }
+    }
+
+    /** The vision of a menu type, or null for vanilla's and other loaders'. */
+    static Vision<?> visionOf(Object menuType) {
+        synchronized (VISION_OF) {
+            return VISION_OF.get(menuType);
+        }
+    }
+
     /** The spawn egg of a being: an item like any other, made once the entity exists. */
     static synchronized Relic<Item> egg(Being<?> being) {
         Relic<Item> r = relic("Being.spawnEgg", being.path() + "_spawn_egg");
@@ -169,6 +272,8 @@ public class Creation {
         BLOCKS.forEach(r -> ids.add("block " + r));
         BEINGS.forEach(b -> ids.add("entity " + b));
         ITEMS.forEach(r -> ids.add("item " + r));
+        SHRINES.forEach(r -> ids.add("block_entity " + r));
+        VISIONS.forEach(v -> ids.add("menu " + v));
         return ids;
     }
 
@@ -202,7 +307,7 @@ public class Creation {
 
     // --- installation (startup, in the library's name) ------------------------------------------
 
-    static void install(Rgct rgct, boolean beings, boolean client) {
+    static void install(Rgct rgct, boolean beings, boolean visions, boolean client) {
         // After vanilla's own contents, before the registries freeze.
         rgct.target("net.minecraft.core.registries.BuiltInRegistries")
                 .method("freeze", "()V")
@@ -210,6 +315,19 @@ public class Creation {
         rgct.target("net.minecraft.world.item.CreativeModeTab")
                 .method("buildContents", "(Lnet/minecraft/world/item/CreativeModeTab$ItemDisplayParameters;)V")
                 .atReturn(self -> Workshop.fillTab(self));
+        if (visions && client) {
+            // The server names a menu type; the client makes its screen. Ours, we make.
+            rgct.target("net.minecraft.client.gui.screens.MenuScreens")
+                    .method("create", "(Lnet/minecraft/world/inventory/MenuType;Lnet/minecraft/client/Minecraft;"
+                            + "ILnet/minecraft/network/chat/Component;)V")
+                    .interceptHead(ctx -> {
+                        if (visionOf(ctx.arg(0)) != null) {
+                            Seer.show(ctx.arg(0), ctx.arg(2), ctx.arg(3));
+                            ctx.cancel();
+                        }
+                    });
+            Easel.install(rgct);
+        }
         if (!beings) {
             return;
         }
@@ -302,6 +420,9 @@ public class Creation {
                     state.initCache();
                 }
             }
+            for (Shrine<?> s : SHRINES) {
+                createShrine(s);
+            }
             for (Being<?> b : BEINGS) {
                 createBeing(b);
             }
@@ -320,10 +441,92 @@ public class Creation {
                 }
                 r.set(Registry.register(BuiltInRegistries.ITEM, key, item));
             }
-            if (!BLOCKS.isEmpty() || !ITEMS.isEmpty() || !BEINGS.isEmpty()) {
-                Log.info("MiracleToolChain: created " + BLOCKS.size() + " block(s), " + ITEMS.size() + " item(s) and "
-                        + BEINGS.size() + " kind(s) of entity. And it was good.");
+            for (Vision<?> v : VISIONS) {
+                createVision(v);
             }
+            if (!BLOCKS.isEmpty() || !ITEMS.isEmpty() || !BEINGS.isEmpty() || !SHRINES.isEmpty() || !VISIONS.isEmpty()) {
+                StringBuilder what = new StringBuilder("MiracleToolChain: created " + BLOCKS.size() + " block(s), "
+                        + ITEMS.size() + " item(s), " + BEINGS.size() + " kind(s) of entity");
+                if (!SHRINES.isEmpty() || !VISIONS.isEmpty()) {
+                    what.append(", ").append(SHRINES.size()).append(" kind(s) of block entity and ")
+                            .append(VISIONS.size()).append(" menu(s)");
+                }
+                Log.info(what.append(". And it was good.").toString());
+            }
+        }
+
+        /**
+         * Vanilla makes block entity types through a constructor that's private in 1.21.11, taking
+         * a factory interface that's package-private there: both are reached by shape, not name.
+         */
+        @SuppressWarnings("unchecked")
+        private static <T extends BlockEntity> void createShrine(Shrine<T> s) {
+            ResourceKey<BlockEntityType<?>> key = ResourceKey.create(Registries.BLOCK_ENTITY_TYPE, s.id());
+            Block[] blocks = s.blocks.stream().map(Relic::get).toArray(Block[]::new);
+            BlockEntityType<T> type;
+            try {
+                Constructor<?> ctor = twoArgs(BlockEntityType.class, Set.class);
+                Object supplier = factory(ctor.getParameterTypes()[0], s.toString(),
+                        args -> s.make((net.minecraft.core.BlockPos) args[0], (BlockState) args[1]));
+                type = (BlockEntityType<T>) ctor.newInstance(supplier, Set.of(blocks));
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("MiracleToolChain can't make block entity types in this version: " + e, e);
+            }
+            s.set(Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, key, type));
+            synchronized (SHRINE_OF) {
+                for (Block b : blocks) {
+                    SHRINE_OF.put(b, s);
+                    if (!(b instanceof net.minecraft.world.level.block.EntityBlock)) {
+                        Log.warn("MiracleToolChain: " + s + " stands in " + BuiltInRegistries.BLOCK.getKey(b) + ", which isn't"
+                                + " an EntityBlock (a Sanctuary is), so it never makes one.");
+                    }
+                }
+            }
+        }
+
+        /** Menu types too: private constructor, package-private factory interface. */
+        @SuppressWarnings("unchecked")
+        private static <M extends AbstractContainerMenu> void createVision(Vision<M> v) {
+            ResourceKey<MenuType<?>> key = ResourceKey.create(Registries.MENU, v.id());
+            MenuType<M> type;
+            try {
+                Constructor<?> ctor = twoArgs(MenuType.class, FeatureFlagSet.class);
+                Object supplier = factory(ctor.getParameterTypes()[0], v.toString(),
+                        args -> v.factory.create((Integer) args[0], (net.minecraft.world.entity.player.Inventory) args[1]));
+                type = (MenuType<M>) ctor.newInstance(supplier, FeatureFlagSet.of());
+            } catch (ReflectiveOperationException e) {
+                throw new IllegalStateException("MiracleToolChain can't make menu types in this version: " + e, e);
+            }
+            v.set(Registry.register(BuiltInRegistries.MENU, key, type));
+            synchronized (VISION_OF) {
+                VISION_OF.put(type, v);
+            }
+        }
+
+        /** The constructor of {@code owner} taking (some factory interface, {@code second}). */
+        private static Constructor<?> twoArgs(Class<?> owner, Class<?> second) throws NoSuchMethodException {
+            for (Constructor<?> c : owner.getDeclaredConstructors()) {
+                Class<?>[] p = c.getParameterTypes();
+                if (p.length == 2 && p[0].isInterface() && p[1] == second) {
+                    c.setAccessible(true);
+                    return c;
+                }
+            }
+            throw new NoSuchMethodException(owner.getSimpleName() + "(<factory>, " + second.getSimpleName() + ")");
+        }
+
+        /** An instance of a one-method factory interface, public or not, that calls {@code body}. */
+        private static Object factory(Class<?> iface, String name, Function<Object[], Object> body) {
+            return Proxy.newProxyInstance(iface.getClassLoader(), new Class<?>[]{iface}, (proxy, method, args) -> {
+                if (method.getDeclaringClass() == Object.class) {
+                    return switch (method.getName()) {
+                        case "equals" -> proxy == args[0];
+                        case "hashCode" -> System.identityHashCode(proxy);
+                        default -> "MiracleToolChain factory for " + name;
+                    };
+                }
+                return body.apply(args == null ? new Object[0] : Arrays.copyOf(args, args.length));
+            });
         }
 
         private static <T extends Entity> void createBeing(Being<T> b) {

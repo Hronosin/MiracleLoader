@@ -73,6 +73,12 @@ final class Builder {
         jar(classes, jar);
 
         List<String> args = new ArrayList<>(List.of("--native", primary.id() + "=" + client));
+        if (p.usesToolchain()) {
+            // Mods may extend the library's classes (Reliquary, Sanctuary...), and through them
+            // override game methods: the baker has to see those classes to rename the overrides.
+            args.add("--lib");
+            args.add(Miracle.toolchainJar().toString());
+        }
         List<String> targets = Targets.expand(p.targets());
         if (p.targets().stream().anyMatch(Targets::isPattern)) {
             System.out.println("  targets " + p.targets() + " mean " + targets);

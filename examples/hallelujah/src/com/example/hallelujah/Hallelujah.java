@@ -12,9 +12,13 @@ import io.github.hronosin.miracle.toolchain.Omens.Verdict;
 import io.github.hronosin.miracle.toolchain.Omens;
 import io.github.hronosin.miracle.toolchain.Proclamations;
 import io.github.hronosin.miracle.toolchain.Relic;
+import io.github.hronosin.miracle.toolchain.Reliquary;
+import io.github.hronosin.miracle.toolchain.Sanctuary;
 import io.github.hronosin.miracle.toolchain.Scroll;
+import io.github.hronosin.miracle.toolchain.Shrine;
 import io.github.hronosin.miracle.toolchain.Sermons;
 import io.github.hronosin.miracle.toolchain.Telepathy;
+import io.github.hronosin.miracle.toolchain.Vision;
 import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
@@ -40,8 +44,11 @@ import java.util.concurrent.atomic.AtomicLong;
  *   <li>a sanctuary around 0,0 where only operators may break blocks (Omens, cancellable);</li>
  *   <li>higher jumps and softer landings for players (Blessings, stacking with other mods);</li>
  *   <li>{@code /hallelujah} and {@code /miracles} (Sermons);</li>
- *   <li>holy water to throw, an altar, and heretics (Creation), with models, textures and names
- *       from {@code resources/} (written by {@code miracle scribe});</li>
+ *   <li>holy water to throw, and heretics (Creation), with models, textures and names from
+ *       {@code resources/} (written by {@code miracle scribe});</li>
+ *   <li>an altar that fills empty bottles with holy water, showing its progress (a Shrine that
+ *       keeps Vigil, and a Vision with a caption), and a reliquary to keep things in (three rows,
+ *       one line of code);</li>
  *   <li>a key, G, to pray (Gestures): the client asks, the server decides (Telepathy);</li>
  *   <li>the settings themselves (Commandments).</li>
  * </ul>
@@ -59,6 +66,10 @@ public final class Hallelujah implements MiracleMod {
 
     static Relic<Item> holyWater;
     static Relic<Block> altar;
+    static Shrine<AltarEntity> altarEntity;
+    static Vision<AltarMenu> altarMenu;
+    static Relic<Block> reliquary;
+    static Shrine<Reliquary> reliquaryEntity;
     static Being<ThrownHolyWater> thrownHolyWater;
     static Being<Heretic> heretic;
     private static final Map<UUID, Integer> LAST_PRAYER = new ConcurrentHashMap<>();
@@ -100,7 +111,17 @@ public final class Hallelujah implements MiracleMod {
 
         // New things. Their models, textures, names and the altar's loot table are in resources/.
         holyWater = Creation.item("holy_water", p -> new HolyWaterItem(p.stacksTo(16))).inTab("food_and_drinks");
-        altar = Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+        // The altar: a block with insides (a Shrine) that bless bottles, and a menu (a Vision)
+        // that shows how far along the blessing is.
+        altar = Creation.block("altar", p -> new Sanctuary(p.strength(2f))).inTab("functional_blocks");
+        altarEntity = Creation.shrine("altar", AltarEntity::new, altar);
+        altarMenu = Creation.vision("altar", AltarMenu::new)
+                .caption(menu -> menu.progress() > 0
+                        ? Component.translatable("container.hallelujah.altar.blessing", menu.progress())
+                        : Component.translatable("container.hallelujah.altar.idle"));
+        // A chest of our own: three rows, saved, dropped when broken, hopper-friendly.
+        reliquary = Creation.block("reliquary", p -> new Sanctuary(p.strength(2.5f))).inTab("functional_blocks");
+        reliquaryEntity = Creation.reliquary("reliquary", 3, reliquary);
         // Holy water in flight, drawn as the item it carries.
         thrownHolyWater = Creation.entity("thrown_holy_water", () -> EntityType.Builder
                         .<ThrownHolyWater>of(ThrownHolyWater::new, MobCategory.MISC)

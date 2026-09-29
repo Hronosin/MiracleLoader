@@ -1,0 +1,5 @@
+id = "heir-mod"
+name = "Heir Mod"
+version = "0.1.0"
+entrypoint = "test.heirmod.HeirMod"
+depends = ["heir-lib"]

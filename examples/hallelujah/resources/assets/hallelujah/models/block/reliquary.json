@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "side": "hallelujah:block/reliquary_side",
+    "top": "hallelujah:block/reliquary_top",
+    "bottom": "hallelujah:block/reliquary_top"
+  }
+}

@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.3.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 0.4.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -118,7 +118,7 @@ More examples live in `examples/`.
 ### Dependencies and libraries
 
 ```toml
-depends = ["miracle-toolchain>=0.3.0", "some-other-mod", "miracle>=0.3.0"]
+depends = ["miracle-toolchain>=0.4.0", "some-other-mod", "miracle>=0.4.0"]
 ```
 
 Every mod listed must be in `mods/`, at least that version if one is given, and loads before the mod that needs it. `miracle` means the loader itself. A missing or outdated dependency, or a circle of mods waiting for each other, stops the game before it starts, with every problem listed at once.
@@ -377,6 +377,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle messages` | `todo` | Elden Ring: your TODO/FIXME/HACK/XXX comments as messages on the ground ("Try repent", "Be wary of the mixins") |
 | `miracle zandatsu [jar]` | `inspect` | Metal Gear Rising: Blade Mode for a mod jar. What it patches, which library parts it uses, what it was baked for |
 | `miracle exorcise [--yes]` | `clean` | casts out `build/`, logs and crash reports. Worlds, bonfires and configs are spared |
+| `miracle ascend github\|modrinth` | `publish` | bakes, then publishes the jar as a new version: a GitHub release, or a Modrinth version. It claims exactly the Minecraft versions the bake checked or baked for. `--dry-run` shows what would go up |
 
 `bake` grades itself Devil May Cry style, from `D Dismal` to `SSS Smokin' Sexy Style!!`, by how long it took. A game that crashes under `pray` gets a proper `YOU DIED` and the path to its crash report, even when a dedicated server exits politely afterwards.
 
@@ -439,7 +440,9 @@ Praying for Minecraft 1.21.11 in run/server-1.21.11 ...
 
 Verified: `genesis`, `bake` and `pray server` end to end on 26.3 and 1.21.11, and `genesis` → `pray client` on a real desktop (Fedora, Wayland, AMD): the 26.3 client downloads, starts through MiracleLoader with the mod, and drops you into a fresh world as an offline player. The `401` and Realms errors in the log are just the game noticing you're offline.
 
-Next for the toolchain: `miracle ide` (IDE project files, including readable API jars for fallbacks) and `miracle ascend` (publish to Modrinth).
+**Ascending.** `miracle ascend github` makes a release in the repository named by `github = "you/your-mod"` in `miracle.project.toml` (token from `GITHUB_TOKEN`, or the GitHub CLI's login), with the jar attached and the versions it was checked on in the notes. `miracle ascend modrinth` uploads a version to the project named by `modrinth = "your-slug"` (token from `MODRINTH_TOKEN`), with the right game versions, changelog (`-m` or `--notes CHANGES.md`) and type. One catch: Modrinth only accepts versions for loaders on its list, and MiracleLoader isn't on it yet. `ascend modrinth` checks the list first and says so, instead of failing halfway; once Modrinth adds it, the command works as it is.
+
+Next for the toolchain: `miracle ide` (IDE project files, including readable API jars for fallbacks).
 
 ## The MiracleToolChain library
 
@@ -454,6 +457,7 @@ Everything you need, and several things you don't, in `miracle-toolchain.jar`. E
 | `Scripture` | `Resources` | the `data/` and `assets/` in your jar, loaded as if they were the game's own |
 | `Proclamations` | `Notices` | overlay lines, titles and broadcasts, the same on every version (the game renamed these; the packets stayed) |
 | `Creation` | `Content` | new items, blocks and entities, with block items, spawn eggs and creative tabs; entities look like a vanilla mob, like their item, or like your own renderer; `miracle scribe` writes models, placeholder textures, names and loot tables |
+| `Shrine`, `Sanctuary`, `Reliquary`, `Vision` | | block entities: `Creation.shrine` makes the type, a `Sanctuary` block holds it, ticks it (`Vigil`) and opens its menu; a `Reliquary` is a chest of your own in one line; `Hallowed` shows its data to clients; `Creation.vision` makes a menu, with the chest screen, your own screen, or a caption line that works on every version |
 | `Telepathy` | `Networking` | messages between client and server: per-tick batches, hashed channel names, typed `Scroll`s, and the Inquisition watching for forged packets |
 | `Gestures` | `Keybinds` | keys players can rebind in Controls, by name (`"G"`, `"LEFT_ALT"`, `"F6"`) |
 | `Communion` | `Handshake` | before a player joins, both sides compare mods; a mismatch ends with a list of what's missing instead of a crash. Runs by itself |
@@ -474,7 +478,12 @@ public final class Hallelujah implements MiracleMod {
         Blessings.damageTaken().when(e -> e instanceof Cow).clamp(0, 2);
 
         Creation.item("holy_water", p -> new HolyWaterItem(p.stacksTo(16))).inTab("food_and_drinks");
-        Creation.block("altar", p -> new Block(p.strength(2f))).inTab("functional_blocks");
+        altar = Creation.block("altar", p -> new Sanctuary(p.strength(2f))).inTab("functional_blocks");
+        altarEntity = Creation.shrine("altar", AltarEntity::new, altar);     // blesses bottles, keeps Vigil
+        altarMenu = Creation.vision("altar", AltarMenu::new)
+                .caption(menu -> Component.literal("Blessing: " + menu.progress() + "%"));
+        Creation.reliquary("reliquary", 3,                                  // a chest of our own
+                Creation.block("reliquary", p -> new Sanctuary(p.strength(2.5f))));
         Creation.entity("heretic", () -> EntityType.Builder.of(Heretic::new, MobCategory.MONSTER).sized(0.6f, 1.95f))
                 .attributes(() -> Zombie.createAttributes())
                 .looksLike("zombie")
@@ -492,7 +501,7 @@ public final class Hallelujah implements MiracleMod {
 }
 ```
 
-With `depends = ["miracle-toolchain"]` in `miracle.mod.toml`. That's `examples/hallelujah`, give or take a sanctuary where only operators may break blocks, a cooldown on prayers, and holy water you can throw (a projectile drawn as its item, which heals the living, burns the undead and hits heretics twice as hard). Its textures, models, names and loot tables came from `miracle scribe item holy_water`, `miracle scribe block altar` and `miracle scribe entity heretic --egg zombie`. `miracle genesis` starts every project like this (`--ascetic` for plain RGCT).
+With `depends = ["miracle-toolchain"]` in `miracle.mod.toml`. That's `examples/hallelujah`, give or take a sanctuary where only operators may break blocks, a cooldown on prayers, holy water you can throw (a projectile drawn as its item, which heals the living, burns the undead and hits heretics twice as hard), and the altar's insides: `AltarEntity` extends `Reliquary` and keeps `Vigil`, filling an empty bottle with holy water every five seconds, and `AltarMenu` is a one-row `ChestMenu` that carries the progress to the caption. Its textures, models, names and loot tables came from `miracle scribe item holy_water`, `miracle scribe block altar` and `miracle scribe entity heretic --egg zombie`. `miracle genesis` starts every project like this (`--ascetic` for plain RGCT).
 
 **Why `onLaunch()`, and the Prophecy.** A handler that takes a `ServerPlayer` loads the `ServerPlayer` class the moment the handler is created, and with it `Player`, `LivingEntity` and `Entity`. Do that in `transform()` and those classes can no longer be patched, by you or anyone. So handlers are added in `onLaunch()`, when the game classes are fair game. The patches they need must exist before that, though, and that's the Prophecy: at startup the library reads the classes of every mod that depends on it (reads, not loads) and sees which omens, values and commands each one uses. It patches exactly those methods, in that mod's name.
 
@@ -511,16 +520,20 @@ Parts nobody uses patch nothing. The startup report, conflict checks and crash b
 
 ```
 Communion refused. Your mods and the server's don't match:
-  Missing: hallelujah 0.3.0
+  Missing: hallelujah 0.4.0
 
 No miracle today.
 ```
 
 A vanilla client meeting a server with such mods gets the list of what to install; a modded client meeting a server that never heard of Miracle leaves on its own, saying which of its mods need the other side. Server-only mods (commands, omens, blessings) don't count: vanilla clients still join those servers. `Communion.bothSides()` and `eitherSide()` adjust it, and `Communion.modsOf(player)` tells the server what a player has.
 
+**Block entities, briefly.** A block entity is the part of a block that remembers things and may act every tick. `Creation.shrine("altar", AltarEntity::new, altar)` makes its type; the block, a `Sanctuary`, makes one per placed block, ticks it if it `implements Vigil`, and opens its menu on a right click if it has one. Extend `Reliquary` for an inventory (saved, dropped when broken, hopper-friendly, in the chest screen), or `Hallowed` for data the clients should see (`sync()` sends it). Menus of your own are `Vision`s: a `ChestMenu` subclass gets the chest screen for free, anything else names its screen class, and `caption(...)` puts a live line of text in the title row on 26.x and 1.21.11 alike, because that's where screen code differs most between versions and a caption shouldn't need a fallback.
+
+![The altar's menu, with its caption](docs/altar.png)
+
 **Telepathy, briefly.** Each side collects what it has to say during a tick and sends it as one batch, in one custom payload packet, at the end of the tick. Channel names never cross the wire, only a hash of them; what crosses is data, never code, and a message can only reach a handler the receiving side registered itself. The server's Inquisition expects a client's batches numbered 1, 2, 3... and a few per tick at most; anything else (replayed, forged, flooded, garbage, unknown channels) is logged, and dropped or kicked as `config/miracle-toolchain.toml` says (`inquisition = "drop"`). It's a tripwire for crude packet injectors, not an anti-cheat: the server should still check everything it's told.
 
-Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. For 0.3, both versions again: heretics summoned, hit by thrown holy water (thrown by the item's real right-click code, too), killed, looted, saved with the world and loaded back; on the client, the heretic drawn by the zombie renderer and the holy water by the thrown-item renderer, the spawn egg in its tab. On a local server, with 26.3 and 1.21.11 clients: matching mods walk in (and Telepathy still works), a client missing a mod, a client with a mod the server lacks, a client without the library, and a client facing a server without it are each turned away with the right lines. Players' eyes are still needed for textures, titles and meters.
+Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. For 0.3, both versions again: heretics summoned, hit by thrown holy water (thrown by the item's real right-click code, too), killed, looted, saved with the world and loaded back; on the client, the heretic drawn by the zombie renderer and the holy water by the thrown-item renderer, the spawn egg in its tab. On a local server, with 26.3 and 1.21.11 clients: matching mods walk in (and Telepathy still works), a client missing a mod, a client with a mod the server lacks, a client without the library, and a client facing a server without it are each turned away with the right lines. For 0.4, both versions: an altar and a reliquary placed next to the player, filled, the altar opened by its real right-click code and a trial vision from the server, each in the screen it asked for with its caption drawn (the picture above is the headless 26.3 client's screenshot); bottles blessed on time, the reliquary broken and its diamonds on the ground; a `Hallowed` candle counting on the server and the client seeing every count; the same again with a client joining a dedicated 26.3 server; and on dedicated servers, items and blessing progress still there after a restart. Players' eyes are still needed for textures, titles and meters.
 
 ## Lifecycle
 
@@ -537,7 +550,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 
 ```
 [Miracle/WARN] miracle.lock: what the mods patch has changed since it was pinned:
-    miracle-toolchain 0.3.0 (same version, different patches: a setting?)
+    miracle-toolchain 0.4.0 (same version, different patches: a setting?)
       + net.minecraft.util.Util#fetchChoiceType(...) intercept@HEAD [cancels with a value]
 ```
 
@@ -559,12 +572,14 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [ ] Direct calls instead of the dispatcher when a method has a single hook
 - [x] Mod dependencies in `miracle.mod.toml`, library mods, patching on behalf of dependents
 - [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
-- [ ] MiracleToolChain: `ide`, `ascend` (publish)
+- [x] MiracleToolChain: `ascend` (publish to GitHub; to Modrinth once it lists the loader)
+- [ ] MiracleToolChain: `ide`
 - [x] MiracleToolChain library: events, well-known values, commands, configs, data and assets
 - [x] MiracleToolChain library: registries (items, blocks), networking, keybinds
 - [x] MiracleToolChain library: entities (attributes, spawn eggs, vanilla or custom renderers)
 - [x] MiracleToolChain library: Communion, a join-time mod check with readable refusals
-- [ ] MiracleToolChain library: block entities, menus, custom models, natural spawning
+- [x] MiracleToolChain library: block entities, inventories, menus and screens, portable captions
+- [ ] MiracleToolChain library: block entity renderers, custom models, natural spawning
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 
 ## License

@@ -249,6 +249,22 @@ expect bake "[bake] wings-mod.jar (1 classes, fallbacks for [fake-obf])"
 expect bake "5 game references translated, 1 fallback method(s) + 1 added, baked"
 expect bake "note: added test.wings.WingsMod#label(Lnet/minecraft/world/entity/player/Player;)Ljava/lang/String;"
 
+# --- OSHI through a library: a mod class extends a library class that extends a game class ----
+cp "$T/heir-lib.jar" "$T/heir-mod.jar" "$BAKED/"
+out="$("$JAVA" -jar build/miracle-bake.jar --native fake=build/fake-minecraft.jar \
+        --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt "$BAKED/heir-mod.jar" 2>&1)"
+expect bake-heir-blind "into libraries unchecked"           # without --lib, the baker can't see through heir-lib
+out="$("$JAVA" -jar build/miracle-bake.jar --lib "$BAKED/heir-lib.jar" --native fake=build/fake-minecraft.jar \
+        --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt \
+        "$BAKED/heir-lib.jar" "$BAKED/heir-mod.jar" 2>&1)"
+expect_not bake-heir "into libraries unchecked"
+expect bake-heir "[bake] heir-mod.jar"
+GAME_JAR="$ROOT/build/fake-minecraft-obf.jar" run_with obf-heir "$BAKED/heir-lib.jar" "$BAKED/heir-mod.jar"
+expect_code obf-heir 0
+expect obf-heir "[heir-mod] Arthur scores 8 and is blessed"
+run_with heir-native "$BAKED/heir-lib.jar" "$BAKED/heir-mod.jar"
+expect heir-native "[heir-mod] Arthur scores 8 and is blessed"
+
 # --- OSHI fallbacks: the hole is filled only where the fallback applies -----------------------
 GAME_JAR="$ROOT/build/fake-minecraft-obf.jar" run_with obf-wings "$BAKED/wings-mod.jar"
 expect_code obf-wings 0
@@ -417,11 +433,49 @@ expect exorcise "The power of Miracle compels you!"
     && [ -d "$CLI_HOME/holy-hops/run/server-26.2/bonfires" ] && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [exorcise]: took the wrong things"; }
 
+# --- ascend: everything short of the network ------------------------------------------------
+pcli ascend
+expect_code ascend-where 1
+expect ascend-where "ascend where? miracle ascend modrinth, or miracle ascend github"
+pcli ascend modrinth --no-build
+expect_code ascend-nothing 1
+expect ascend-nothing "Nothing to offer: build/holy-hops-0.1.0.jar doesn't exist."
+mkdir -p "$CLI_HOME/holy-hops/build"
+( cd "$CLI_HOME" && rm -rf jarroot && mkdir -p jarroot/META-INF/miracle \
+    && printf 'baked = ["1.21.11"]\nchecked = ["26.2", "26.3"]\n' > jarroot/META-INF/miracle/bake.toml \
+    && "${JAVA_HOME:+$JAVA_HOME/bin/}jar" --create --file holy-hops/build/holy-hops-0.1.0.jar -C jarroot . )
+pcli ascend modrinth --no-build --dry-run
+expect_code ascend-noproject 1
+expect ascend-noproject "Which Modrinth project?"
+pcli ascend modrinth --no-build --dry-run --project holy-hops -m "Amen"
+expect_code ascend-dry 0
+expect ascend-dry "Minecraft:  26.3, 26.2, 1.21.11  (what the bake checked or baked, nothing more)"
+expect ascend-dry '"game_versions": ["26.3", "26.2", "1.21.11"]'
+expect ascend-dry '"loaders": ["miracle"]'
+expect ascend-dry '"changelog": "Amen"'
+expect ascend-dry '"version_type": "release"'
+pcli ascend github --no-build --dry-run --repo me/holy-hops --type beta
+expect_code ascend-gh-dry 0
+expect ascend-gh-dry "repository: me/holy-hops, tag v0.1.0"
+expect ascend-gh-dry '"prerelease": true'
+out="$(cd "$CLI_HOME/holy-hops" && env -u MODRINTH_TOKEN MIRACLE_HOME="$CLI_HOME/cache" "$JAVA" -jar "$ROOT/build/miracle.jar" \
+    ascend modrinth --no-build --project holy-hops 2>&1)"; code=$?
+expect_code ascend-notoken 1
+expect ascend-notoken "MODRINTH_TOKEN isn't set."
+
 cli zandatsu "$ROOT/build/test-mods/needs-lib.jar"
 expect_code zandatsu 0
 expect zandatsu "BLADE MODE. Cutting needs-lib.jar"
 expect zandatsu "Spine:      org.test.needslib.NeedsLib"
 expect zandatsu "ZANDATSU! 1 class(es) taken. Rules of Nature."
+if [ -f "$ROOT/build/hallelujah.jar" ]; then   # built only when a real Minecraft jar is around
+    cli zandatsu "$ROOT/build/hallelujah.jar"
+    expect zandatsu-hallelujah "Creation.shrine"
+    expect zandatsu-hallelujah "Creation.reliquary"
+    expect zandatsu-hallelujah "Creation.vision"
+    expect zandatsu-hallelujah "Vision.caption"
+    expect zandatsu-hallelujah "Baked for:  1.21.11"
+fi
 cli zandatsu "$ROOT/build/test-mods/patron-lib.jar"
 expect zandatsu-patches "Patches:    Player"
 
@@ -444,7 +498,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.3.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.4.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -507,7 +561,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.3.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.4.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

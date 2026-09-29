@@ -66,7 +66,10 @@ import java.util.TreeSet;
  */
 final class Remapper {
 
-    /** What the mod's own classes look like (readable names), for inherited lookups. */
+    /**
+     * What the mod's own classes look like (readable names), for inherited lookups; library mods'
+     * classes too (given with {@code --lib}), which are looked through but not baked here.
+     */
     record ModClass(String name, String superName, List<String> interfaces,
                     Set<String> methods, Set<String> fields, boolean isInterface) {
     }
@@ -214,7 +217,9 @@ final class Remapper {
             } else if (mod.containsKey(c)) {
                 ModClass m = mod.get(c);
                 if (method ? m.methods().contains(name + desc) : m.fields().contains(name + ":" + desc)) {
-                    return name; // the mod's own member
+                    // The mod's (or a library's) own member; if it overrides a game method, it was
+                    // renamed along with it, and so is every call to it.
+                    return method ? overrideName(m, name, desc) : name;
                 }
                 queue.add(m.superName());
                 queue.addAll(m.interfaces());

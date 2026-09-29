@@ -77,7 +77,7 @@ final class Genesis {
                 authors = ["%s"]
                 # icon = "icon.png"   # a square PNG (128x128 is plenty) in resources/, for launchers and Modrinth
                 """.formatted(id, title, pkg, cls, System.getProperty("user.name", "you"))
-                + (ascetic ? "" : "depends = [\"miracle-toolchain>=0.3.0\"]\n"));
+                + (ascetic ? "" : "depends = [\"miracle-toolchain>=0.4.0\"]\n"));
 
         write(dir.resolve(Project.PROJECT_FILE), """
                 # What you write and compile against. Must be unobfuscated (26.1+), so names are readable.
@@ -88,6 +88,11 @@ final class Genesis {
                 # "latest" the latest release. Obfuscated ones (1.21.11 and older) get a baked variant;
                 # fill any holes in fallback/<version>/src.
                 targets = ["%s", "26.*", "1.21.11"]
+
+                # Where miracle ascend publishes (uncomment what you use).
+                # modrinth = "your-project-slug"
+                # modrinth_loaders = ["miracle"]
+                # github = "you/your-repo"
                 """.formatted(minecraft, minecraft));
 
         if (template != null) {

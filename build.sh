@@ -218,8 +218,8 @@ if [ -n "$MC_CP" ]; then
         echo "==> baking (OSHI)"
         bake_jars=("$OUT/miracle-toolchain.jar")
         for m in "${REAL_MODS[@]}"; do bake_jars+=("$OUT/$m.jar"); done
-        "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle-bake.jar" "${bake_args[@]}" \
-            "${bake_jars[@]}" "$OUT/title-mod.jar"
+        "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle-bake.jar" --lib "$OUT/miracle-toolchain.jar" \
+            "${bake_args[@]}" "${bake_jars[@]}" "$OUT/title-mod.jar"
     fi
     preach "$OUT/miracle-toolchain.jar" # after baking: baking rewrites the jar
 else
@@ -229,10 +229,13 @@ fi
 echo "==> test mods"
 # dep-lib first: needs-lib compiles against it.
 build_jar tests/dep-lib "$OUT/test-mods/dep-lib.jar" "$API" "$OUT/miracle-loader.jar"
+# heir-lib too: heir-mod extends its class.
+build_jar tests/heir-lib "$OUT/test-mods/heir-lib.jar" "$API" "$OUT/miracle-loader.jar"
 for m in tests/*/; do
     m="${m%/}"
-    [ "$m" = tests/dep-lib ] && continue
-    build_jar "$m" "$OUT/test-mods/$(basename "$m").jar" "$API:$OUT/test-mods/dep-lib.jar" "$OUT/miracle-loader.jar"
+    [ "$m" = tests/dep-lib ] || [ "$m" = tests/heir-lib ] && continue
+    build_jar "$m" "$OUT/test-mods/$(basename "$m").jar" "$API:$OUT/test-mods/dep-lib.jar:$OUT/test-mods/heir-lib.jar" \
+        "$OUT/miracle-loader.jar"
 done
 
 echo "Built. Try: ./run.sh"

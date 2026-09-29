@@ -15,7 +15,13 @@
  *   <li>{@link io.github.hronosin.miracle.toolchain.Proclamations} / {@link io.github.hronosin.miracle.toolchain.Notices}
  *       — overlay lines, titles, broadcasts, the same on every version.</li>
  *   <li>{@link io.github.hronosin.miracle.toolchain.Creation} / {@link io.github.hronosin.miracle.toolchain.Content}
- *       — new items, blocks and entities ({@link io.github.hronosin.miracle.toolchain.Being}), in creative tabs.</li>
+ *       — new items, blocks and entities ({@link io.github.hronosin.miracle.toolchain.Being}), in creative tabs;
+ *       block entities ({@link io.github.hronosin.miracle.toolchain.Shrine}, held by a
+ *       {@link io.github.hronosin.miracle.toolchain.Sanctuary}, ticking with
+ *       {@link io.github.hronosin.miracle.toolchain.Vigil}, an inventory in a
+ *       {@link io.github.hronosin.miracle.toolchain.Reliquary}, synced by
+ *       {@link io.github.hronosin.miracle.toolchain.Hallowed}); menus and their screens
+ *       ({@link io.github.hronosin.miracle.toolchain.Vision}).</li>
  *   <li>{@link io.github.hronosin.miracle.toolchain.Telepathy} / {@link io.github.hronosin.miracle.toolchain.Networking}
  *       — messages between client and server, batched per tick, watched by the Inquisition.</li>
  *   <li>{@link io.github.hronosin.miracle.toolchain.Gestures} / {@link io.github.hronosin.miracle.toolchain.Keybinds}

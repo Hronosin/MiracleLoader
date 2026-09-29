@@ -31,7 +31,7 @@ final class Zandatsu {
     private static final String LIBRARY = "io/github/hronosin/miracle/toolchain/";
     private static final Set<String> PUBLIC = Set.of("Omens", "Events", "Blessings", "Tweaks", "Sermons",
             "ChatCommands", "Commandments", "Config", "Scripture", "Resources", "Proclamations", "Notices",
-            "Creation", "Content", "Being", "Telepathy", "Networking", "Gestures", "Keybinds", "Communion", "Handshake");
+            "Creation", "Content", "Being", "Shrine", "Vision", "Telepathy", "Networking", "Gestures", "Keybinds", "Communion", "Handshake");
 
     private Zandatsu() {
     }

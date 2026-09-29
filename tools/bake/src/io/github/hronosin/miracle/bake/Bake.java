@@ -51,6 +51,9 @@ public final class Bake {
     static final String BAKE_INFO = "META-INF/miracle/bake.toml";
     static final String NAMES_FILE = "rgct-names.txt";
 
+    /** Classes of the --lib jars, for hierarchy lookups. */
+    private static Map<String, ModClass> LIBRARIES = Map.of();
+
     private Bake() {
     }
 
@@ -71,6 +74,7 @@ public final class Bake {
         }
         List<VersionDict> versions = new ArrayList<>();
         List<Path> mods = new ArrayList<>();
+        List<Path> libs = new ArrayList<>();
         boolean strict = false;
         for (int i = 0; i < args.length; i++) {
             switch (args[i]) {
@@ -86,6 +90,7 @@ public final class Bake {
                     }
                     versions.add(VersionDict.ofObfuscated(kv[0], Path.of(files[0]), Path.of(files[1])));
                 }
+                case "--lib" -> libs.add(Path.of(args[++i]));
                 case "--strict" -> strict = true;
                 case "-h", "--help" -> usage(null);
                 default -> {
@@ -102,6 +107,21 @@ public final class Bake {
 
         Set<String> universe = new HashSet<>();
         versions.forEach(v -> universe.addAll(v.classes.keySet()));
+
+        // Library mods the mods extend (MiracleToolChain's Reliquary extends a game class, and a
+        // mod's class extending Reliquary overrides game methods through it): their shapes, so
+        // inherited game members are found and renamed. Read once, before anything is rewritten.
+        Map<String, ModClass> libraries = new LinkedHashMap<>();
+        for (Path lib : libs) {
+            Map<String, ClassModel> lc = new LinkedHashMap<>();
+            for (var e : readJar(lib).entrySet()) {
+                if (e.getKey().endsWith(".class") && !e.getKey().startsWith("META-INF/")) {
+                    lc.put(e.getKey(), ClassFile.of().parse(e.getValue()));
+                }
+            }
+            libraries.putAll(modClasses(lc));
+        }
+        LIBRARIES = libraries;
 
         boolean anyFailed = false;
         for (Path mod : mods) {
@@ -165,7 +185,9 @@ public final class Bake {
                 res.notes().stream().filter(n -> n.startsWith("added")).forEach(n -> notes.add("             note: " + n));
             }
 
-            Remapper r = new Remapper(v, universe, modClasses(merged), v.hierarchy());
+            Map<String, ModClass> shapes = new LinkedHashMap<>(LIBRARIES);
+            shapes.putAll(modClasses(merged)); // the mod's own classes win over a library's copy of them
+            Remapper r = new Remapper(v, universe, shapes, v.hierarchy());
             Map<String, byte[]> variant = new LinkedHashMap<>();
             for (var e : merged.entrySet()) {
                 variant.put(e.getKey(), r.remap(e.getValue()));
@@ -290,10 +312,12 @@ public final class Bake {
             System.err.println("miracle-bake: " + error);
         }
         System.err.println("""
-                usage: miracle-bake [--strict] VERSIONS... MOD.jar...
+                usage: miracle-bake [--strict] [--lib LIB.jar]... VERSIONS... MOD.jar...
                   --native VERSION=GAME_JAR              an unobfuscated version (26.1+): check only
                   --obf VERSION=GAME_JAR,MAPPINGS_TXT    an obfuscated version: check and bake
                                                          (MAPPINGS_TXT: Mojang's official mappings)
+                  --lib LIB.jar                          a library mod the mods build on (its classes
+                                                         are looked through, not baked)
                   --strict                               exit 1 if any version has missing references
                        miracle-bake --api VERSION=GAME_JAR,MAPPINGS_TXT OUT.jar
                                                          readable API jar of an obfuscated version,

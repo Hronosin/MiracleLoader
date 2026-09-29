@@ -1,5 +1,8 @@
 {
   "block.hallelujah.altar": "Altar of Miracles",
+  "block.hallelujah.reliquary": "Reliquary",
+  "container.hallelujah.altar.blessing": "Blessing: %s%%",
+  "container.hallelujah.altar.idle": "Awaiting bottles",
   "entity.hallelujah.heretic": "Heretic",
   "entity.hallelujah.thrown_holy_water": "Holy Water",
   "item.hallelujah.heretic_spawn_egg": "Heretic Spawn Egg",

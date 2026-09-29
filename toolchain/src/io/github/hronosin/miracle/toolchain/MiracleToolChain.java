@@ -36,6 +36,7 @@ public final class MiracleToolChain implements MiracleMod {
 
         boolean creation = false;
         boolean beings = false;
+        boolean visions = false;
         boolean telepathy = false;
         boolean gestures = false;
         for (Mods.Mod mod : Mods.all()) {
@@ -63,6 +64,7 @@ public final class MiracleToolChain implements MiracleMod {
                 Faithful.foresee(mod.id(), Creation.KEY);
                 creation = true;
                 beings |= f.beings();
+                visions |= f.visions();
             }
             if (f.telepathy()) {
                 Faithful.foresee(mod.id(), Telepathy.KEY);
@@ -81,7 +83,7 @@ public final class MiracleToolChain implements MiracleMod {
         // The shared machinery, in the library's own name: one registry, one wire, one keyboard.
         boolean client = Mods.game().client();
         if (creation) {
-            Creation.install(rgct, beings, client);
+            Creation.install(rgct, beings, visions, client);
         }
         if (Communion.enabled) {
             Communion.install(rgct, client);

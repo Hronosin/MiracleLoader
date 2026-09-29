@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.3.0 |
+| Version | 0.4.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -47,7 +47,7 @@ Every name comes in two forms: a solemn one and a boring alias. They are equival
 | `miracle-loader.jar` | MiracleLoader: discovery, RGCT, launching | the JDK |
 | `miracle.jar` | the command line, with `miracle-bake` built in | the JDK, `miracle-loader.jar` (manifest `Class-Path`) |
 | `miracle-bake.jar` | `miracle-bake` alone, for scripts and `build.sh` | the JDK |
-| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.3.0, and the game |
+| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.4.0, and the game |
 | `miracle` | a shell wrapper that runs `build/miracle.jar`, building it first if it's missing | bash |
 
 All of them MUST run on Java 25 or newer and MUST NOT need anything beyond the JDK: JSON, TOML, HTTP, compilation (`javax.tools`) and bytecode work (`java.lang.classfile`) are the JDK's or our own.
@@ -94,6 +94,10 @@ A mod that uses the library MUST list `"miracle-toolchain"` in `depends` (with o
 |---|---|---|---|
 | `minecraft` | string | yes | the version the sources are written and compiled against. MUST be unobfuscated (26.1 or newer); an obfuscated one is rejected with a pointer to `targets`. |
 | `targets` | string array | no | versions `bake` checks the mod against; default `[minecraft]`. Obfuscated targets get a baked variant (6.3). `minecraft` need not be listed; it is always checked. Entries are versions or patterns (below). |
+| `modrinth` | string | no | the Modrinth project (slug or id) `ascend modrinth` publishes to (5.1) |
+| `modrinth_loaders` | string array | no | loader tags for Modrinth versions; default `["miracle"]` |
+| `modrinth_requires` | string array | no | Modrinth projects (slugs or ids) every version requires |
+| `github` | string | no | the repository (`owner/name`) `ascend github` makes releases in |
 
 **Target patterns.** `"26.*"` means every release whose id starts with `26.`; `">=1.21.11"` every release that compares greater or equal (dotted numbers, 3.4); `"latest"` the latest release. Patterns are expanded against Mojang's version list, releases only, whenever the toolchain needs the targets; so a project picks up new releases by itself. A pattern that matches nothing is a heresy. `bake` prints the expansion.
 
@@ -145,6 +149,8 @@ Rules:
 | `MIRACLE_LOADER_JAR`, `-Dmiracle.loaderJar` | env, property | toolchain | the loader jar, instead of the one next to the toolchain |
 | `MIRACLE_TOOLCHAIN_JAR`, `-Dmiracle.toolchainJar` | env, property | toolchain | the library jar, likewise |
 | `MIRACLE_IMPATIENT=1` | env | toolchain | the rituals (5.4) skip every pause |
+| `MODRINTH_TOKEN`; `GITHUB_TOKEN`, `GH_TOKEN` | env | toolchain | `ascend`'s credentials (5.1); never printed |
+| `MIRACLE_MODRINTH_API`, `MIRACLE_GITHUB_API` | env | toolchain | where `ascend` sends its requests (default `https://api.modrinth.com/v2`, `https://api.github.com`) |
 | `-Dmiracle.showCommand=true` | property | toolchain | `pray` prints the full game command line |
 
 Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the `miracle` wrapper, pass them in `JDK_JAVA_OPTIONS`, or use the environment variables.
@@ -186,7 +192,7 @@ Creates `./<name>/` as a new project. It MUST refuse if that folder exists and i
 - **minecraft**: `--minecraft`, or Mojang's latest release if it is unobfuscated, otherwise (or when Mojang can't be reached) `26.2`.
 - **targets**: `["<minecraft>", "26.*", "1.21.11"]`.
 
-Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.3.0"]` unless `--ascetic`), `miracle.project.toml` (with comments), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
+Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.4.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
 
 The source file is one of:
 
@@ -207,6 +213,27 @@ miracle pray client|server [--version <v>] [--username <name>] [--no-build] [--e
 ```
 
 Bakes (unless `--no-build`), then runs the game with the loader and the mod. A side other than `client` or `server` is a heresy, raised before anything is built. Section 7 specifies the rest.
+
+#### `ascend modrinth|github` (alias `publish`)
+
+```
+miracle ascend modrinth [--project <slug>] [-m <text> | --notes <file>] [--type release|beta|alpha] [--no-build] [--dry-run]
+miracle ascend github [--repo <owner/name>] [--tag <tag>] [--draft] [-m <text> | --notes <file>] [--type ...] [--no-build] [--dry-run]
+```
+
+Bakes (unless `--no-build`; then the jar MUST exist), then publishes `build/<id>-<version>.jar` as a new version.
+
+- **Game versions** are exactly `minecraft` plus the jar's `bake.toml` `checked` and `baked` lists (6.5), newest first: what the bake vouches for, nothing more.
+- **Changelog**: `-m`, or the file `--notes` names (relative to the project), or `<name> <version>.`. Both is a heresy.
+- **Type**: `--type`, or from the version: `alpha`/`snapshot` in it make an alpha, `beta`/`-rc`/`pre` a beta, anything else a release.
+- **`--dry-run`** prints what would be sent and sends nothing; no token is needed.
+- **Tokens** come from the environment only and MUST NOT be printed or sent anywhere but their own site: `MODRINTH_TOKEN` (a personal access token that may create versions); `GITHUB_TOKEN`, `GH_TOKEN`, or the output of `gh auth token`.
+
+**Modrinth.** The project comes from `--project` or `modrinth` (3.3), and MUST already exist. Before uploading, the toolchain asks Modrinth for its loader tags; a loader it doesn't list is a heresy that names the loaders it does. (MiracleLoader is not on Modrinth's list as of this version; until it is, `ascend github` is the way.) Game versions Modrinth doesn't list are left out with a note. Then `POST /v2/version` (multipart: `data` JSON with `name` `<name> <version>`, `version_number`, `changelog`, `dependencies` (each of `modrinth_requires`, `required`), `game_versions`, `version_type`, `loaders`, `featured` true, `status` `listed`, `project_id`, `file_parts` `["file"]`, `primary_file` `file`; and the jar as part `file`). Success prints the version's page.
+
+**GitHub.** The repository comes from `--repo` or `github`. `POST /repos/<repo>/releases` with tag `--tag` or `v<version>` (GitHub creates the tag on the default branch if it doesn't exist), name `<name> <version>`, the changelog plus a line naming the checked versions, `prerelease` for anything but a release, `draft` with `--draft`. Then the jar is uploaded as an asset. A release that already exists for the tag is a heresy; so is an upload that fails, with a link to the release to attach it by hand.
+
+`MIRACLE_MODRINTH_API` and `MIRACLE_GITHUB_API` point either at another address (Modrinth's staging server, a test double).
 
 ### 5.2 Taking care of things
 
@@ -330,7 +357,9 @@ For every target version `miracle-bake` builds a dictionary (the version's class
 - **native** (unobfuscated) versions: each reference MUST exist in that version, directly or through a superclass or interface.
 - **obfuscated** versions: each reference is translated through the mappings, then MUST exist.
 
-RGCT targets are references too: on every version, the target class and method MUST exist. References into the JDK, the loader, the library and third-party libraries (Brigadier, DataFixerUpper...) are not checked.
+RGCT targets are references too: on every version, the target class and method MUST exist. References into the JDK, the loader and third-party libraries (Brigadier, DataFixerUpper...) are not checked.
+
+**Library mods.** Classes of a library mod given with `--lib` (the toolchain passes the library for projects that use it) are looked *through*: a mod class extending a library class that extends a game class (a `Reliquary` subclass, say) inherits game members through it, and its overrides of game methods are game overrides. Without `--lib`, such references end at the library class and are counted as `into libraries unchecked`, and on obfuscated versions the overrides would keep their readable names and never be called.
 
 ### 6.3 Variants
 
@@ -339,7 +368,7 @@ For each target where every reference resolves, `miracle-bake` writes a **varian
 In an obfuscated variant, the following are translated through the mappings:
 
 - class names, member names and descriptors, in code, invokedynamic (lambda) sites and method handles;
-- method names that override game methods;
+- method names that override game methods, directly or through a `--lib` library class, and every call to such a method, whoever's class it's called on;
 - **RGCT strings**: a string constant directly followed by `Rgct.target(String)` is a class name, and the `method(name[, descriptor])` right after it names a method of that class. Both are translated. A target given without a descriptor is pinned to the exact descriptor of the one method with that name, because obfuscated names are reused across overloads. If the name is overloaded, or the class isn't a string constant, the target is a hole on obfuscated versions ("give the descriptor").
 
 Generic `Signature` attributes and local-variable debug tables are dropped from obfuscated variants. Strings anywhere else (reflection, config) are **not** translated.
@@ -378,7 +407,7 @@ Jars are rewritten in place. Nothing from the mappings goes into the jar except 
 ### 6.6 `miracle-bake` directly
 
 ```
-java -jar miracle-bake.jar [--strict] (--native V=CLIENT_JAR | --obf V=CLIENT_JAR,MAPPINGS_TXT)... MOD.jar...
+java -jar miracle-bake.jar [--strict] [--lib LIB.jar]... (--native V=CLIENT_JAR | --obf V=CLIENT_JAR,MAPPINGS_TXT)... MOD.jar...
 java -jar miracle-bake.jar --api V=CLIENT_JAR,MAPPINGS_TXT OUT.jar
 ```
 
@@ -495,10 +524,10 @@ After the freeze the loader writes down what every mod patches, one line per pat
 
 ```
 game 26.3 server
-mod hallelujah 0.3.0
+mod hallelujah 0.4.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 0.3.0
+mod miracle-toolchain 0.4.0
   ...
 ```
 
@@ -512,7 +541,7 @@ mod miracle-toolchain 0.3.0
 
 ### 9.1 What it is
 
-`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.3.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
+`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.4.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
 
 | part | alias | covers |
 |---|---|---|
@@ -523,6 +552,7 @@ mod miracle-toolchain 0.3.0
 | `Scripture` | `Resources` | the mod jar's `data/` and `assets/` (9.8) |
 | `Proclamations` | `Notices` | telling players things (9.9) |
 | `Creation`, `Relic`, `Being` | `Content` | new items, blocks and entities (9.11) |
+| `Shrine`, `Sanctuary`, `Vigil`, `Hallowed`, `Reliquary`, `Vision` | | block entities, their blocks, ticking, inventories, menus and screens (9.11) |
 | `Telepathy`, `Scroll` | `Networking` | messages between client and server (9.12) |
 | `Gestures` | `Keybinds` | keys (9.13) |
 | `Communion` | `Handshake` | comparing mods when a player joins (9.14) |
@@ -535,7 +565,7 @@ Handlers and changes MUST be added in `onLaunch()` or later, never in `transform
 
 The reason is class loading. A handler whose parameter is, say, a `ServerPlayer` loads `ServerPlayer` (and `Player`, `LivingEntity`, `Entity`) the moment the handler is created. During `transform()` that would put those classes beyond anyone's reach to patch (8.4). So the library does its patching up front (9.3), and mods only hand over their handlers later, when using game classes is safe.
 
-Subscribing before launch (any `Omens` method, a change on a `Blessing` (`multiply`, `add`, `clamp`, `set`), `Sermons.preach`, `Scripture.reveal`, `Creation.item`/`block`/`entity`, a channel's `onServer`/`onClient`, `Gestures.key`) MUST fail with an error that says to use `onLaunch()`. Merely building a `Blessing` (`Blessings.jumpPower()`, `forPlayers()`, `when(...)`) doesn't. `Commandments`, `Proclamations`, `Telepathy.channel(...)`, `Communion.bothSides()`/`eitherSide()` and `Scroll`s involve no hooks and MAY be used any time (`Proclamations` and sending need a live game, of course).
+Subscribing before launch (any `Omens` method, a change on a `Blessing` (`multiply`, `add`, `clamp`, `set`), `Sermons.preach`, `Scripture.reveal`, `Creation.item`/`block`/`entity`/`shrine`/`reliquary`/`vision`, a channel's `onServer`/`onClient`, `Gestures.key`) MUST fail with an error that says to use `onLaunch()`. Merely building a `Blessing` (`Blessings.jumpPower()`, `forPlayers()`, `when(...)`) doesn't. `Commandments`, `Proclamations`, `Telepathy.channel(...)`, `Communion.bothSides()`/`eitherSide()` and `Scroll`s involve no hooks and MAY be used any time (`Proclamations` and sending need a live game, of course).
 
 A handler's *parameters* MUST NOT be client-only classes (`Minecraft`, `LocalPlayer`...): `onLaunch()` also runs on dedicated servers, where creating such a handler fails because the class doesn't exist. That's why `clientTick` takes a `Runnable`; reach for `Minecraft.getInstance()` inside.
 
@@ -553,7 +583,7 @@ What it reads: every `.class` entry of the mod jar outside `META-INF/`. What cou
 | a change whose value can't be traced within its method (the `Blessing` came from a field or a parameter) | that change for every value the mod names anywhere |
 | `Sermons.preach` or `ChatCommands.preach` | the command-tree hook |
 | `Scripture.reveal` or `Resources.reveal` | the pack hook |
-| `Creation.item`/`block`/`entity` or `Content.item`/`block`/`entity` | the registry and creative-tab hooks (library's name), and the pack hook, already revealed (the mod's things need their assets); with `entity`, also the attribute, data-fixer and (clients) renderer hooks |
+| `Creation.item`/`block`/`entity`/`shrine`/`reliquary`/`vision` (or `Content.`) | the registry and creative-tab hooks (library's name), and the pack hook, already revealed (the mod's things need their assets); with `entity`, also the attribute, data-fixer and (clients) renderer hooks; with `vision`, also (clients) the screen and caption hooks |
 | any call on `Telepathy`, `Networking` or a `Telepathy.Channel` | the wire hooks (library's name) |
 | `Gestures.key` or `Keybinds.key` | the key hooks (library's name, clients only) |
 
@@ -721,7 +751,45 @@ Mechanics:
 | our types need no save-data fixer, and the builder doesn't log an error about it | `Util#fetchChoiceType(TypeReference, String)` (head, for our ids) |
 | renderers join the game's providers before anyone reads them (clients) | `EntityRenderers#createEntityRenderers(Context)` and `#validateRegistrations()` (head) |
 
-Blocks, items, entity types and block states travel as numbers, so client and server MUST have the same mods creating the same things in the same order; Communion (9.14) checks it at the door.
+
+**Block entities.**
+
+```java
+Relic<Block> altar = Creation.block("altar", p -> new Sanctuary(p.strength(2f)));
+Shrine<AltarEntity> altarEntity = Creation.shrine("altar", AltarEntity::new, altar);
+Shrine<Reliquary> stash = Creation.reliquary("stash", 3, Creation.block("stash", p -> new Sanctuary(p)));
+```
+
+- `shrine(name, factory, blocks...)` makes a block entity type held by `blocks` (at least one; each MUST be a `Relic` from `Creation.block`, and holds one shrine at most). `factory` makes a block entity for a position and state, usually a constructor. Names and ids as for items; the same shrine id twice MUST fail. `Shrine` is to block entity types what `Relic` is to items: `get()`, `exists()`, `id()`, and `create(pos, state)`.
+- Holding blocks MUST be `EntityBlock`s; one that isn't is logged. `Sanctuary` is a `Block` and `EntityBlock` that finds its shrine by itself (the one naming it) and:
+  - makes the block entity through the shrine;
+  - ticks it if it implements `Vigil` (`serverTick()` on the server, `clientTick()` on clients, both empty by default): the first block entity made tells, and a shrine whose entities don't keep vigil gets no ticker at all;
+  - opens its menu on a right click with nothing to use (`useWithoutItem`) when the block entity is a `MenuProvider`, and reports it as the block's menu provider.
+  It MAY be extended for shapes, facing and the rest.
+- `Hallowed` is a `BlockEntity` whose saved data (`saveAdditional`) is sent to nearby clients when their chunk loads and whenever `sync()` is called (which also marks it to be saved).
+- `Reliquary(type, pos, state, rows)` is a container block entity with `rows` × 9 slots (1 to 6; other counts MUST fail): saved with the world (`ContainerHelper`), dropped when the block goes, reachable by hoppers, named after its block (or an anvil's name), opened in vanilla's chest menu of that many rows. `createMenu(id, inventory)` MAY be overridden for a menu of one's own; `sync()` sends the items to nearby clients. `reliquary(name, rows, blocks...)` is `shrine` with a plain Reliquary.
+
+**Menus.**
+
+```java
+Vision<AltarMenu> altarMenu = Creation.vision("altar", AltarMenu::new)
+        .caption(menu -> Component.literal(menu.progress() + "%"));
+```
+
+- `vision(name, factory)` makes a menu type; `factory` makes the client's half from a container id and the player's inventory (the server fills it in as the screen opens). `Vision`: `get()` (the `MenuType`), `exists()`, `id()`. The server's half is made by whoever opens it: a `Reliquary`'s `createMenu`, or `open(player, title, factory)`, which opens it from the server (a no-op on clients).
+- Screens, by name so a dedicated server never loads one: a menu extending `ChestMenu` gets vanilla's chest screen; otherwise `screen("com.example.AltarScreen")` names an `AbstractContainerScreen` with a public constructor taking (the menu or a supertype, `Inventory`, `Component`). With neither, or a class that can't be made, the screen doesn't open and the log says why.
+- `caption(function)` is a line of text drawn at the right end of the screen's title row, asked for every frame from the client's menu; null or empty draws nothing. It works on any screen of the vision, and is the portable way to show a number: screen code itself differs between versions (26.x draws through `GuiGraphicsExtractor`, 1.21.11 through `GuiGraphics`), so a screen class of one's own may need a fallback per version (6.4).
+- `screen` and the other setters MUST be called before the registries are built; `caption` MAY be changed any time.
+
+Mechanics (in addition to the table above):
+
+| step | hook |
+|---|---|
+| block entity types right after blocks, menu types after items, made through their private constructors (found by shape, not name) | `BuiltInRegistries#freeze()V` (head) |
+| our menus' screens, made instead of vanilla's lookup (clients) | `MenuScreens#create(MenuType, Minecraft, int, Component)V` (head, for our types) |
+| captions (clients) | `AbstractContainerScreen#extractLabels(GuiGraphicsExtractor, II)V` (return); on 1.21.11 `#renderLabels(GuiGraphics, II)V`, through the library's fallback |
+
+Blocks, items, entity types, block entity types, menu types and block states travel as numbers, so client and server MUST have the same mods creating the same things in the same order; Communion (9.14) checks it at the door.
 
 Everything besides code (models, textures, names, loot tables) comes from the jar's `resources/`: a mod that creates things has them revealed automatically (9.3). `miracle scribe` writes a starting set (5.2).
 
@@ -787,7 +855,7 @@ When a player joins, before they are in the world, the server and the client com
 
 Everything else (omens, blessings, commands, keys) is one side's business.
 
-**The manifest** (payload `miracle:communion`, both directions): `Scroll` values `int 0x4D434D31`, `string` library version, `int n`, then per mod `string id`, `string version`, `boolean bound`, then `long` creation fingerprint (FNV-1a, 64 bits, over `block|entity|item <id>` lines in registration order) and `int` creation count.
+**The manifest** (payload `miracle:communion`, both directions): `Scroll` values `int 0x4D434D31`, `string` library version, `int n`, then per mod `string id`, `string version`, `boolean bound`, then `long` creation fingerprint (FNV-1a, 64 bits, over `block|entity|item|block_entity|menu <id>` lines in registration order) and `int` creation count.
 
 **The judgement**, the same on both sides, in the player's words:
 
@@ -834,18 +902,20 @@ State other than these files is kept in memory and resets when the server restar
 
 Every game method named in section 9 has the same name and descriptor in all of them. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.
 
-"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer` or onto a local server with `--quickPlayMultiplayer`, a test mod pressing keys, throwing things and forging packets from inside: new blocks load in chunks, items and spawn eggs show in their tabs with their names, entities spawn, save, take hits and are drawn by the renderers they asked for, keys save and fire, messages go both ways, forged batches are caught, and Communion lets matching games in and turns away the rest (a missing mod, an extra one, no library at all, a server without it) with the right lines. What needs eyes (textures, titles, meters) still wants a person.
+"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer` or onto a local server with `--quickPlayMultiplayer`, a test mod pressing keys, throwing things and forging packets from inside: new blocks load in chunks, items and spawn eggs show in their tabs with their names, entities spawn, save, take hits and are drawn by the renderers they asked for, block entities tick, keep their items and progress across a server restart and drop their contents, menus open from a right click and from the server with the screens and captions they asked for (checked in screenshots), keys save and fire, messages go both ways, forged batches are caught, and Communion lets matching games in and turns away the rest (a missing mod, an extra one, no library at all, a server without it) with the right lines. What needs eyes (textures, titles, meters) still wants a person.
 
 ## 12. Versioning and stability
 
 - The loader, the toolchain and the library share one version number, `MAJOR.MINOR.PATCH`. While `MAJOR` is 0, a minor release MAY change anything, and says what in its notes.
-- A mod states what it needs with `depends` (`"miracle>=0.3.0"`, `"miracle-toolchain>=0.3.0"`).
+- A mod states what it needs with `depends` (`"miracle>=0.4.0"`, `"miracle-toolchain>=0.4.0"`).
 - Stable within 0.x, unless a release note says otherwise: the file formats in sections 3.2, 3.3, 6.5 and 8.1; command names and aliases; the solemn and boring names in Appendix B.
 - Output wording is not an interface, apart from these markers, which scripts MAY rely on: `HERESY:`, `Baked:`, `Amen.`, `YOU DIED`, `BONFIRE LIT` (from `bonfire`/`backup`), and `[ok]`/`[!!]` in `confess`.
 
 ## 13. Known limits
 
-- The library has no block entities or menus (screens) yet; new entities look like a vanilla one, like their item, or bring their own renderer class, but the library offers no models or textures for them.
+- New entities look like a vanilla one, like their item, or bring their own renderer class, but the library offers no models or textures for them; block entities have no renderers of their own (their blocks' models only).
+- Screens of one's own are plain game code, and differ between versions; only captions are portable.
+- Modrinth doesn't list MiracleLoader as a loader, so `ascend modrinth` can't publish until it does (5.1).
 - New entities don't spawn by themselves in the world; spawn eggs and commands only.
 - Communion asks bound mods for exactly the same version; there is no way yet to declare a range of compatible versions.
 - Mappings are Mojang's only; no Yarn.
@@ -881,6 +951,7 @@ Every game method named in section 9 has the same name and descriptor in all of 
 | `messages` | `todo` | command |
 | `zandatsu` | `inspect` | command |
 | `exorcise` | `clean` | command |
+| `ascend` | `publish` | command |
 | `Omens` | `Events` | library |
 | `Blessings` | `Tweaks` | library |
 | `Sermons` | `ChatCommands` | library |
@@ -892,6 +963,12 @@ Every game method named in section 9 has the same name and descriptor in all of 
 | `Gestures` | `Keybinds` | library |
 | `Communion` | `Handshake` | library |
 | `Being` | entity type | library (9.11) |
+| `Shrine` | block entity type | library (9.11) |
+| `Sanctuary` | block with a block entity | library (9.11) |
+| `Vigil` | ticking | library (9.11) |
+| `Hallowed` | synced block entity | library (9.11) |
+| `Reliquary` | container block entity | library (9.11) |
+| `Vision` | menu type and screen | library (9.11) |
 | `scribe` | `assets` | command |
 | `dictionary` | `mappings` | command |
 | the Inquisition | packet tripwire | library (9.12) |
