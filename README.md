@@ -385,7 +385,7 @@ Praying for Minecraft 1.21.11 in run/server-1.21.11 ...
 - Everything Mojang-sourced is cached by hash: the first client run downloads about half a gigabyte of assets, later ones nothing.
 - The toolchain has no dependencies either: its own JSON reader, javac through `javax.tools`, downloads through `java.net.http`.
 
-Verified here: `genesis`, `bake` and `pray server` end to end on 26.3 and 1.21.11. `pray client` downloads everything and starts the 26.3 client through MiracleLoader with the mod loaded; the only machine it was tried on so far had no display (and its virtual one no sRGB OpenGL), so the window itself is still waiting for its first real desktop.
+Verified: `genesis`, `bake` and `pray server` end to end on 26.3 and 1.21.11, and `genesis` → `pray client` on a real desktop (Fedora, Wayland, AMD): the 26.3 client downloads, starts through MiracleLoader with the mod, and drops you into a fresh world as an offline player. The `401` and Realms errors in the log are just the game noticing you're offline.
 
 Next for the toolchain: `miracle ide` (IDE project files, including readable API jars for fallbacks) and `miracle ascend` (publish to Modrinth); then the library half: events, registries, networking, configs.
 
