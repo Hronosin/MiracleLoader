@@ -10,7 +10,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there will be **MiracleToolChain**: a separate library mod with events, registries and the rest of the Forge-style comforts. It will be an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.1.0-mvp.** Runs on real Minecraft 26.2: the client through Prism Launcher and the dedicated server. RGCT hooks can observe a method, change its arguments and return value, or cancel it outright, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. Raw ClassFile transforms are there for everything else.
+> **Status: 0.1.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight.
 
 ---
 
