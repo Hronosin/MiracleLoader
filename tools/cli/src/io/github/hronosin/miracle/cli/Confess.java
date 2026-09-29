@@ -123,7 +123,7 @@ final class Confess {
             } else {
                 virtue("compiles against Minecraft " + p.minecraft());
             }
-            for (String t : p.targets()) {
+            for (String t : Targets.expand(p.targets())) {
                 Mojang.Version v = Mojang.version(t);
                 virtue("target " + t + (v.obfuscated() ? " (obfuscated: gets a baked variant)" : ""));
             }

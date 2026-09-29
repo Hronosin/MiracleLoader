@@ -92,7 +92,9 @@ A mod that uses the library MUST list `"miracle-toolchain"` in `depends` (with o
 | key | type | required | meaning |
 |---|---|---|---|
 | `minecraft` | string | yes | the version the sources are written and compiled against. MUST be unobfuscated (26.1 or newer); an obfuscated one is rejected with a pointer to `targets`. |
-| `targets` | string array | no | versions `bake` checks the mod against; default `[minecraft]`. Obfuscated targets get a baked variant (6.3). `minecraft` need not be listed; it is always checked. |
+| `targets` | string array | no | versions `bake` checks the mod against; default `[minecraft]`. Obfuscated targets get a baked variant (6.3). `minecraft` need not be listed; it is always checked. Entries are versions or patterns (below). |
+
+**Target patterns.** `"26.*"` means every release whose id starts with `26.`; `">=1.21.11"` every release that compares greater or equal (dotted numbers, 3.4); `"latest"` the latest release. Patterns are expanded against Mojang's version list, releases only, whenever the toolchain needs the targets; so a project picks up new releases by itself. A pattern that matches nothing is a heresy. `bake` prints the expansion.
 
 ### 3.4 The TOML subset
 
@@ -179,7 +181,7 @@ Creates `./<name>/` as a new project. It MUST refuse if that folder exists and i
 - **class**: the id's `-`/`_`-separated words, capitalized and joined (`holy-hops` → `HolyHops`).
 - **package**: `--package`, or `com.example.<id without non-alphanumerics>`.
 - **minecraft**: `--minecraft`, or Mojang's latest release if it is unobfuscated, otherwise (or when Mojang can't be reached) `26.2`.
-- **targets**: `[minecraft]`.
+- **targets**: `["<minecraft>", "26.*", "1.21.11"]`.
 
 Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.2.0"]` unless `--ascetic`), `miracle.project.toml` (with comments), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
 
@@ -270,6 +272,15 @@ Writes, under the project's `resources/`, what a new item or block needs besides
 
 Both also add `item.<ns>.<name>` or `block.<ns>.<name>` to `assets/<ns>/lang/en_us.json`, keeping its other entries; the name is `--title`, or the id's words capitalized. Textures are 16×16 placeholders coloured from a hash of the id (a gem for items, a framed tile for blocks). Existing files and entries MUST be kept unless `--force`; each file is reported as `wrote` or `kept`. A kind other than `item`/`block` is a heresy.
 
+#### `dictionary <versions>` (alias `mappings`)
+
+```
+miracle dictionary 1.21.11 "26.*" ">=26.2" latest
+miracle dictionary --list
+```
+
+Fetches the dictionaries for the given versions and patterns (4.1): the client jar (hard-linked to the cached client where the file system allows, copied otherwise) and, for an obfuscated version, Mojang's mappings. Already-fetched files are verified by hash and not downloaded again. `bake` does this by itself for a project's targets; this command is for scripts (`build.sh` uses it) and for looking. Without arguments, or with `--list`, it lists the cached dictionaries.
+
 ### 5.3 Plumbing
 
 | command | does |
@@ -303,7 +314,7 @@ Commands nobody needs, kept on purpose. They MUST NOT change anything outside th
 5. Copy `resources/` and `miracle.mod.toml` into `build/classes/`.
 6. For each `fallback/<v>/` folder (sorted): compile `fallback/<v>/src` against the loader, the library (if used), the libraries, the main classes, and **the readable API of `<v>`** (6.4), into `build/classes/META-INF/miracle/fallback/<v>/`.
 7. Pack `build/classes/` into `build/<id>-<version>.jar`.
-8. Run `miracle-bake` on the jar, with `minecraft` as a native version and every other target as native or obfuscated, as Mojang says.
+8. Expand the targets (3.3), fetch each one's dictionary (4.1, `dictionary`), and run `miracle-bake` on the jar, with `minecraft` as a native version and every other target as native or obfuscated, as Mojang says.
 
 A compiler error stops the bake (heresy), as does a `fallback/<v>/` folder without `src/`. A missing reference found in stage 8 does not: see 6.5. A fallback folder for a version that isn't a target is compiled (so that version is downloaded) but only noted at bake time.
 
@@ -728,10 +739,10 @@ State other than these files is kept in memory and resets when the server restar
 |---|---|---|
 | 26.3 | no | primary; everything in section 9 checked; client and dedicated server run, client also headless in tests |
 | 26.2 | no | checked; client and dedicated server run |
-| 26.1.2 | no | checked (library references present) |
+| 26.1, 26.1.1, 26.1.2 | no | checked (every library and example reference present) |
 | 1.21.11 | yes | baked; client (through Prism, and headless in tests) and dedicated server run |
 
-Every game method named in section 9 has the same name and descriptor in all four. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.
+Every game method named in section 9 has the same name and descriptor in all of them. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.
 
 "Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer`, a test mod pressing keys and forging packets from inside: new blocks load in chunks, items show in their tabs with their names, keys save and fire, messages go both ways, forged batches are caught. What needs eyes (textures, titles, meters) still wants a person.
 
@@ -789,6 +800,7 @@ Every game method named in section 9 has the same name and descriptor in all fou
 | `Telepathy` | `Networking` | library |
 | `Gestures` | `Keybinds` | library |
 | `scribe` | `assets` | command |
+| `dictionary` | `mappings` | command |
 | the Inquisition | packet tripwire | library (9.12) |
 | `Verdict.SPARE` / `SMITE` | `ALLOW` / `CANCEL` | library |
 | heresy | user error | everywhere |

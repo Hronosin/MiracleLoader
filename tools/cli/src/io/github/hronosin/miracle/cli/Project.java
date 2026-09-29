@@ -14,7 +14,8 @@ import java.util.Map;
  *
  * <pre>
  * minecraft = "26.2"                 # written and compiled against (unobfuscated: readable names)
- * targets = ["26.2", "1.21.11"]      # checked by miracle bake; obfuscated ones get a baked variant
+ * targets = ["26.*", "1.21.11"]     # checked by miracle bake; obfuscated ones get a baked variant.
+ *                                  # Patterns (26.*, >=1.21.11, latest): see Targets
  * </pre>
  */
 record Project(Path dir, String id, String name, String version, String minecraft, List<String> targets,

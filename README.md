@@ -41,7 +41,7 @@ You need **JDK 25+** (Minecraft 26.x requires it anyway). On Fedora: `sudo dnf i
 
 With several JDKs installed: `JAVA_HOME=/usr/lib/jvm/java-25-openjdk ./build.sh`.
 
-The MiracleToolChain library and the real-game examples compile against Minecraft itself, so `build.sh` builds them only when it finds a 26.x client: from Prism Launcher, from the toolchain's own cache (anything `miracle pray` ever ran), or from `MC_JAR=... MC_LIBS=...`.
+The MiracleToolChain library and the real-game examples compile against Minecraft itself, so `build.sh` builds them only when it finds a 26.x client: from Prism Launcher, from the toolchain's own cache (anything `miracle pray` ever ran), or from `MC_JAR=... MC_LIBS=...`. It then fetches the dictionaries it bakes against by itself, for `1.21.11` and every `26.*` release (`MIRACLE_TARGETS` to choose others, `MIRACLE_OFFLINE=1` to use only what's cached).
 
 ## How it launches
 
@@ -367,6 +367,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle bake` | `build` | compiles, adds fallbacks, then checks and bakes against every target |
 | `miracle pray client` | `run` | bakes, then plays the mod: offline, singleplayer |
 | `miracle pray server` | `run` | bakes, then hosts it (asks you to accept Mojang's EULA first, with `--eula`) |
+| `miracle dictionary <versions>` | `mappings` | fetches what baking needs for those versions (client jar; Mojang's mappings where obfuscated). `bake` and `build.sh` do it by themselves; `--list` shows the cache |
 | `miracle confess` | `doctor` | lists what's wrong with your setup and your Aura (RWBY), then absolves you anyway |
 | `miracle scribe item\|block <name>` | `assets` | writes what a new item or block needs besides code: model definitions, models, a placeholder texture, the English name, and for blocks a blockstate and a loot table. Keeps existing files unless `--force`; `--title "Holy Wafer"` names it |
 | `miracle bonfire [list\|rest [name]]` | `backup` | Dark Souls: checkpoints the worlds in `run/`; `rest` brings one back (the world you leave is kept too) |
@@ -408,7 +409,7 @@ A project is two small files:
 ```toml
 # miracle.project.toml
 minecraft = "26.3"                       # written and compiled against: unobfuscated, readable names
-targets = ["26.3", "26.2", "1.21.11"]    # checked by bake; obfuscated ones get a baked variant
+targets = ["26.*", "1.21.11"]            # checked by bake; obfuscated ones get a baked variant
 ```
 
 ```
@@ -428,6 +429,7 @@ Praying for Minecraft 1.21.11 in run/server-1.21.11 ...
 [Miracle] OSHI: holy-hops uses its variant baked for 1.21.11
 ```
 
+- `targets` takes versions and patterns: `"26.2"`, `"26.*"` (every 26.x release), `">=1.21.11"` (every release since), `"latest"`. Bake expands them against Mojang's version list and fetches each version's dictionary itself (client jar, plus the mappings for obfuscated ones), so a project picks up new releases without anyone typing mappings in. New projects start with `["<minecraft>", "26.*", "1.21.11"]`.
 - `pray` runs in `run/<side>-<version>/`, so worlds and settings survive between runs. `--version` runs any target; `--username` names your offline player; `--no-build` skips the bake; anything after `--` goes to the game.
 - The first `pray server` writes a dev `server.properties`: bound to localhost, offline logins allowed, so `pray client` can join it.
 - Everything Mojang-sourced is cached by hash: the first client run downloads about half a gigabyte of assets, later ones nothing.

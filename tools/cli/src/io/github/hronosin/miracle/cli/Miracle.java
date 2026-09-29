@@ -94,6 +94,9 @@ public final class Miracle {
             case "confess", "doctor" -> {
                 return Confess.run();
             }
+            case "dictionary", "mappings" -> {
+                return Dictionaries.run(rest);
+            }
             case "bonfire", "backup" -> {
                 return Bonfire.run(Path.of(""), rest, Bonfire.Voice.BONFIRE);
             }
@@ -159,6 +162,7 @@ public final class Miracle {
                       --no-build          don't bake first
                       -- ...              anything after this goes to the game
                   miracle confess                 (doctor)  list what's wrong with your setup, and your Aura
+                  miracle dictionary <v|26.*|>=1.21.11|latest>...  (mappings)  fetch what baking needs; --list
                   miracle bonfire [list|rest [name]]  (backup)  checkpoint the worlds in run/; rest to go back
                   miracle grace ...                         the same, for the Tarnished
                   miracle scribe item|block <name> (assets) models, placeholder texture, name, loot table

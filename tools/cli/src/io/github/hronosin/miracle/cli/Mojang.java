@@ -218,7 +218,12 @@ final class Mojang {
         Path client = clientJar(v);
         Path copy = d.resolve("client.jar");
         if (!Files.isRegularFile(copy) || Files.size(copy) != Files.size(client)) {
-            Files.copy(client, copy, StandardCopyOption.REPLACE_EXISTING);
+            Files.deleteIfExists(copy);
+            try {
+                Files.createLink(copy, client); // same bytes, no second copy on disk
+            } catch (IOException | UnsupportedOperationException e) {
+                Files.copy(client, copy, StandardCopyOption.REPLACE_EXISTING);
+            }
         }
         if (v.obfuscated()) {
             Http.fetch(new Http.Job(Json.str(v.json(), "downloads", "client_mappings", "url"),

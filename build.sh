@@ -173,8 +173,16 @@ if [ -n "$MC_CP" ]; then
             "$LIBS_CP:$OUT/miracle-toolchain.jar"
     done
 
-    # OSHI: check the mods against every dictionary you've fetched (tools/fetch-dictionary.sh),
-    # and bake a variant for each obfuscated one.
+    # OSHI: dictionaries for every supported version, fetched automatically (cached: only new
+    # versions download anything). MIRACLE_TARGETS picks the versions, MIRACLE_OFFLINE=1 skips
+    # fetching and uses whatever is cached.
+    read -r -a targets <<< "${MIRACLE_TARGETS:-1.21.11 26.*}"
+    if [ "${MIRACLE_OFFLINE:-0}" != 1 ]; then
+        echo "==> dictionaries (${targets[*]})"
+        MIRACLE_DICTIONARIES="$DICTS" "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$OUT/miracle.jar" dictionary "${targets[@]}" \
+            | tail -1 || echo "    couldn't fetch dictionaries; baking with what's cached"
+    fi
+    # Check the mods against every cached dictionary, and bake a variant for each obfuscated one.
     mc_id="$(python3 -c "import json,sys,zipfile; print(json.loads(zipfile.ZipFile(sys.argv[1]).read('version.json'))['id'])" "$MC_JAR")"
     bake_args=(--native "$mc_id=$MC_JAR")
     for d in "$DICTS"/*/; do
@@ -188,7 +196,7 @@ if [ -n "$MC_CP" ]; then
     done
     if [ "${#bake_args[@]}" -le 2 ]; then
         echo "    not baked: no dictionaries in $DICTS. These mods run on unobfuscated versions (26.x) only."
-        echo "    For 1.21.x: tools/fetch-dictionary.sh 1.21.11, then build again."
+        echo "    Connect to the internet once (or set MIRACLE_TARGETS) and build again."
     else
         echo "==> baking (OSHI)"
         bake_jars=("$OUT/miracle-toolchain.jar")

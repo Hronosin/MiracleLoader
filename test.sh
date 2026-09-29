@@ -437,6 +437,9 @@ pcli pray altar --no-build
 expect_code pray-bad-side 1
 expect pray-bad-side "HERESY: pray what? client or server, not 'altar'"
 
+cli dictionary --list
+expect dictionary-empty "No dictionaries yet."
+
 cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2

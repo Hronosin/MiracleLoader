@@ -33,7 +33,7 @@ final class Runner {
             throw new Miracle.Heresy("No baked mod at " + mod + ". Run without --no-build.");
         }
         String version = o.version() != null ? o.version() : p.minecraft();
-        if (!version.equals(p.minecraft()) && !p.targets().contains(version)) {
+        if (!version.equals(p.minecraft()) && !Targets.expand(p.targets()).contains(version)) {
             System.out.println("Note: " + version + " isn't in this project's targets " + p.targets()
                     + "; the loader will say what it thinks of that.");
         }

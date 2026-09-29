@@ -82,9 +82,11 @@ final class Genesis {
                 # What you write and compile against. Must be unobfuscated (26.1+), so names are readable.
                 minecraft = "%s"
 
-                # Versions miracle bake checks the mod against. Add obfuscated ones (e.g. "1.21.11") and
-                # the mod gets a baked variant for each; fill any holes in fallback/<version>/src.
-                targets = ["%s"]
+                # Versions miracle bake checks the mod against, and fetches everything for by itself.
+                # "26.2" is one version; "26.*" every 26.x release; ">=1.21.11" every release from then on;
+                # "latest" the latest release. Obfuscated ones (1.21.11 and older) get a baked variant;
+                # fill any holes in fallback/<version>/src.
+                targets = ["%s", "26.*", "1.21.11"]
                 """.formatted(minecraft, minecraft));
 
         if (template != null) {
