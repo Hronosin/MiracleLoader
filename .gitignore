@@ -4,3 +4,10 @@ build/
 *.iml
 .vscode/
 out/
+
+# Release assets and scratch projects: they live on the GitHub release page, not in the tree.
+/*.jar
+/*.zip
+/notes.md
+/publish.sh
+/holy-hops/

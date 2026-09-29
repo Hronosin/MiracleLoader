@@ -1,6 +1,0 @@
-# What you write and compile against. Must be unobfuscated (26.1+), so names are readable.
-minecraft = "26.3"
-
-# Versions miracle bake checks the mod against. Add obfuscated ones (e.g. "1.21.11") and
-# the mod gets a baked variant for each; fill any holes in fallback/<version>/src.
-targets = ["26.3"]
