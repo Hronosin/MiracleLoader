@@ -236,15 +236,34 @@ expect variant-unchecked "[variant-mod] running the plain classes"
 BAKED="$ROOT/build/test-baked"
 rm -rf "$BAKED" && mkdir -p "$BAKED"
 cp "$M/hello-mod.jar" "$T/intercept-mod.jar" "$T/stack-a.jar" "$T/stack-b.jar" \
-   "$T/clash-a.jar" "$T/clash-hi.jar" "$T/fly-mod.jar" "$BAKED/"
+   "$T/clash-a.jar" "$T/clash-hi.jar" "$T/fly-mod.jar" "$T/wings-mod.jar" "$BAKED/"
 out="$("$JAVA" -jar build/miracle-bake.jar --native fake=build/fake-minecraft.jar \
         --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt "$BAKED"/*.jar 2>&1)"
 expect bake "[bake] intercept-mod.jar"
 expect bake "MISSING 1:"
 expect bake "RGCT target net.minecraft.world.entity.player.Player#fly"
-expect bake "not baked. Drop this version, or add a fallback for what's missing."
-[ "$(grep -c "game references translated, baked" <<< "$out")" -eq 6 ] && pass=$((pass + 1)) \
-    || { fail=$((fail + 1)); echo "FAIL [bake]: expected 6 baked mods"; echo "$out"; }
+expect bake "not baked. Drop this version, or add a fallback for what's missing (fallback/fake-obf/src in the mod's sources)."
+[ "$(grep -c "game references translated.*, baked" <<< "$out")" -eq 7 ] && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [bake]: expected 7 baked mods"; echo "$out"; }
+expect bake "[bake] wings-mod.jar (1 classes, fallbacks for [fake-obf])"
+expect bake "5 game references translated, 1 fallback method(s) + 1 added, baked"
+expect bake "note: added test.wings.WingsMod#label(Lnet/minecraft/world/entity/player/Player;)Ljava/lang/String;"
+
+# --- OSHI fallbacks: the hole is filled only where the fallback applies -----------------------
+GAME_JAR="$ROOT/build/fake-minecraft-obf.jar" run_with obf-wings "$BAKED/wings-mod.jar"
+expect_code obf-wings 0
+expect obf-wings "OSHI: wings-mod uses its variant baked for fake-obf"
+expect obf-wings "[wings-mod] main onLaunch"                                # untouched method kept
+expect obf-wings "[wings-mod] no wings in this version, Steve jumps instead #1" # fallback + real flap() + real field
+expect obf-wings "jumpPower=0.84"                                          # serializable lambda from the fallback
+expect obf-wings "<- wings-mod  [modifies return]"                         # EffectScan found the renamed lambda
+expect_not obf-wings "flap #"
+
+run_with wings-native "$BAKED/wings-mod.jar"                               # readable game: no variant, main code
+expect_code wings-native 0
+expect wings-native "fly                          @HEAD             <- wings-mod"
+expect_not wings-native "uses its variant"
+expect wings-native "jumpPower=0.42"
 
 OBF="$ROOT/build/fake-minecraft-obf.jar"
 GAME_JAR="$OBF" run_with obf-vanilla

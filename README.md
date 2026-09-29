@@ -276,12 +276,59 @@ Before anything is baked, every reference the mod makes into the game is looked 
 
 Tested on real dedicated servers: the same `dirt-diamonds`, `super-jump` and `sprint-jump` jars run on 26.2 as they are and on 1.21.11 from their baked variants (1470 → 1471 recipes).
 
+### Fallback functions: filling the holes
+
+When the check shows a hole, you don't fork the mod. You write a **fallback**: the one method that has to be different in that version, next to your normal sources.
+
+`examples/jump-counter` shows your jump count above the hotbar. In 26.2 that's `player.sendOverlayMessage(msg)`; 1.21.11 doesn't have that method. The main source is written for 26.2:
+
+```java
+// src/com/example/jumpcounter/JumpCounter.java
+public final class JumpCounter implements MiracleMod {
+    // ... hook, counter ...
+    static void show(ServerPlayer player, Component message) {
+        player.sendOverlayMessage(message);
+    }
+}
+```
+
+and one file fills the hole for 1.21.11:
+
+```java
+// fallback/1.21.11/src/com/example/jumpcounter/JumpCounter.java
+final class JumpCounter {
+    static void show(ServerPlayer player, Component message) {
+        player.displayClientMessage(message, true);
+    }
+}
+```
+
+```
+[bake] jump-counter.jar (1 classes, fallbacks for [1.21.11])
+         26.2      unobfuscated  ok, 8 game references present
+         1.21.11   obfuscated    ok, 8 game references translated, 1 fallback method(s), baked
+```
+
+Without the fallback, the same check says `MISSING 1: method ServerPlayer#sendOverlayMessage(...)` and 1.21.11 isn't baked.
+
+The fallback file is a **partial class** with the same name as the real one:
+
+- a method with a body replaces the method of the same name and descriptor, or is added if there's none;
+- a `native` method and any field are only declarations, so the file compiles: they refer to the real class's members (`static native void flap(String how);` calls the real `flap`);
+- constructors and static initializers of the partial class are ignored; lambdas are fine (their synthetic methods are renamed so they can't collide), nested and anonymous classes aren't;
+- classes that only exist in the fallback folder are added as they are.
+
+Fallbacks are merged in before the dictionary check, so a version is baked only once they cover every hole. They work for unobfuscated versions too: then the variant is baked just for that version.
+
+**What fallbacks compile against.** Code for 1.21.11 has to see 1.21.11's API, with readable names. miracle-bake builds that from the dictionary: `miracle-bake --api 1.21.11=client.jar,mappings.txt api.jar` writes a jar with every class, method, field, generic signature and nested class under its Mojang name, and method bodies replaced by `throw null`. `build.sh` makes it on demand, caches it next to the mappings, and compiles `fallback/<version>/src` against it. Add it to your IDE for that folder and you write old-version code with readable names.
+
 Limits, honestly:
 
 - MiracleLoader itself needs Java 25, so the oldest reachable versions are the ones that run on it (1.20.5+ in principle; 1.21.11 is what's tested). In Prism, set the instance's Java to 25.
 - Mojang's mappings may be used for development but not redistributed: they stay in your cache and are only read. Mods carry just the handful of readable names their RGCT targets need.
 - References into libraries (Brigadier, DataFixerUpper...) aren't obfuscated and aren't checked. Game names hidden in your own strings (reflection) aren't translated; only RGCT targets are.
 - Official Mojang mappings only, for now.
+- Fallbacks compile against the primary version's libraries (Brigadier, DFU...), not the target version's; that has been fine so far.
 
 ## Lifecycle
 
@@ -301,7 +348,7 @@ Limits, honestly:
 - [x] Startup conflict check from the hooks' bytecode
 - [x] OSHI: `rawBytes` for bring-your-own bytecode tools
 - [x] OSHI: check against many versions' dictionaries at once, bake variants for obfuscated ones
-- [ ] OSHI: fallback functions, hand-written variants of a method for the versions where the dictionary shows a hole
+- [x] OSHI: fallback functions, and readable API jars to compile them against
 - [ ] Yarn dictionaries
 - [ ] Merge rules declared per target (e.g. by MiracleToolChain for well-known game values)
 - [ ] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff

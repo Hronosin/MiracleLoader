@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.jar.JarEntry;
 import java.util.jar.JarFile;
 import java.util.jar.JarOutputStream;
@@ -54,6 +55,20 @@ public final class Bake {
     }
 
     public static void main(String[] args) throws Exception {
+        if (args.length > 0 && args[0].equals("--api")) {
+            if (args.length != 3) {
+                usage("--api needs VERSION=GAME_JAR,MAPPINGS_TXT and an output jar");
+            }
+            String[] kv = split(args[1], "--api");
+            String[] files = kv[1].split(",", 2);
+            if (files.length != 2) {
+                usage("--api needs VERSION=GAME_JAR,MAPPINGS_TXT");
+            }
+            VersionDict d = VersionDict.ofObfuscated(kv[0], Path.of(files[0]), Path.of(files[1]));
+            int n = ApiJar.write(d, Path.of(args[2]));
+            System.out.println("[bake] readable API of " + kv[0] + ": " + n + " classes -> " + args[2]);
+            return;
+        }
         List<VersionDict> versions = new ArrayList<>();
         List<Path> mods = new ArrayList<>();
         boolean strict = false;
@@ -100,64 +115,93 @@ public final class Bake {
     /** Returns false if some version couldn't be baked or checked. */
     static boolean bake(Path jar, List<VersionDict> versions, Set<String> universe) throws IOException {
         Map<String, byte[]> entries = readJar(jar);
-        entries.keySet().removeIf(n -> n.startsWith("META-INF/miracle/"));
+        // Earlier bake output goes; the fallback classes stay, so baking again gives the same result.
+        entries.keySet().removeIf(n -> n.startsWith(BAKED_DIR) || n.equals(BAKE_INFO));
 
         ClassFile cf = ClassFile.of();
         Map<String, ClassModel> classes = new LinkedHashMap<>();
-        Map<String, ModClass> modClasses = new LinkedHashMap<>();
+        Map<String, Map<String, byte[]>> fallbacks = new TreeMap<>();
         for (var e : entries.entrySet()) {
-            if (e.getKey().endsWith(".class") && !e.getKey().startsWith("META-INF/")) {
-                ClassModel cm = cf.parse(e.getValue());
-                String name = cm.thisClass().asInternalName();
-                classes.put(e.getKey(), cm);
-                Set<String> methods = new HashSet<>();
-                for (MethodModel m : cm.methods()) {
-                    methods.add(m.methodName().stringValue() + m.methodType().stringValue());
-                }
-                Set<String> fields = new HashSet<>();
-                for (FieldModel f : cm.fields()) {
-                    fields.add(f.fieldName().stringValue() + ":" + f.fieldType().stringValue());
-                }
-                modClasses.put(name, new ModClass(name,
-                        cm.superclass().map(ClassEntry::asInternalName).orElse(null),
-                        cm.interfaces().stream().map(ClassEntry::asInternalName).toList(),
-                        methods, fields, cm.flags().has(AccessFlag.INTERFACE)));
+            String path = e.getKey();
+            if (!path.endsWith(".class")) {
+                continue;
+            }
+            if (path.startsWith(Fallbacks.DIR)) {
+                String rest = path.substring(Fallbacks.DIR.length());
+                int slash = rest.indexOf('/');
+                fallbacks.computeIfAbsent(rest.substring(0, slash), k -> new LinkedHashMap<>())
+                        .put(rest.substring(slash + 1), e.getValue());
+            } else if (!path.startsWith("META-INF/")) {
+                classes.put(path, cf.parse(e.getValue()));
             }
         }
 
         String modName = jar.getFileName().toString();
-        System.out.println("[bake] " + modName + " (" + classes.size() + " classes)");
+        System.out.println("[bake] " + modName + " (" + classes.size() + " classes"
+                + (fallbacks.isEmpty() ? "" : ", fallbacks for " + fallbacks.keySet()) + ")");
         List<String> baked = new ArrayList<>();
         List<String> checkedOk = new ArrayList<>();
         Map<String, byte[]> out = new LinkedHashMap<>(entries);
         boolean allOk = true;
+        Set<String> used = new HashSet<>();
 
         for (VersionDict v : versions) {
-            Remapper r = new Remapper(v, universe, modClasses, v.hierarchy());
+            String label = String.format("         %-9s %-14s", v.version, v.obfuscated ? "obfuscated" : "unobfuscated");
+            Map<String, ClassModel> merged = classes;
+            String fb = "";
+            List<String> notes = new ArrayList<>();
+            if (fallbacks.containsKey(v.version)) {
+                used.add(v.version);
+                Fallbacks.Result res;
+                try {
+                    res = Fallbacks.merge(classes, fallbacks.get(v.version), v.version);
+                } catch (IllegalArgumentException ex) {
+                    allOk = false;
+                    System.out.println(label + "BAD FALLBACK: " + ex.getMessage());
+                    continue;
+                }
+                merged = res.classes();
+                fb = ", " + res.replaced() + " fallback method(s)" + (res.added() > 0 ? " + " + res.added() + " added" : "");
+                res.notes().stream().filter(n -> n.startsWith("added")).forEach(n -> notes.add("             note: " + n));
+            }
+
+            Remapper r = new Remapper(v, universe, modClasses(merged), v.hierarchy());
             Map<String, byte[]> variant = new LinkedHashMap<>();
-            for (var e : classes.entrySet()) {
+            for (var e : merged.entrySet()) {
                 variant.put(e.getKey(), r.remap(e.getValue()));
             }
-            String label = String.format("         %-9s %-14s", v.version, v.obfuscated ? "obfuscated" : "unobfuscated");
             if (!r.missing.isEmpty()) {
                 allOk = false;
-                System.out.println(label + "MISSING " + r.missing.size() + ":");
+                System.out.println(label + "MISSING " + r.missing.size() + fb + ":");
+                notes.forEach(System.out::println);
                 r.missing.forEach(m -> System.out.println("             - " + m));
                 System.out.println("             " + (v.obfuscated ? "not baked." : "not marked as checked.")
-                        + " Drop this version, or add a fallback for what's missing.");
+                        + " Drop this version, or add a fallback for what's missing"
+                        + " (fallback/" + v.version + "/src in the mod's sources).");
                 continue;
             }
             String extra = r.unverified.isEmpty() ? "" : ", " + r.unverified.size() + " into libraries unchecked";
-            if (v.obfuscated) {
+            // Obfuscated versions always need their own variant; unobfuscated ones only when fallbacks changed the code.
+            if (v.obfuscated || !fb.isEmpty()) {
                 variant.forEach((path, bytes) -> out.put(BAKED_DIR + v.version + "/" + path, bytes));
-                StringBuilder names = new StringBuilder("# RGCT targets in this variant: jar name = readable name\n");
-                r.targetNames.forEach((k, n) -> names.append(k).append(" = ").append(n).append('\n'));
-                out.put(BAKED_DIR + v.version + "/" + NAMES_FILE, names.toString().getBytes(StandardCharsets.UTF_8));
+                if (v.obfuscated) {
+                    StringBuilder names = new StringBuilder("# RGCT targets in this variant: jar name = readable name\n");
+                    r.targetNames.forEach((k, n) -> names.append(k).append(" = ").append(n).append('\n'));
+                    out.put(BAKED_DIR + v.version + "/" + NAMES_FILE, names.toString().getBytes(StandardCharsets.UTF_8));
+                }
                 baked.add(v.version);
-                System.out.println(label + "ok, " + r.checked.size() + " game references translated" + extra + ", baked");
-            } else {
+            }
+            if (!v.obfuscated) {
                 checkedOk.add(v.version);
-                System.out.println(label + "ok, " + r.checked.size() + " game references present" + extra);
+            }
+            System.out.println(label + "ok, " + r.checked.size() + " game references "
+                    + (v.obfuscated ? "translated" : "present") + extra + fb
+                    + (baked.contains(v.version) ? ", baked" : ""));
+            notes.forEach(System.out::println);
+        }
+        for (String v : fallbacks.keySet()) {
+            if (!used.contains(v)) {
+                System.out.println("         note: fallbacks for " + v + " are in the jar, but no dictionary for " + v + " was given");
             }
         }
 
@@ -166,6 +210,27 @@ public final class Bake {
                 + "checked = " + tomlList(checkedOk) + "\n").getBytes(StandardCharsets.UTF_8));
         writeJar(jar, out);
         return allOk;
+    }
+
+    /** What the mod's classes look like, for the remapper's inherited-member lookups. */
+    private static Map<String, ModClass> modClasses(Map<String, ClassModel> classes) {
+        Map<String, ModClass> out = new LinkedHashMap<>();
+        for (ClassModel cm : classes.values()) {
+            String name = cm.thisClass().asInternalName();
+            Set<String> methods = new HashSet<>();
+            for (MethodModel m : cm.methods()) {
+                methods.add(m.methodName().stringValue() + m.methodType().stringValue());
+            }
+            Set<String> fields = new HashSet<>();
+            for (FieldModel f : cm.fields()) {
+                fields.add(f.fieldName().stringValue() + ":" + f.fieldType().stringValue());
+            }
+            out.put(name, new ModClass(name,
+                    cm.superclass().map(ClassEntry::asInternalName).orElse(null),
+                    cm.interfaces().stream().map(ClassEntry::asInternalName).toList(),
+                    methods, fields, cm.flags().has(AccessFlag.INTERFACE)));
+        }
+        return out;
     }
 
     private static String tomlList(List<String> items) {
@@ -229,7 +294,10 @@ public final class Bake {
                   --native VERSION=GAME_JAR              an unobfuscated version (26.1+): check only
                   --obf VERSION=GAME_JAR,MAPPINGS_TXT    an obfuscated version: check and bake
                                                          (MAPPINGS_TXT: Mojang's official mappings)
-                  --strict                               exit 1 if any version has missing references""");
+                  --strict                               exit 1 if any version has missing references
+                       miracle-bake --api VERSION=GAME_JAR,MAPPINGS_TXT OUT.jar
+                                                         readable API jar of an obfuscated version,
+                                                         to compile fallback code against""");
         System.exit(2);
     }
 }

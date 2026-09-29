@@ -1,0 +1,2 @@
+id = "wings-mod"
+entrypoint = "test.wings.WingsMod"

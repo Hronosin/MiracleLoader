@@ -1,0 +1,5 @@
+id = "jump-counter"
+name = "Jump Counter"
+version = "0.1.0"
+entrypoint = "com.example.jumpcounter.JumpCounter"
+authors = ["Hronosin"]
