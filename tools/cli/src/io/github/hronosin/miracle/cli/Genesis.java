@@ -46,7 +46,11 @@ final class Genesis {
         if (Files.exists(dir) && (!Files.isDirectory(dir) || Files.list(dir).findAny().isPresent())) {
             throw new Miracle.Heresy(dir + " already exists and isn't empty. Creation happens ex nihilo.");
         }
-        String id = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "-").replaceAll("^[^a-z]+", "");
+        String id = name.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "-").replaceAll("^[^a-z]+", "")
+                .replaceAll("[-_]+$", "");
+        if (id.length() > 64) {
+            id = id.substring(0, 64).replaceAll("[-_]+$", "");
+        }
         if (id.length() < 2) {
             throw new Miracle.Heresy("'" + name + "' makes a poor mod id: use at least two letters.");
         }

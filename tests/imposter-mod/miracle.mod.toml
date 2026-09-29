@@ -1,0 +1,2 @@
+id = "miracle"
+entrypoint = "org.test.imposter.Imposter"

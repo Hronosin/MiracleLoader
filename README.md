@@ -12,6 +12,8 @@ For those who'd rather not write everything from scratch, there's **MiracleToolC
 
 > **Status: 0.2.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
+The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
+
 ---
 
 ## Quick start: making a mod
@@ -513,7 +515,7 @@ Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar 
 - [ ] MiracleToolChain: `ide`, `ascend` (publish)
 - [x] MiracleToolChain library: events, well-known values, commands, configs, data and assets
 - [ ] MiracleToolChain library: registries (items, blocks), networking, keybinds
-- [ ] MiracleToolChain specification
+- [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 
 ## License
 

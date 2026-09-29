@@ -124,6 +124,10 @@ final class ModDiscovery {
             throw new DiscoveryException(jar.getFileName() + ": mod id '" + id
                     + "' must be 2-64 chars of a-z, 0-9, '-' or '_', starting with a letter");
         }
+        if (id.equals("miracle")) {
+            throw new DiscoveryException(jar.getFileName() + ": the id 'miracle' belongs to the loader itself."
+                    + " Pick another; humility is a virtue.");
+        }
         // No entrypoint: a library, which only brings classes for other mods. Say so explicitly
         // (library = true), so a forgotten entrypoint doesn't silently turn a mod into a library.
         boolean library = Boolean.TRUE.equals(toml.get("library"));

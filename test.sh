@@ -425,6 +425,18 @@ expect zandatsu "ZANDATSU! 1 class(es) taken. Rules of Nature."
 cli zandatsu "$ROOT/build/test-mods/patron-lib.jar"
 expect zandatsu-patches "Patches:    Player"
 
+cli fabric
+expect fabric-alias "'fabric' is not a miracle command."
+cli fast --seconds soon
+expect_code fast-bad 1
+expect fast-bad "HERESY: --seconds wants a whole number of seconds, not 'soon'"
+cli genesis "9Holy Relics!" --minecraft 26.2
+grep -q 'id = "holy-relics"' "$CLI_HOME/9Holy Relics!/miracle.mod.toml" && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [genesis-id]: trailing punctuation kept in the id"; }
+pcli pray altar --no-build
+expect_code pray-bad-side 1
+expect pray-bad-side "HERESY: pray what? client or server, not 'altar'"
+
 cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
@@ -467,6 +479,10 @@ run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
 expect ghost-dep "needs-ghost needs holy-grail, which is not in the mods folder."
 expect ghost-dep "needs-ghost needs miracle-toolchain, which is not in the mods folder. It's the MiracleToolChain library"
+
+run_with imposter "$T/imposter-mod.jar"
+expect_code imposter 1
+expect imposter "the id 'miracle' belongs to the loader itself."
 
 run_with cycle "$T/cycle-a.jar" "$T/cycle-b.jar"
 expect_code cycle 1

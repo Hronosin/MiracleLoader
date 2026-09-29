@@ -72,9 +72,9 @@ final class Rituals {
 
     // --- miracle forge --------------------------------------------------------------------------
 
-    static int forge() {
+    static int forge(String asked) {
+        System.out.println("'" + asked + "' is not a miracle command. Did you mean:");
         System.out.println("""
-                'forge' is not a miracle command. Did you mean:
 
                     miracle bake      (compile, check, bake: seconds)
                     miracle gradle    (if you miss the waiting)

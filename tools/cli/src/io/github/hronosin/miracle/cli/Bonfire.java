@@ -77,7 +77,7 @@ final class Bonfire {
     private static int light(Project p, List<Path> sides, Voice voice) throws IOException {
         String name = LocalDateTime.now().format(STAMP);
         for (Path side : sides) {
-            Path to = bonfires(side).resolve(name);
+            Path to = fresh(bonfires(side), name);
             copy(world(side), to);
             System.out.println("  " + p.dir().relativize(to) + "  (" + Rituals.human(Rituals.size(to)) + ")");
         }
@@ -112,7 +112,7 @@ final class Bonfire {
                 continue;
             }
             // The world being left becomes a bonfire of its own: resting never loses anything.
-            Path keep = bonfires(side).resolve(LocalDateTime.now().format(STAMP) + "_before-rest");
+            Path keep = fresh(bonfires(side), LocalDateTime.now().format(STAMP) + "_before-rest");
             Files.createDirectories(keep.getParent());
             Files.move(world(side), keep);
             copy(from, world(side));
@@ -141,6 +141,15 @@ final class Bonfire {
                     .filter(b -> !b.getFileName().toString().endsWith("_before-rest"))
                     .max(Path::compareTo).orElse(null);
         }
+    }
+
+    /** dir/name, or dir/name-2, -3... if a bonfire was already lit that second. */
+    private static Path fresh(Path dir, String name) {
+        Path p = dir.resolve(name);
+        for (int i = 2; Files.exists(p); i++) {
+            p = dir.resolve(name + "-" + i);
+        }
+        return p;
     }
 
     private static void copy(Path from, Path to) throws IOException {

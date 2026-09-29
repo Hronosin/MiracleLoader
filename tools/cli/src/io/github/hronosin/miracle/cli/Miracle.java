@@ -110,13 +110,16 @@ public final class Miracle {
                 return Rituals.gradle(rest.remove("--really"));
             }
             case "forge", "neoforge", "fabric", "loom" -> {
-                return Rituals.forge();
+                return Rituals.forge(args[0]);
             }
             case "heresy" -> {
                 return Rituals.heresy(Path.of(""));
             }
             case "fast" -> {
                 String secs = option(rest, "--seconds");
+                if (secs != null && !secs.matches("\\d{1,6}")) {
+                    throw new Heresy("--seconds wants a whole number of seconds, not '" + secs + "'");
+                }
                 return Rituals.fast(secs == null ? 40 : Integer.parseInt(secs));
             }
             case "tithe" -> {

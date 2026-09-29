@@ -75,7 +75,7 @@ final class Mojang {
                 }
             }
             if (url == null) {
-                throw new IOException("Mojang has never heard of Minecraft '" + id + "'. Latest release: "
+                throw new Miracle.Heresy("Mojang has never heard of Minecraft '" + id + "'. Latest release: "
                         + Json.str(manifest, "latest", "release"));
             }
             Files.createDirectories(dir);

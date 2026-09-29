@@ -25,6 +25,9 @@ final class Runner {
     }
 
     static int pray(Project p, Options o) throws IOException, InterruptedException {
+        if (!o.side().equals("client") && !o.side().equals("server")) {
+            throw new Miracle.Heresy("pray what? client or server, not '" + o.side() + "'");
+        }
         Path mod = o.build() ? Builder.build(p) : p.jar();
         if (!Files.isRegularFile(mod)) {
             throw new Miracle.Heresy("No baked mod at " + mod + ". Run without --no-build.");
@@ -39,7 +42,11 @@ final class Runner {
         Path mods = run.resolve("mods");
         Files.createDirectories(mods);
         try (Stream<Path> old = Files.list(mods)) {
-            for (Path f : old.filter(f -> f.getFileName().toString().startsWith(p.id() + "-")).toList()) {
+            // Only this mod's own earlier builds: <id>-<version>.jar, the version starting with a digit.
+            // A mod called holy mustn't take holy-hops-1.0.jar with it.
+            java.util.regex.Pattern ours = java.util.regex.Pattern.compile(
+                    java.util.regex.Pattern.quote(p.id() + "-") + "\\d[^/]*\\.jar");
+            for (Path f : old.filter(f -> ours.matcher(f.getFileName().toString()).matches()).toList()) {
                 Files.delete(f);
             }
         }
