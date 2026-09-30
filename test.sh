@@ -477,8 +477,12 @@ pcli exorcise
 expect_code exorcise-dry 0
 expect exorcise-dry "run/server-26.2/logs"
 expect exorcise-dry "Say the words to cast them out: miracle exorcise --yes"
+# A leftover from a wipe Windows didn't let finish: swept up by the next one.
+mkdir -p "$CLI_HOME/holy-hops/run/server-26.2/logs.old-deadbeef/stuck" && touch "$CLI_HOME/holy-hops/run/server-26.2/logs.old-deadbeef/stuck/x.log"
 pcli exorcise --yes
 expect exorcise "The power of Miracle compels you!"
+[ ! -e "$CLI_HOME/holy-hops/run/server-26.2/logs.old-deadbeef" ] && [ -z "$(ls -d "$CLI_HOME"/holy-hops/run/server-26.2/logs.old-* 2>/dev/null)" ] \
+    && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL [exorcise-sweep]: leftovers stayed"; }
 [ ! -e "$CLI_HOME/holy-hops/run/server-26.2/logs" ] && [ -e "$CLI_HOME/holy-hops/run/server-26.2/world/level.dat" ] \
     && [ -d "$CLI_HOME/holy-hops/run/server-26.2/bonfires" ] && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [exorcise]: took the wrong things"; }
@@ -564,7 +568,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.7.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.7.1"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -627,7 +631,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.7.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.7.1 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

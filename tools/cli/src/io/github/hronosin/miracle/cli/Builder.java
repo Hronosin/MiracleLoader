@@ -9,7 +9,6 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.List;
 import java.util.jar.Attributes;
 import java.util.jar.JarEntry;
@@ -204,13 +203,6 @@ final class Builder {
     }
 
     static void wipe(Path dir) throws IOException {
-        if (!Files.exists(dir)) {
-            return;
-        }
-        try (Stream<Path> s = Files.walk(dir)) {
-            for (Path f : s.sorted(Comparator.reverseOrder()).toList()) {
-                Files.delete(f);
-            }
-        }
+        Dust.wipe(dir);
     }
 }

@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.7.0";
+    static final String VERSION = "0.7.1";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -34,7 +34,7 @@ public final class Miracle {
             System.err.println("HERESY: " + h.getMessage());
             code = 1;
         } catch (IOException e) {
-            System.err.println("The heavens are silent: " + e.getMessage());
+            System.err.println("The heavens are silent: " + Dust.explain(e));
             code = 1;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();

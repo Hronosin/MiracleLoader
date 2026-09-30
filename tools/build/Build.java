@@ -5,13 +5,10 @@ import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.DirectoryStream;
-import java.nio.file.FileVisitResult;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
-import java.nio.file.SimpleFileVisitor;
 import java.nio.file.StandardCopyOption;
-import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -670,26 +667,58 @@ public final class Build {
         }
     }
 
+    /**
+     * Removes a folder the way Windows puts up with: renamed aside first (instant, even while
+     * OneDrive or an antivirus still holds files in it), then deleted patiently; what can't be
+     * deleted yet is left as build.old-* and swept up next time.
+     */
     static void deleteTree(Path dir) throws IOException {
+        Path parent = dir.toAbsolutePath().getParent();
+        try (DirectoryStream<Path> old = Files.newDirectoryStream(parent, dir.getFileName() + ".old-*")) {
+            for (Path p : old) {
+                deletePatiently(p, false);
+            }
+        }
         if (!Files.exists(dir)) {
             return;
         }
-        Files.walkFileTree(dir, new SimpleFileVisitor<Path>() {
-            @Override
-            public FileVisitResult visitFile(Path file, BasicFileAttributes attrs) throws IOException {
-                Files.delete(file);
-                return FileVisitResult.CONTINUE;
-            }
+        Path aside = dir.resolveSibling(dir.getFileName() + ".old-" + Long.toHexString(System.nanoTime()));
+        try {
+            Files.move(dir, aside);
+        } catch (IOException e) {
+            deletePatiently(dir, true);
+            return;
+        }
+        deletePatiently(aside, false);
+    }
 
-            @Override
-            public FileVisitResult postVisitDirectory(Path d, IOException e) throws IOException {
-                if (e != null) {
-                    throw e;
+    static void deletePatiently(Path root, boolean mustSucceed) throws IOException {
+        List<Path> all;
+        try (Stream<Path> s = Files.walk(root)) {
+            all = s.sorted(Collections.reverseOrder()).collect(Collectors.toList());
+        }
+        for (Path p : all) {
+            for (int attempt = 1; ; attempt++) {
+                try {
+                    Files.deleteIfExists(p);
+                    break;
+                } catch (IOException e) {
+                    if (attempt >= 12) {
+                        if (mustSucceed) {
+                            throw new Failure("Couldn't delete " + p + " (" + e.getClass().getSimpleName() + "): something"
+                                    + " still has it open. OneDrive, an antivirus, an Explorer window or a running game?");
+                        }
+                        return;
+                    }
+                    try {
+                        Thread.sleep(25L * attempt);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        throw new IOException("interrupted", ie);
+                    }
                 }
-                Files.delete(d);
-                return FileVisitResult.CONTINUE;
             }
-        });
+        }
     }
 
     static void mkdirs(Path dir) throws IOException {
