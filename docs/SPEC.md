@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.9.0 |
+| Version | 1.0.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -47,7 +47,7 @@ Every name comes in two forms: a solemn one and a boring alias. They are equival
 | `miracle-loader.jar` | MiracleLoader: discovery, RGCT, launching | the JDK |
 | `miracle.jar` | the command line, with `miracle-bake` built in | the JDK, `miracle-loader.jar` (manifest `Class-Path`) |
 | `miracle-bake.jar` | `miracle-bake` alone, for scripts and the build | the JDK |
-| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.9.0, and the game |
+| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 1.0.0, and the game |
 | `miracle`, `miracle.cmd` | wrappers that run `miracle.jar` next to them (the release zip) or `build/miracle.jar` (a checkout, building it first if it's missing); `miracle.cmd` also checks that the Java is 25 or newer | bash; cmd (Windows) |
 
 All of them MUST run on Java 25 or newer and MUST NOT need anything beyond the JDK: JSON, TOML, HTTP, compilation (`javax.tools`) and bytecode work (`java.lang.classfile`) are the JDK's or our own.
@@ -199,7 +199,7 @@ Creates `./<name>/` as a new project. It MUST refuse if that folder exists and i
 - **minecraft**: `--minecraft`, or Mojang's latest release if it is unobfuscated, otherwise (or when Mojang can't be reached) `26.2`.
 - **targets**: `["<minecraft>", "26.*", "1.21.11"]`.
 
-Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.9.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/` and the IDE files of `scriptorium`) and `README.md`.
+Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=1.0.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/` and the IDE files of `scriptorium`) and `README.md`.
 
 The source file is one of:
 
@@ -562,10 +562,10 @@ After the freeze the loader writes down what every mod patches, one line per pat
 
 ```
 game 26.3 server
-mod hallelujah 0.9.0
+mod hallelujah 1.0.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 0.9.0
+mod miracle-toolchain 1.0.0
   ...
 ```
 
@@ -597,7 +597,7 @@ MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgrade
 
 ### 9.1 What it is
 
-`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.9.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
+`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=1.0.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
 
 | part | alias | covers |
 |---|---|---|
@@ -1003,10 +1003,28 @@ Every game method named in section 9 has the same name and descriptor in all of 
 
 ## 12. Versioning and stability
 
-- The loader, the toolchain and the library share one version number, `MAJOR.MINOR.PATCH`. While `MAJOR` is 0, a minor release MAY change anything, and says what in its notes.
-- A mod states what it needs with `depends` (`"miracle>=0.9.0"`, `"miracle-toolchain>=0.9.0"`).
-- Stable within 0.x, unless a release note says otherwise: the file formats in sections 3.2, 3.3, 6.5 and 8.1; command names and aliases; the solemn and boring names in Appendix B.
-- Output wording is not an interface, apart from these markers, which scripts MAY rely on: `HERESY:`, `Baked:`, `Amen.`, `YOU DIED`, `BONFIRE LIT` (from `bonfire`/`backup`), and `[ok]`/`[!!]` in `confess`.
+The loader, the toolchain and the library share one version number, `MAJOR.MINOR.PATCH`. Since 1.0.0 it's semantic versioning, and this is the promise:
+
+- **Within 1.x nothing that's API breaks.** A mod built against 1.m runs on every later 1.x, and one written for 1.m compiles against every later 1.x, unless it used what's excluded below. Removing or changing API waits for 2.0.
+- **Deprecation first.** API on its way out is marked `@Deprecated` (with what to use instead) for at least one minor release before 2.0 may remove it.
+- **Minor releases** add; **patch releases** fix. A fix MAY change behavior that was plainly a bug (a crash, a wrong value), and its notes say so.
+
+What's API:
+
+- Java: every public type, method and field of `io.github.hronosin.miracle.api` and `io.github.hronosin.miracle.rgct` (MiracleLoader), and of `io.github.hronosin.miracle.toolchain` (the library), including what each is documented to do. Merge rules of layers (RGCT) and of Blessings are API: the same hooks give the same result.
+- Files: `miracle.mod.toml` (3.2), `miracle.project.toml` (3.3), `bake.toml` and the mod jar's layout (6.5, 8.1), `miracle.lock` (8.7).
+- The command line: command names and aliases, their options, and exit codes (Appendix A); the solemn and boring names (Appendix B).
+- The system properties and environment variables of 4.2.
+- These output markers, which scripts MAY rely on: `HERESY:`, `Baked:`, `Amen.`, `YOU DIED`, `BONFIRE LIT` (from `bonfire`/`backup`), `NO MIRACLE OCCURRED`, and `[ok]`/`[!!]` in `confess`.
+
+What isn't:
+
+- Anything marked `@io.github.hronosin.miracle.api.Internal` (public only for technical reasons: `HookDispatch`, which patched game classes call; `TransformRegistry`; `Mods.revealed`, `Mods.launch`, `Mods.standIn`), and anything not public.
+- Anything marked `@Experimental`: all of Event Horizon Extension (9.15), which has its own version number, below 1.0 while it settles.
+- The bytecode RGCT writes into game classes, the order of lines in reports, and all other output wording (Yukari included).
+- Which game versions are supported (section 11): new ones are added as they come; an old one is dropped only in a minor release that says so.
+
+A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.1.0"`).
 
 ## 13. Known limits
 

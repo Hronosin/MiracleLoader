@@ -121,17 +121,20 @@ public final class Mods {
      * Loader use only: classes from {@code standIn} belong to the mod in {@code modJar}. The Java
      * agent copies a baked variant into a jar of its own, and its classes are still the mod's.
      */
+    @Internal
     public static void standIn(Path standIn, Path modJar) {
         STAND_INS.put(standIn.toAbsolutePath().normalize(), modJar.toAbsolutePath().normalize());
     }
 
     /** Loader use only: called once RGCT is frozen, right before the first onLaunch(). */
+    @Internal
     public static void launch() {
         require();
         launched = true;
     }
 
     /** Loader use only: called once, before any mod code runs. */
+    @Internal
     public static synchronized void revealed(List<Mod> loaded, Game running) {
         if (mods != null) {
             throw new IllegalStateException("Mods were already revealed. Nice try.");

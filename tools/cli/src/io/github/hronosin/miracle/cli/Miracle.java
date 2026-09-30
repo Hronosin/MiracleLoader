@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.9.0";
+    static final String VERSION = "1.0.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -165,6 +165,13 @@ public final class Miracle {
             }
             case "--version", "version" -> {
                 System.out.println("MiracleToolChain " + VERSION);
+                if (VERSION.startsWith("1.0.")) {
+                    String jubilee = Yukari.says("Version one. I've watched empires take longer to get there, and fewer of them"
+                            + " came with a spec. Congratulations, darling. Now keep your promises.");
+                    if (jubilee != null) {
+                        System.out.println(jubilee);
+                    }
+                }
                 return 0;
             }
             default -> throw new Heresy("'" + args[0] + "' is not in the scripture. Try: miracle help");

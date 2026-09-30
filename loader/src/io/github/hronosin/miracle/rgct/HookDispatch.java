@@ -21,6 +21,7 @@ import java.util.Arrays;
  * <p>Lives in the loader's own class loader, which game classes can see through delegation.
  * Not part of the mod API: mods should never call this directly.
  */
+@io.github.hronosin.miracle.api.Internal
 public final class HookDispatch {
 
     /** Returned by {@link #interceptHead} when the method should run normally. */

@@ -1,8 +1,8 @@
 id = "event-horizon"
 name = "Event Horizon Extension"
-version = "0.9.0"
+version = "0.1.0"
 authors = ["Hronosin"]
 icon = "icon.png"
 # Experimental: its API may still change in any release, unlike MiracleToolChain's.
 entrypoint = "io.github.hronosin.miracle.horizon.EventHorizon"
-depends = ["miracle-toolchain>=0.9.0"]
+depends = ["miracle-toolchain>=1.0.0"]

@@ -38,6 +38,7 @@ import java.util.TreeMap;
  *
  * <p>Internal to the loader. Mods talk to {@link Rgct}.
  */
+@io.github.hronosin.miracle.api.Internal
 public final class TransformRegistry {
 
     enum Where {
