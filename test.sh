@@ -719,6 +719,25 @@ if [ -n "$OLD_JAVA" ]; then
     expect agent-old-java "MiracleLoader (as a Java agent) needs Java 25 or newer"
 fi
 
+# --- genesis --horizon --------------------------------------------------------------------------
+cli genesis event-test --horizon
+expect_code genesis-horizon 0
+out="$(cat "$CLI_HOME/event-test/miracle.mod.toml")"
+expect genesis-horizon 'depends = ["miracle-toolchain>='
+expect genesis-horizon '"event-horizon>='
+cli genesis stoic --ascetic --horizon
+expect_code genesis-horizon-ascetic 1
+expect genesis-horizon-ascetic "an ascetic doesn't cross event horizons"
+
+# --- Event Horizon's self-test (math, shapes, scheduler: no game needed) ------------------------
+if [ -f build/event-horizon.jar ]; then
+    out="$("$JAVA" -cp build/miracle-loader.jar:build/miracle-toolchain.jar:build/event-horizon.jar \
+        io.github.hronosin.miracle.horizon.SelfTest 2>&1)"; code=$?
+    expect_code horizon-selftest 0
+    expect horizon-selftest "failed"
+    expect_not horizon-selftest "FAIL:"
+fi
+
 # --- scriptorium: IDE files, when Minecraft 26.3 is in the real cache ------------------------
 REAL_CACHE="${MIRACLE_HOME:-$HOME/.cache/miracle}"
 if [ -f "$REAL_CACHE/minecraft/versions/26.3/client.jar" ]; then

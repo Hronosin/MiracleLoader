@@ -278,6 +278,11 @@ public final class Build {
         Path toolchain = OUT.resolve("miracle-toolchain.jar");
         buildJar(Paths.get("toolchain"), toolchain, loaderJar + SEP + mcCp, libsCp);
         runJar("--create", "--file", OUT.resolve("miracle-toolchain-sources.jar").toString(), "-C", "toolchain/src", ".");
+
+        say("==> Event Horizon Extension (experimental)");
+        Path horizon = OUT.resolve("event-horizon.jar");
+        buildJar(Paths.get("horizon"), horizon, cp(loaderJar, toolchain) + SEP + mcCp, libsCp + SEP + toolchain);
+        runJar("--create", "--file", OUT.resolve("event-horizon-sources.jar").toString(), "-C", "horizon/src", ".");
         for (String m : REAL_MODS) {
             buildJar(Paths.get("examples", m), OUT.resolve(m + ".jar"), cp(loaderJar, toolchain) + SEP + mcCp,
                     libsCp + SEP + toolchain);
@@ -324,6 +329,7 @@ public final class Build {
             List<String> cmd = new ArrayList<>(List.of(javaExe(), "-jar", bakeJar.toString(), "--lib", toolchain.toString()));
             cmd.addAll(bakeArgs);
             cmd.add(toolchain.toString());
+            cmd.add(horizon.toString());
             for (String m : REAL_MODS) {
                 cmd.add(OUT.resolve(m + ".jar").toString());
             }
@@ -331,6 +337,7 @@ public final class Build {
             run(cmd);
         }
         preach(toolchain); // after baking: baking rewrites the jar
+        preach(horizon);
     }
 
     // --- jars -------------------------------------------------------------------------------

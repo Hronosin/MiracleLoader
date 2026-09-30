@@ -33,7 +33,8 @@ final class Genesis {
      * {@code ascetic}: a bare RGCT mod, without the MiracleToolChain library. {@code template}:
      * one of {@link #TEMPLATES}, or null for the default.
      */
-    static Path create(Path where, String name, String pkg, String minecraft, boolean ascetic, String template)
+    static Path create(Path where, String name, String pkg, String minecraft, boolean ascetic, String template,
+                       boolean horizon)
             throws IOException {
         if (template != null && !TEMPLATES.containsKey(template)) {
             throw new Miracle.Heresy("No template called '" + template + "'. There's " + String.join(", ", TEMPLATES.keySet())
@@ -77,7 +78,8 @@ final class Genesis {
                 authors = ["%s"]
                 # icon = "icon.png"   # a square PNG (128x128 is plenty) in resources/, for launchers and Modrinth
                 """.formatted(id, title, pkg, cls, System.getProperty("user.name", "you"))
-                + (ascetic ? "" : "depends = [\"miracle-toolchain>=0.9.0\"]\n"));
+                + (ascetic ? "" : horizon ? "depends = [\"miracle-toolchain>=0.9.0\", \"event-horizon>=0.9.0\"]\n"
+                        : "depends = [\"miracle-toolchain>=0.9.0\"]\n"));
 
         write(dir.resolve(Project.PROJECT_FILE), """
                 # What you write and compile against. Must be unobfuscated (26.1+), so names are readable.

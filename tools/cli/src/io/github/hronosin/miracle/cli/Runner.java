@@ -52,6 +52,12 @@ final class Runner {
         }
         Files.copy(mod, mods.resolve(mod.getFileName()), StandardCopyOption.REPLACE_EXISTING);
         Path library = mods.resolve("miracle-toolchain.jar");
+        Path horizon = mods.resolve("event-horizon.jar");
+        if (p.usesHorizon()) {
+            Files.copy(Miracle.horizonJar(), horizon, StandardCopyOption.REPLACE_EXISTING);
+        } else {
+            Files.deleteIfExists(horizon);
+        }
         if (p.usesToolchain()) {
             Files.copy(Miracle.toolchainJar(), library, StandardCopyOption.REPLACE_EXISTING);
         } else {

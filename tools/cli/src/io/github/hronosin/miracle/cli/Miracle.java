@@ -65,11 +65,15 @@ public final class Miracle {
                     return 0;
                 }
                 boolean ascetic = rest.remove("--ascetic");
+                boolean horizon = rest.remove("--horizon");
+                if (ascetic && horizon) {
+                    throw new Heresy("--ascetic and --horizon: an ascetic doesn't cross event horizons. Pick one.");
+                }
                 String template = option(rest, "--template");
                 String pkg = option(rest, "--package");
                 String minecraft = option(rest, "--minecraft");
                 String name = positional(rest, "genesis needs a name: miracle genesis my-mod");
-                Genesis.create(Path.of(""), name, pkg, minecraft, ascetic, template);
+                Genesis.create(Path.of(""), name, pkg, minecraft, ascetic, template, horizon);
                 return 0;
             }
             case "classpath" -> {
@@ -174,6 +178,8 @@ public final class Miracle {
                   miracle genesis <name>          (new)     create a mod project. Let there be mod.
                       --package com.you.mod  --minecraft 26.2
                       --ascetic           no MiracleToolChain library, just RGCT and you
+                      --horizon           with Event Horizon Extension too (experimental: math, raycasts,
+                                          forces, attributes, auras, scheduler, particles)
                       --template aura     start from a template: aura (RWBY), stylish (DMC),
                                           zandatsu (MGR:R), you-died (Dark Souls), grace (Elden Ring)
                       --templates         describe them
@@ -265,6 +271,13 @@ public final class Miracle {
         } catch (URISyntaxException e) {
             throw new IllegalStateException(e);
         }
+    }
+
+    /** Event Horizon Extension, for mods that depend on event-horizon. */
+    static Path horizonJar() {
+        return sibling("event-horizon.jar", "miracle.horizonJar", "MIRACLE_HORIZON_JAR",
+                "Event Horizon Extension isn't at %s. It comes in the release zip; in a checkout, ./build.sh builds it"
+                        + " along with the library. Or point -Dmiracle.horizonJar=... at it.");
     }
 
     private static Path sibling(String fileName, String property, String env, String missing) {

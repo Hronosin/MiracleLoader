@@ -608,6 +608,33 @@ A vanilla client meeting a server with such mods gets the list of what to instal
 
 Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. For 0.3, both versions again: heretics summoned, hit by thrown holy water (thrown by the item's real right-click code, too), killed, looted, saved with the world and loaded back; on the client, the heretic drawn by the zombie renderer and the holy water by the thrown-item renderer, the spawn egg in its tab. On a local server, with 26.3 and 1.21.11 clients: matching mods walk in (and Telepathy still works), a client missing a mod, a client with a mod the server lacks, a client without the library, and a client facing a server without it are each turned away with the right lines. For 0.4, both versions: an altar and a reliquary placed next to the player, filled, the altar opened by its real right-click code and a trial vision from the server, each in the screen it asked for with its caption drawn (the altar's picture is the headless 26.3 client's screenshot); bottles blessed on time, the reliquary broken and its diamonds on the ground; a `Hallowed` candle counting on the server and the client seeing every count; the same again with a client joining a dedicated 26.3 server; and on dedicated servers, items and blessing progress still there after a restart. For 0.5, both versions again: the heretic drawn from its Blockbench model (hood, horn on a rotated cube, book in hand), the altar's bottles floating above it, a candle drawn by an `Altarpiece`, and a dark stone room filled by the game's own spawner, where a test mob with weight 5000 made up 85 to 96 of every 100 monsters and the heretic turned up too; the same on a client joining a dedicated 26.3 server. For 0.6, both versions: the heretic idle and frozen mid-swing, its book raised over its head, on 26.3 and 1.21.11; and a real 1.21.11 client started with Java 21, the way a launcher starts it, resurrected in Java 25 and played through the whole trial. For 0.7: the build, now one Java program, run on Linux against Prism's metadata and the toolchain's cache; `consecrate` installing into, listing and leaving a Prism instance; and the Windows scripts run under Wine with stand-in Javas (8, 21, 25, none, one under `Program Files (x86)`), checking the version checks, arguments with spaces and parentheses, and exit codes. Then a real Windows 11 (in a VM): `miracle.cmd` from the release zip, a new mod created, baked and started, Minecraft downloaded with its Windows natives, the loader patching the game from a OneDrive folder with a Cyrillic name, as far as the VM's missing OpenGL let it, and `pray server` all the way to a running server; the second bake found the bug 0.7.1 fixes (folders OneDrive won't let go of). Reports from more Windows machines are welcome. Players' eyes are still needed for textures, titles and meters.
 
+## Event Horizon Extension (experimental)
+
+MiracleToolChain covers what most mods need. Event Horizon covers what they don't, yet: a library on top of the library (`event-horizon.jar`, `depends = ["miracle-toolchain", "event-horizon"]`, or `miracle genesis my-mod --horizon`). Its API is marked `@Experimental`: unlike MiracleToolChain's, it may change in any release while it settles.
+
+| part | boring name | what |
+|---|---|---|
+| `Vec`, `Quat`, `Curve`, `Ease`, `Noise`, `Shape`, `Geodesic` | Vectors | vectors and quaternions in the game's axes, Bézier curves and splines through points (evenly spaced), easing, Perlin and fractal noise, shapes (sphere, box, cylinder, cone, beam, unions, holes) and the blocks inside them, frames of reference: "two blocks ahead, one to the left" |
+| `Singularity` | Raycast | what an entity looks at (blocks and entities), clear line of sight, every entity or block in a shape |
+| `Tidal`, `Ballistics` | Physics | push, pull, attract, knock away; launch something to land on a spot in exactly N ticks, or throw it at a target at a given speed, worked out tick by tick with the game's own gravity and air drag for mobs, arrows and thrown things, so it lands where you said |
+| `Accretion` | Attributes | boosts to any attribute for a while, while a condition holds, or by a formula worked out every tick; stats of your own (mana, faith) kept on the scoreboard, so they're saved and `/scoreboard` sees them |
+| `Ergosphere` | Auras | every few ticks, everything of a kind inside a shape around an entity or a point gets your code |
+| `Redshift` | Scheduler | later, every N ticks, N times, smoothly over a stretch of ticks, bound to an entity's life; cooldowns per entity |
+| `Hawking` | Particles | lines, circles, Fibonacci spheres, helices, curves and shape outlines, in particles |
+| `Spaghettification` | Scale | grow and shrink living things through the game's scale attribute, eased over time |
+
+```java
+Singularity.Hit hit = Singularity.look(player, 32);
+if (hit.entity() instanceof LivingEntity target && COOLDOWN.tryStart(player)) {
+    Accretion.boost(target, Attributes.GRAVITY, "mymod:float").multiplyTotal(-0.9).forTicks(60).start();
+    Tidal.launch(target, Geodesic.position(player).add(0, 8, 0), 20);        // there in a second, light as it now is
+    Hawking.curve((ServerLevel) player.level(), ParticleTypes.END_ROD,
+            Curve.bezier(Geodesic.eyes(player), Geodesic.eyes(player).add(0, 4, 0), Geodesic.middle(target)), 40);
+}
+```
+
+Checked on real 26.3 and 1.21.11 clients, in a world: an armor stand launched onto a spot 12 ticks away landed within a millionth of a block of it; a player flung upward rose 6 blocks as their own client saw it; boosts applied and expired on time, a stat clamped and spent, an aura found what was in it, scaling eased to 1.5, the scheduler ran everything in order. Plus 53 checks of the math in `SelfTest`, no game needed.
+
 ## Lifecycle
 
 1. Find mods in `mods/`, check their `depends`, and order them: dependencies first, otherwise by id, so load order never depends on the file system's mood.
@@ -656,6 +683,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] MiracleToolChain library: Bedrock animations for sculpted models (with Molang)
 - [x] Resurrection: started by an older Java, the game relaunches itself in Java 25
 - [x] Java agent mode: `-javaagent:miracle-loader.jar` with the game's own main class, for any launcher
+- [x] Event Horizon Extension (experimental): vectors, curves, raycasts, ballistics, boosts and stats, auras, scheduler, particles, scale
 - [x] Windows: `build.cmd`, `miracle.cmd`, and one Java build for every OS; `miracle consecrate` installs into Prism anywhere
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 

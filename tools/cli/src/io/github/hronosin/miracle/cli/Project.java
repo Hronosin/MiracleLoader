@@ -47,9 +47,14 @@ record Project(Path dir, String id, String name, String version, String minecraf
                 mod.getOrDefault("version", "0.0.0").toString(), minecraft, targets, depends);
     }
 
-    /** True if miracle.mod.toml says depends = ["miracle-toolchain", ...]. */
+    /** True if miracle.mod.toml says depends = ["miracle-toolchain", ...], or on Event Horizon, which brings it. */
     boolean usesToolchain() {
-        return depends.stream().anyMatch(d -> d.strip().matches("miracle-toolchain\\s*(>=.*)?"));
+        return usesHorizon() || depends.stream().anyMatch(d -> d.strip().matches("miracle-toolchain\\s*(>=.*)?"));
+    }
+
+    /** True if miracle.mod.toml says depends = ["event-horizon", ...]. */
+    boolean usesHorizon() {
+        return depends.stream().anyMatch(d -> d.strip().matches("event-horizon\\s*(>=.*)?"));
     }
 
     Path buildDir() {

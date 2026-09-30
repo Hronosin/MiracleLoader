@@ -45,6 +45,9 @@ final class Builder {
         if (p.usesToolchain()) {
             base.add(Miracle.toolchainJar());
         }
+        if (p.usesHorizon()) {
+            base.add(Miracle.horizonJar());
+        }
         base.addAll(libs);
 
         List<Path> cp = new ArrayList<>(base);
