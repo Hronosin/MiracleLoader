@@ -136,6 +136,11 @@ final class Confess {
     }
 
     private void display() {
+        String os = System.getProperty("os.name", "").toLowerCase(java.util.Locale.ROOT);
+        if (os.contains("win") || os.contains("mac")) {
+            virtue("a desktop to open the game window on");
+            return;
+        }
         if (System.getenv("DISPLAY") == null && System.getenv("WAYLAND_DISPLAY") == null) {
             sin("no DISPLAY or WAYLAND_DISPLAY: 'pray client' has nowhere to open a window",
                     "Run from a desktop session, or use 'pray server' (or xvfb-run for the brave)");

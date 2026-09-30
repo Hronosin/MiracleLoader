@@ -1,0 +1,4 @@
+# Windows scripts keep Windows line endings, whatever the checkout.
+*.cmd text eol=crlf
+*.sh text eol=lf
+miracle text eol=lf

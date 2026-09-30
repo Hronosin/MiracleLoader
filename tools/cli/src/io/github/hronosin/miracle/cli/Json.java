@@ -6,7 +6,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Just enough JSON to read Mojang's metadata. Objects become {@code Map<String, Object>}, arrays
+ * Just enough JSON to read Mojang's metadata and edit Prism's. Objects become {@code Map<String, Object>}, arrays
  * {@code List<Object>}, numbers {@code Double} or {@code Long}, plus String, Boolean and null.
  * The toolchain has no dependencies either.
  */
@@ -55,6 +55,65 @@ final class Json {
     static String str(Object root, String... path) {
         Object v = get(root, path);
         return v == null ? null : v.toString();
+    }
+
+    /** Pretty JSON of maps, lists, strings, numbers, booleans and null, indented by four spaces. */
+    static String write(Object v) {
+        StringBuilder sb = new StringBuilder();
+        write(sb, v, "");
+        return sb.append('\n').toString();
+    }
+
+    private static void write(StringBuilder sb, Object v, String at) {
+        String inner = at + "    ";
+        switch (v) {
+            case null -> sb.append("null");
+            case Map<?, ?> m when m.isEmpty() -> sb.append("{}");
+            case Map<?, ?> m -> {
+                sb.append('{');
+                int n = 0;
+                for (var e : m.entrySet()) {
+                    sb.append(n++ == 0 ? "\n" : ",\n").append(inner);
+                    quote(sb, e.getKey().toString());
+                    sb.append(": ");
+                    write(sb, e.getValue(), inner);
+                }
+                sb.append('\n').append(at).append('}');
+            }
+            case List<?> l when l.isEmpty() -> sb.append("[]");
+            case List<?> l -> {
+                sb.append('[');
+                for (int n = 0; n < l.size(); n++) {
+                    sb.append(n == 0 ? "\n" : ",\n").append(inner);
+                    write(sb, l.get(n), inner);
+                }
+                sb.append('\n').append(at).append(']');
+            }
+            case Boolean b -> sb.append(b);
+            case Number n -> sb.append(n);
+            default -> quote(sb, v.toString());
+        }
+    }
+
+    private static void quote(StringBuilder sb, String s) {
+        sb.append('"');
+        for (char c : s.toCharArray()) {
+            switch (c) {
+                case '"' -> sb.append("\\\"");
+                case '\\' -> sb.append("\\\\");
+                case '\n' -> sb.append("\\n");
+                case '\r' -> sb.append("\\r");
+                case '\t' -> sb.append("\\t");
+                default -> {
+                    if (c < 0x20) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+                }
+            }
+        }
+        sb.append('"');
     }
 
     private IllegalArgumentException error(String msg) {

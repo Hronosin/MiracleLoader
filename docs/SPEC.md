@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.6.0 |
+| Version | 0.7.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -46,9 +46,9 @@ Every name comes in two forms: a solemn one and a boring alias. They are equival
 |---|---|---|
 | `miracle-loader.jar` | MiracleLoader: discovery, RGCT, launching | the JDK |
 | `miracle.jar` | the command line, with `miracle-bake` built in | the JDK, `miracle-loader.jar` (manifest `Class-Path`) |
-| `miracle-bake.jar` | `miracle-bake` alone, for scripts and `build.sh` | the JDK |
-| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.6.0, and the game |
-| `miracle` | a shell wrapper that runs `build/miracle.jar`, building it first if it's missing | bash |
+| `miracle-bake.jar` | `miracle-bake` alone, for scripts and the build | the JDK |
+| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.7.0, and the game |
+| `miracle`, `miracle.cmd` | wrappers that run `miracle.jar` next to them (the release zip) or `build/miracle.jar` (a checkout, building it first if it's missing); `miracle.cmd` also checks that the Java is 25 or newer | bash; cmd (Windows) |
 
 All of them MUST run on Java 25 or newer and MUST NOT need anything beyond the JDK: JSON, TOML, HTTP, compilation (`javax.tools`) and bytecode work (`java.lang.classfile`) are the JDK's or our own.
 
@@ -152,9 +152,10 @@ Rules:
 | `MODRINTH_TOKEN`; `GITHUB_TOKEN`, `GH_TOKEN` | env | toolchain | `ascend`'s credentials (5.1); never printed |
 | `MIRACLE_MODRINTH_API`, `MIRACLE_GITHUB_API` | env | toolchain | where `ascend` sends its requests (default `https://api.modrinth.com/v2`, `https://api.github.com`) |
 | `-Dmiracle.showCommand=true` | property | toolchain | `pray` prints the full game command line |
+| `PRISM_DATA` | env | `consecrate`, the build | Prism Launcher's data folder, when it isn't where Prism keeps it by default (5.2) |
 
 Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the `miracle` wrapper, pass them in `JDK_JAVA_OPTIONS`, or use the environment variables.
-| `JAVA_HOME` | env | `miracle` wrapper, `build.sh` | which Java runs the toolchain; `pray` starts the game with the same Java |
+| `JAVA_HOME` | env | the wrappers (`miracle`, `build.sh`, and their `.cmd` twins) | which Java runs the toolchain; `pray` starts the game with the same Java |
 | `DISPLAY`, `WAYLAND_DISPLAY` | env | `confess` | whether `pray client` has somewhere to open a window |
 | `-Dmiracle.target` | property | loader | the game's real main class (default `net.minecraft.client.main.Main`) |
 | `-Dmiracle.modsDir` | property | loader | mods folder (default `mods`) |
@@ -197,7 +198,7 @@ Creates `./<name>/` as a new project. It MUST refuse if that folder exists and i
 - **minecraft**: `--minecraft`, or Mojang's latest release if it is unobfuscated, otherwise (or when Mojang can't be reached) `26.2`.
 - **targets**: `["<minecraft>", "26.*", "1.21.11"]`.
 
-Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.6.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
+Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.7.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
 
 The source file is one of:
 
@@ -287,6 +288,17 @@ A comment is `//`, `/*`, `*` or `#` followed by the tag; trailing `/*` and `*/` 
 
 Opens a mod jar (default: the project's last bake) without running anything and prints: name, id and version; entrypoint ("spine"); `depends`; class count; the game classes (simple names) it names in `rgct.target(...)` calls with a constant string; the library API it calls (public parts only); whether it brings OSHI hooks (`raw`, `rawBytes`); the versions it has baked variants and fallbacks for; and its `bake.toml`. A jar without a readable `miracle.mod.toml` exits 1; a missing jar is a heresy.
 
+#### `consecrate <instance>` (alias `install`)
+
+Installs MiracleLoader into a Prism Launcher instance. Prism's data folder is `--prism <folder>`, else `PRISM_DATA`, else the first of these that has an `instances` folder: on Linux `~/.var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher` (Flatpak), then `$XDG_DATA_HOME/PrismLauncher` (default `~/.local/share/PrismLauncher`); on macOS `~/Library/Application Support/PrismLauncher`; on Windows `%APPDATA%\PrismLauncher`, then `~\scoop\persist\prismlauncher`. None: a heresy listing where it looked.
+
+- The instance is named by its folder, or by the name Prism shows (`name=` in `instance.cfg`), ignoring case; the rest of the arguments, joined by spaces, are the name. None given, or no match: the instances are listed and it's a heresy.
+- It MUST refuse while a Prism Launcher process is running (Prism rewrites `mmc-pack.json` on exit), and on an instance with Fabric, Quilt, NeoForge, Forge or LiteLoader.
+- Install: `libraries/miracle-loader-<version>.jar` (older `miracle-loader-*.jar` removed), `patches/io.github.hronosin.miracle.json` (a component: `mainClass` `io.github.hronosin.miracle.Resurrection`, the jar as a local library, requiring `net.minecraft`, order 10), the component added to `mmc-pack.json` (backed up to `mmc-pack.json.bak` first; other components kept as they were), and `miracle-toolchain.jar` into the game folder's `mods/` (`.minecraft` or `minecraft`), if the library is next to the toolchain. `--examples` also copies the example mods found next to it (a checkout's `build/`). An obfuscated version gets a note: mods need a variant baked for it.
+- `--uninstall` removes the component, the patch and the loader jar, and leaves `mods/` alone. `--list` lists the instances, marking those with MiracleLoader `[consecrated]`.
+
+`prism-install.sh` and `prism-install.cmd` in a checkout build first, then run `consecrate --examples`.
+
 #### `exorcise [--yes]` (alias `clean`)
 
 Inside a project, lists `build/`, and `logs/`, `crash-reports/` and `debug/` in every `run/` folder, with sizes. With `--yes`, deletes them. It MUST NOT delete worlds, bonfires, configs, sources or anything else. Exits 0.
@@ -316,13 +328,13 @@ miracle dictionary 1.21.11 "26.*" ">=26.2" latest
 miracle dictionary --list
 ```
 
-Fetches the dictionaries for the given versions and patterns (4.1): the client jar (hard-linked to the cached client where the file system allows, copied otherwise) and, for an obfuscated version, Mojang's mappings. Already-fetched files are verified by hash and not downloaded again. `bake` does this by itself for a project's targets; this command is for scripts (`build.sh` uses it) and for looking. Without arguments, or with `--list`, it lists the cached dictionaries.
+Fetches the dictionaries for the given versions and patterns (4.1): the client jar (hard-linked to the cached client where the file system allows, copied otherwise) and, for an obfuscated version, Mojang's mappings. Already-fetched files are verified by hash and not downloaded again. `bake` does this by itself for a project's targets; this command is for scripts (the build uses it) and for looking. Without arguments, or with `--list`, it lists the cached dictionaries.
 
 ### 5.3 Plumbing
 
 | command | does |
 |---|---|
-| `classpath <v>` | prints the client jar and the libraries version `<v>` compiles against, `:`-separated, on the **last** line of output (download progress may come before it), downloading what's missing. Used by `build.sh`. |
+| `classpath <v>` | prints the client jar and the libraries version `<v>` compiles against, separated by the platform's path separator (`:`, or `;` on Windows), on the **last** line of output (download progress may come before it), downloading what's missing. Used by the build. |
 | `version` (`--version`) | `MiracleToolChain <version>` |
 | `help` (`--help`, `-h`, no command) | the command list |
 
@@ -529,10 +541,10 @@ After the freeze the loader writes down what every mod patches, one line per pat
 
 ```
 game 26.3 server
-mod hallelujah 0.6.0
+mod hallelujah 0.7.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 0.6.0
+mod miracle-toolchain 0.7.0
   ...
 ```
 
@@ -544,7 +556,7 @@ mod miracle-toolchain 0.6.0
 
 ### 8.8 Resurrection
 
-MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgraded. A launcher starts each game version with the Java that version asks for (21 for 1.21.11), so the loader jar has a second main class, `io.github.hronosin.miracle.Resurrection`, compiled for Java 8. Launchers SHOULD use it (`prism-install.sh` does); `MiracleMain` stays for launchers that already run Java 25.
+MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgraded. A launcher starts each game version with the Java that version asks for (21 for 1.21.11), so the loader jar has a second main class, `io.github.hronosin.miracle.Resurrection`, compiled for Java 8. Launchers SHOULD use it (`consecrate` does); `MiracleMain` stays for launchers that already run Java 25.
 
 - On Java 25 or newer it calls `MiracleMain.main` in the same process.
 - On an older Java it prints which Java it was started with (and, from the class path, which version the game asks for), looks for Java installations, and picks the newest that is 25 or newer. Where it looks, in order: `-Dmiracle.java` or `MIRACLE_JAVA`; `JAVA_HOME`; then, unless `-Dmiracle.javaSearch=explicit`, every `java` on the `PATH` and the usual places (system JVM folders, SDKMAN, `~/.jdks`, Prism Launcher's and the official launcher's runtimes, Adoptium, Zulu and Microsoft on Windows, macOS's `JavaVirtualMachines`). A Java's version comes from its `release` file, or from asking it.
@@ -555,7 +567,7 @@ MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgrade
 
 ### 9.1 What it is
 
-`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.6.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
+`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.7.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
 
 | part | alias | covers |
 |---|---|---|
@@ -948,7 +960,7 @@ Every game method named in section 9 has the same name and descriptor in all of 
 ## 12. Versioning and stability
 
 - The loader, the toolchain and the library share one version number, `MAJOR.MINOR.PATCH`. While `MAJOR` is 0, a minor release MAY change anything, and says what in its notes.
-- A mod states what it needs with `depends` (`"miracle>=0.6.0"`, `"miracle-toolchain>=0.6.0"`).
+- A mod states what it needs with `depends` (`"miracle>=0.7.0"`, `"miracle-toolchain>=0.7.0"`).
 - Stable within 0.x, unless a release note says otherwise: the file formats in sections 3.2, 3.3, 6.5 and 8.1; command names and aliases; the solemn and boring names in Appendix B.
 - Output wording is not an interface, apart from these markers, which scripts MAY rely on: `HERESY:`, `Baked:`, `Amen.`, `YOU DIED`, `BONFIRE LIT` (from `bonfire`/`backup`), and `[ok]`/`[!!]` in `confess`.
 
@@ -964,6 +976,7 @@ Every game method named in section 9 has the same name and descriptor in all of 
 - The Prophecy sees only calls written in the dependent mod's own classes (9.3); `Blessing.priority` needs a constant.
 - String references to game names outside RGCT targets (reflection) are never translated (6.3).
 - Fallbacks compile against the primary version's libraries, not the target's.
+- Windows: the `.cmd` wrappers have been run under Wine with stand-in Javas, not yet on a real Windows machine; `test.sh` is bash (WSL on Windows).
 - `bonfire` doesn't check whether the game is running.
 - `miracle bake` compiles fallbacks for any `fallback/<v>/` folder, target or not.
 - MiracleLoader needs Java 25, so the oldest reachable versions are those that run on it. `Resurrection` (8.8) fixes the launcher's Java, not the game's: the game itself has to work on Java 25.
@@ -992,6 +1005,7 @@ Every game method named in section 9 has the same name and descriptor in all of 
 | `messages` | `todo` | command |
 | `zandatsu` | `inspect` | command |
 | `exorcise` | `clean` | command |
+| `consecrate` | `install` | command |
 | `ascend` | `publish` | command |
 | `Omens` | `Events` | library |
 | `Blessings` | `Tweaks` | library |

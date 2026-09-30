@@ -1,9 +1,15 @@
 #!/usr/bin/env bash
 # MiracleToolChain. Symlink this into your PATH: ln -s "$PWD/miracle" ~/.local/bin/miracle
+# Works from a checkout (jars in build/) and from the release zip (jars right here).
 set -euo pipefail
 DIR="$(cd "$(dirname "$(readlink -f "$0")")" && pwd)"
-if [ ! -f "$DIR/build/miracle.jar" ] || [ ! -f "$DIR/build/miracle-loader.jar" ]; then
-    echo "First prayer: building the toolchain..." >&2
-    "$DIR/build.sh" > /dev/null
+JAR="$DIR/miracle.jar"
+if [ ! -f "$JAR" ]; then
+    JAR="$DIR/build/miracle.jar"
+    if [ ! -f "$JAR" ] || [ ! -f "$DIR/build/miracle-loader.jar" ]; then
+        [ -f "$DIR/build.sh" ] || { echo "miracle.jar isn't next to this script." >&2; exit 1; }
+        echo "First prayer: building the toolchain..." >&2
+        "$DIR/build.sh" > /dev/null
+    fi
 fi
-exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$DIR/build/miracle.jar" "$@"
+exec "${JAVA_HOME:+$JAVA_HOME/bin/}java" -jar "$JAR" "$@"

@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.6.0";
+    static final String VERSION = "0.7.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -139,6 +139,9 @@ public final class Miracle {
             case "tithe" -> {
                 return Rituals.tithe();
             }
+            case "consecrate", "install" -> {
+                return Consecrate.run(rest, option(rest, "--prism"));
+            }
             case "exorcise", "clean" -> {
                 return Rituals.exorcise(Path.of(""), rest.remove("--yes"));
             }
@@ -186,6 +189,9 @@ public final class Miracle {
                   miracle messages                (todo)    TODO/FIXME/HACK/XXX, as messages on the ground
                   miracle zandatsu [jar]          (inspect) cut a mod jar open: patches, library use, bakes
                   miracle exorcise [--yes]        (clean)   cast out build/, logs, crash reports (worlds spared)
+                  miracle consecrate "Instance"   (install) put MiracleLoader and the library into a Prism instance
+                      --list              the instances   --uninstall   take it out again
+                      --prism "folder"    Prism's data folder, if it isn't in the usual place (or PRISM_DATA)
 
                 Rituals nobody needs:
                   miracle gradle [--really]       a faithful reenactment of a Gradle build. Builds nothing.

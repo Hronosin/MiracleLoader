@@ -564,7 +564,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.6.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.7.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -627,7 +627,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.6.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.7.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
@@ -682,6 +682,36 @@ expect_not lock-off "miracle.lock:"
 JAVA_OPTS=-Dmiracle.lock=maybe run_in "$LOCK_DIR" "$M/hello-mod.jar"
 expect_code lock-bad-mode 1
 expect lock-bad-mode "-Dmiracle.lock=maybe: that's not a mode. update, strict or off."
+
+# --- consecrate: installing into a (fake) Prism Launcher ------------------------------------
+PRISM="$ROOT/build/test-prism"
+rm -rf "$PRISM" && mkdir -p "$PRISM/instances/Pure 26/minecraft" "$PRISM/instances/fabric-one"
+printf '{"components":[{"uid":"net.minecraft","version":"26.3","important":true}],"formatVersion":1}' \
+    > "$PRISM/instances/Pure 26/mmc-pack.json"
+printf 'InstanceType=OneSix\nname=Pure Twenty-Six\n' > "$PRISM/instances/Pure 26/instance.cfg"
+printf '{"components":[{"uid":"net.minecraft","version":"1.21.11"},{"uid":"net.fabricmc.fabric-loader"}]}' \
+    > "$PRISM/instances/fabric-one/mmc-pack.json"
+cli consecrate --prism "$PRISM" --list
+expect consecrate-list "Pure 26   (\"Pure Twenty-Six\")"
+cli consecrate --prism "$PRISM" "pure twenty-six" --examples
+expect_code consecrate 0
+expect consecrate "consecrated in \"Pure 26\" (Minecraft 26.3)"
+out="$(cat "$PRISM/instances/Pure 26/patches/io.github.hronosin.miracle.json" "$PRISM/instances/Pure 26/mmc-pack.json" 2>&1;
+       ls "$PRISM/instances/Pure 26/libraries" "$PRISM/instances/Pure 26/minecraft/mods" 2>&1)"
+expect consecrate-patch '"mainClass": "io.github.hronosin.miracle.Resurrection"'
+expect consecrate-pack '"cachedName": "MiracleLoader"'
+expect consecrate-pack '"important": true'
+expect consecrate-files "miracle-loader-$(sed -n 's/.*VERSION = "\(.*\)";/\1/p' tools/cli/src/io/github/hronosin/miracle/cli/Miracle.java).jar"
+expect consecrate-files "title-mod.jar"
+cli consecrate --prism "$PRISM" --list
+expect consecrate-marked "[consecrated]"
+cli consecrate --prism "$PRISM" fabric-one
+expect_code consecrate-fabric 1
+expect consecrate-fabric "already has net.fabricmc.fabric-loader"
+cli consecrate --prism "$PRISM" --uninstall "Pure 26"
+expect consecrate-undo "MiracleLoader removed from \"Pure 26\""
+out="$(cat "$PRISM/instances/Pure 26/mmc-pack.json"; ls "$PRISM/instances/Pure 26/patches" "$PRISM/instances/Pure 26/libraries")"
+expect_not consecrate-undo-clean "miracle"
 
 echo
 echo "passed: $pass, failed: $fail"
