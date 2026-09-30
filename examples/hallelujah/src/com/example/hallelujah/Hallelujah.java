@@ -114,7 +114,7 @@ public final class Hallelujah implements MiracleMod {
         // The altar: a block with insides (a Shrine) that bless bottles, and a menu (a Vision)
         // that shows how far along the blessing is.
         altar = Creation.block("altar", p -> new Sanctuary(p.strength(2f))).inTab("functional_blocks");
-        altarEntity = Creation.shrine("altar", AltarEntity::new, altar);
+        altarEntity = Creation.shrine("altar", AltarEntity::new, altar).enshrines(0); // what's on it floats above
         altarMenu = Creation.vision("altar", AltarMenu::new)
                 .caption(menu -> menu.progress() > 0
                         ? Component.translatable("container.hallelujah.altar.blessing", menu.progress())
@@ -127,12 +127,13 @@ public final class Hallelujah implements MiracleMod {
                         .<ThrownHolyWater>of(ThrownHolyWater::new, MobCategory.MISC)
                         .sized(0.25f, 0.25f).clientTrackingRange(4).updateInterval(10))
                 .looksLikeItem();
-        // A zombie with opinions. Holy water hits it twice as hard.
+        // A zombie with opinions, in a robe of its own. Holy water hits it twice as hard.
         heretic = Creation.entity("heretic", () -> EntityType.Builder
                         .of(Heretic::new, MobCategory.MONSTER).sized(0.6f, 1.95f).clientTrackingRange(8))
                 .attributes(() -> Zombie.createAttributes())
-                .looksLike("zombie")
-                .spawnEgg();
+                .sculpted()     // its own model, from Blockbench: resources/assets/hallelujah/geo/heretic.geo.json
+                .spawnEgg()
+                .spawns(30, 1, 2, "#minecraft:is_overworld");   // at night, in the dark, like other monsters
 
         // Press G to pray. The client only asks; the server decides whether anything happens,
         // how much, and how often. Never let the client say how much to heal.

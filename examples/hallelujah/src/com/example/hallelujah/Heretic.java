@@ -5,8 +5,9 @@ import net.minecraft.world.entity.monster.zombie.Zombie;
 import net.minecraft.world.level.Level;
 
 /**
- * A zombie that refused communion. Looks like a zombie (Being.looksLike("zombie"), which is why
- * it extends Zombie: the zombie renderer reads zombie things), and holy water hits it twice as hard.
+ * A zombie that refused communion: behaves like a zombie, but wears its own robe, hood and
+ * horn (Being.sculpted(), a Blockbench model in resources/assets/hallelujah/geo/). Holy water
+ * hits it twice as hard.
  */
 public final class Heretic extends Zombie {
 

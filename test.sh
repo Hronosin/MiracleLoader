@@ -182,6 +182,26 @@ expect stack3 "ticks=50"                                            # 1 + 100, c
 expect stack3 "Steve takes 5.0 damage from reduced zombie"
 expect_not stack3 "[FakeMinecraft] BOOM"                            # both cancel: still cancelled
 
+# --- direct calls: the same results the old way (a static call with an id per call) --------
+JAVA_OPTS=-Dmiracle.directCalls=false run_with stack3-old "$T/intercept-mod.jar" "$T/stack-a.jar" "$T/stack-b.jar"
+expect_code stack3-old 0
+expect stack3-old "jumpPower=1.56"
+expect stack3-old "ticks=50"
+expect stack3-old "Steve takes 5.0 damage from reduced zombie"
+expect_not stack3-old "[FakeMinecraft] BOOM"
+JAVA_OPTS=-Dmiracle.directCalls=false run_with badtype-old "$T/badtype-mod.jar"
+expect badtype-old "thrown by a hook of mod 'badtype-mod'"
+if [ -f "build/test-runs/stack/dump/net/minecraft/world/entity/player/Player.class" ]; then
+    dumped="$("${JAVA_HOME:+$JAVA_HOME/bin/}javap" -c -p build/test-runs/stack/dump/net/minecraft/world/entity/player/Player.class)"
+    grep -qE "InvokeDynamic #[0-9]+:(interceptReturn|interceptHead|fire):" <<< "$dumped" && ! grep -q "HookDispatch.interceptReturn" <<< "$dumped" \
+        && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL [direct]: patched code doesn't use direct call sites"; }
+    dumped="$("${JAVA_HOME:+$JAVA_HOME/bin/}javap" -c -p build/test-runs/stack3-old/dump/net/minecraft/world/entity/player/Player.class)"
+    grep -q "HookDispatch.interceptReturn" <<< "$dumped" && ! grep -qE "InvokeDynamic #[0-9]+:(interceptReturn|interceptHead|fire):" <<< "$dumped" \
+        && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL [direct]: directCalls=false still makes call sites"; }
+else
+    fail=$((fail + 1)); echo "FAIL [direct]: no dump to inspect"
+fi
+
 # --- layers: conflicts -----------------------------------------------------------------------
 run_with clash "$T/clash-a.jar" "$T/clash-b.jar"
 expect_code clash 1
@@ -433,6 +453,22 @@ expect exorcise "The power of Miracle compels you!"
     && [ -d "$CLI_HOME/holy-hops/run/server-26.2/bonfires" ] && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [exorcise]: took the wrong things"; }
 
+pcli scribe entity ghoul --model
+expect_code scribe-model 0
+expect scribe-model "wrote assets/holy_hops/geo/ghoul.geo.json"
+expect scribe-model "wrote assets/holy_hops/textures/entity/ghoul.png"
+expect scribe-model ".sculpted().spawnEgg()"
+out="$("$JAVA" -cp build/miracle-loader.jar:build/miracle-toolchain.jar io.github.hronosin.miracle.toolchain.SelfTest \
+    --geometry "$CLI_HOME/holy-hops/resources/assets/holy_hops/geo/ghoul.geo.json" 2>&1)"; code=$?
+expect_code scribe-model-reads 0
+expect scribe-model-reads "geometry 64x64: body, rightLeg, leftLeg, head, rightArm, leftArm"
+out="$("$JAVA" -cp build/miracle-loader.jar:build/miracle-toolchain.jar io.github.hronosin.miracle.toolchain.SelfTest \
+    --geometry examples/hallelujah/resources/assets/hallelujah/geo/heretic.geo.json 2>&1)"; code=$?
+expect heretic-model "geometry 64x64: body, rightLeg, leftLeg, head, rightArm, leftArm, horn, book, horn_r1"
+pcli scribe item wafer --model
+expect_code scribe-model-item 1
+expect scribe-model-item "--model is for entities"
+
 # --- ascend: everything short of the network ------------------------------------------------
 pcli ascend
 expect_code ascend-where 1
@@ -498,7 +534,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.4.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.5.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -561,7 +597,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.4.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.5.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

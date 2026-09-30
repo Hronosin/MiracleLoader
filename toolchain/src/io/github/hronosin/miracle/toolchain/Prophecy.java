@@ -33,7 +33,7 @@ final class Prophecy {
 
     /** What a mod will need. */
     record Foresight(Set<Omens.Omen> omens, Set<Blessings.Key> blessings, boolean sermons, boolean scripture,
-                     boolean creation, boolean beings, boolean visions, boolean telepathy, boolean gestures,
+                     boolean creation, boolean beings, boolean visions, boolean shrineLooks, boolean spawns, boolean telepathy, boolean gestures,
                      List<String> doubts) {
 
         boolean empty() {
@@ -62,6 +62,12 @@ final class Prophecy {
                 if (visions) {
                     with.add("menus");
                 }
+                if (shrineLooks) {
+                    with.add("block entity looks");
+                }
+                if (spawns) {
+                    with.add("natural spawning");
+                }
                 parts.add(with.isEmpty() ? "creation" : "creation (with " + String.join(", ", with) + ")");
             }
             if (telepathy) {
@@ -83,7 +89,7 @@ final class Prophecy {
         Set<Blessings.Value> values = EnumSet.noneOf(Blessings.Value.class);
         Set<Blessings.Key> keys = new LinkedHashSet<>();
         Set<Blessings.Key> loose = new LinkedHashSet<>();
-        boolean[] flags = new boolean[7];
+        boolean[] flags = new boolean[9];
         List<String> doubts = new ArrayList<>();
         try (JarFile jf = new JarFile(jar.toFile())) {
             for (JarEntry e : jf.stream().toList()) {
@@ -111,7 +117,7 @@ final class Prophecy {
         for (Blessings.Key k : loose) {
             values.forEach(v -> keys.add(new Blessings.Key(v, k.op(), k.priority())));
         }
-        return new Foresight(omens, keys, flags[0], flags[1], flags[2], flags[5], flags[6], flags[3], flags[4], doubts);
+        return new Foresight(omens, keys, flags[0], flags[1], flags[2], flags[5], flags[6], flags[7], flags[8], flags[3], flags[4], doubts);
     }
 
     /**
@@ -173,6 +179,8 @@ final class Prophecy {
                         flags[5] |= name.equals("entity");
                         flags[6] |= name.equals("vision");
                     }
+                    case "Shrine" -> flags[7] |= name.equals("enshrines") || name.equals("renderedBy");
+                    case "Being" -> flags[8] |= name.equals("spawns");
                     case "Telepathy", "Networking", "Telepathy$Channel" -> flags[3] = true;
                     case "Gestures", "Keybinds" -> flags[4] |= name.equals("key");
                     default -> {

@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.4.0";
+    static final String VERSION = "0.5.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -111,7 +111,8 @@ public final class Miracle {
                 String title = option(rest, "--title");
                 boolean noEgg = rest.remove("--no-egg");
                 String egg = noEgg ? "" : option(rest, "--egg");
-                return Scribe.run(Path.of(""), rest, title, egg, force);
+                boolean model = rest.remove("--model");
+                return Scribe.run(Path.of(""), rest, title, egg, model, force);
             }
             case "messages", "todo" -> {
                 return Messages.run(Path.of(""));
@@ -180,6 +181,8 @@ public final class Miracle {
                       --title "Holy Wafer"   the English name   --force   overwrite
                       --egg zombie           entity: borrow a vanilla spawn egg's look instead of a placeholder
                       --no-egg               entity: no spawn egg, no loot (a projectile, say)
+                      --model                entity: a Blockbench geometry (a biped) and a texture to paint over,
+                                             for Being.sculpted()
                   miracle messages                (todo)    TODO/FIXME/HACK/XXX, as messages on the ground
                   miracle zandatsu [jar]          (inspect) cut a mod jar open: patches, library use, bakes
                   miracle exorcise [--yes]        (clean)   cast out build/, logs, crash reports (worlds spared)

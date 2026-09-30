@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.4.0 |
+| Version | 0.5.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -47,7 +47,7 @@ Every name comes in two forms: a solemn one and a boring alias. They are equival
 | `miracle-loader.jar` | MiracleLoader: discovery, RGCT, launching | the JDK |
 | `miracle.jar` | the command line, with `miracle-bake` built in | the JDK, `miracle-loader.jar` (manifest `Class-Path`) |
 | `miracle-bake.jar` | `miracle-bake` alone, for scripts and `build.sh` | the JDK |
-| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.4.0, and the game |
+| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.5.0, and the game |
 | `miracle` | a shell wrapper that runs `build/miracle.jar`, building it first if it's missing | bash |
 
 All of them MUST run on Java 25 or newer and MUST NOT need anything beyond the JDK: JSON, TOML, HTTP, compilation (`javax.tools`) and bytecode work (`java.lang.classfile`) are the JDK's or our own.
@@ -160,6 +160,7 @@ Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the 
 | `-Dmiracle.modsDir` | property | loader | mods folder (default `mods`) |
 | `-Dmiracle.gameClasspath` | property | loader | game jars, instead of the JVM class path |
 | `-Dmiracle.dump` | property | loader | folder to write every patched class into |
+| `-Dmiracle.directCalls=false` | property | loader | patch the old way: every patched spot calls the dispatcher with an id, instead of an `invokedynamic` site bound to its hook |
 | `-Dmiracle.gameVersion`, `-Dmiracle.obfuscated` | property | loader | override version detection (8.3) |
 | `-Dmiracle.configDir` | property | library, templates | config folder (default `config`, relative to the game folder) |
 | `-Dmiracle.lock` | property | loader | `update` (default), `strict` or `off` (8.7) |
@@ -192,7 +193,7 @@ Creates `./<name>/` as a new project. It MUST refuse if that folder exists and i
 - **minecraft**: `--minecraft`, or Mojang's latest release if it is unobfuscated, otherwise (or when Mojang can't be reached) `26.2`.
 - **targets**: `["<minecraft>", "26.*", "1.21.11"]`.
 
-Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.4.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
+Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.5.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
 
 The source file is one of:
 
@@ -291,7 +292,7 @@ Inside a project, lists `build/`, and `logs/`, `crash-reports/` and `debug/` in 
 ```
 miracle scribe item <name> [--title "Holy Water"] [--force]
 miracle scribe block <name> [--title "Altar of Miracles"] [--force]
-miracle scribe entity <name> [--title "Heretic"] [--egg zombie | --no-egg] [--force]
+miracle scribe entity <name> [--title "Heretic"] [--egg zombie | --no-egg] [--model] [--force]
 ```
 
 Writes, under the project's `resources/`, what a new item, block or entity needs besides code (9.11). The namespace is the project's id with `-` as `_`:
@@ -300,7 +301,7 @@ Writes, under the project's `resources/`, what a new item, block or entity needs
 |---|---|
 | item | `assets/<ns>/items/<name>.json` (model definition), `assets/<ns>/models/item/<name>.json` (`item/generated`), `assets/<ns>/textures/item/<name>.png` |
 | block | `assets/<ns>/blockstates/<name>.json`, `assets/<ns>/models/block/<name>.json` (`block/cube_all`), `assets/<ns>/items/<name>.json` (the block's item uses the block model), `assets/<ns>/textures/block/<name>.png`, `data/<ns>/loot_table/blocks/<name>.json` (drops itself unless blown up) |
-| entity | `data/<ns>/loot_table/entities/<name>.json` (drops nothing, edit to taste) and a spawn egg `<name>_spawn_egg`: `assets/<ns>/items/<name>_spawn_egg.json` pointing at vanilla's `minecraft:item/<egg>_spawn_egg` with `--egg <egg>`, or at its own `item/generated` model and placeholder texture without; `--no-egg` writes neither the egg nor the loot table (a projectile, say) |
+| entity | `data/<ns>/loot_table/entities/<name>.json` (drops nothing, edit to taste) and a spawn egg `<name>_spawn_egg`: `assets/<ns>/items/<name>_spawn_egg.json` pointing at vanilla's `minecraft:item/<egg>_spawn_egg` with `--egg <egg>`, or at its own `item/generated` model and placeholder texture without; `--no-egg` writes neither the egg nor the loot table (a projectile, say); `--model` also writes `assets/<ns>/geo/<name>.geo.json` (a biped in Bedrock's geometry format: `body`, `head`, `rightArm`, `leftArm`, `rightLeg`, `leftLeg`, laid out like a player skin) and `assets/<ns>/textures/entity/<name>.png` (a 64×64 placeholder in that layout, with a face), for `Being.sculpted()` (9.11) |
 
 All kinds add `item.<ns>.<name>`, `block.<ns>.<name>` or `entity.<ns>.<name>` to `assets/<ns>/lang/en_us.json` (entities with an egg also `item.<ns>.<name>_spawn_egg`, "<Name> Spawn Egg"), keeping its other entries; the name is `--title`, or the id's words capitalized. Textures are 16×16 placeholders coloured from a hash of the id (a gem for items and eggs, a framed tile for blocks). Existing files and entries MUST be kept unless `--force`; each file is reported as `wrote` or `kept`. Another kind, or `--egg` on anything but an entity, is a heresy.
 
@@ -524,10 +525,10 @@ After the freeze the loader writes down what every mod patches, one line per pat
 
 ```
 game 26.3 server
-mod hallelujah 0.4.0
+mod hallelujah 0.5.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 0.4.0
+mod miracle-toolchain 0.5.0
   ...
 ```
 
@@ -541,7 +542,7 @@ mod miracle-toolchain 0.4.0
 
 ### 9.1 What it is
 
-`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.4.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
+`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.5.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
 
 | part | alias | covers |
 |---|---|---|
@@ -552,7 +553,7 @@ mod miracle-toolchain 0.4.0
 | `Scripture` | `Resources` | the mod jar's `data/` and `assets/` (9.8) |
 | `Proclamations` | `Notices` | telling players things (9.9) |
 | `Creation`, `Relic`, `Being` | `Content` | new items, blocks and entities (9.11) |
-| `Shrine`, `Sanctuary`, `Vigil`, `Hallowed`, `Reliquary`, `Vision` | | block entities, their blocks, ticking, inventories, menus and screens (9.11) |
+| `Shrine`, `Sanctuary`, `Vigil`, `Hallowed`, `Reliquary`, `Altarpiece`, `Vision` | | block entities, their blocks, ticking, inventories, their renderers, menus and screens (9.11) |
 | `Telepathy`, `Scroll` | `Networking` | messages between client and server (9.12) |
 | `Gestures` | `Keybinds` | keys (9.13) |
 | `Communion` | `Handshake` | comparing mods when a player joins (9.14) |
@@ -584,6 +585,8 @@ What it reads: every `.class` entry of the mod jar outside `META-INF/`. What cou
 | `Sermons.preach` or `ChatCommands.preach` | the command-tree hook |
 | `Scripture.reveal` or `Resources.reveal` | the pack hook |
 | `Creation.item`/`block`/`entity`/`shrine`/`reliquary`/`vision` (or `Content.`) | the registry and creative-tab hooks (library's name), and the pack hook, already revealed (the mod's things need their assets); with `entity`, also the attribute, data-fixer and (clients) renderer hooks; with `vision`, also (clients) the screen and caption hooks |
+| `Shrine.enshrines`/`renderedBy` | (clients) the block entity renderer hook |
+| `Being.spawns` | the natural spawning hooks |
 | any call on `Telepathy`, `Networking` or a `Telepathy.Channel` | the wire hooks (library's name) |
 | `Gestures.key` or `Keybinds.key` | the key hooks (library's name, clients only) |
 
@@ -738,7 +741,19 @@ Being<ThrownHolyWater> thrown = Creation.entity("thrown_holy_water",
 - `Being` is to entity types what `Relic` is to items: `get()` (the `EntityType`, throws before the registries are built), `exists()`, `id()`. Its setters MUST be called before the registries are built:
   - `attributes(supplier)`: the living entity's attributes, built the first time the game asks (attributes can't be read until the registries are frozen). A living entity without them can't be made; the game says so.
   - `spawnEgg()`: an item `<name>_spawn_egg` (a `SpawnEggItem` carrying the type), in `spawn_eggs`; `egg()` is its `Relic`.
-  - Looks, by name so a dedicated server never loads a renderer: `looksLike("zombie")` borrows a vanilla entity's renderer (the entity SHOULD extend that entity's class, whose fields the renderer reads); `looksLikeItem()` draws the carried item (`ThrownItemRenderer`, for `ItemSupplier` entities such as `ThrowableItemProjectile`s); `renderedBy("com.example.MyRenderer")` makes the mod's own `EntityRenderer`, which needs a public constructor taking `EntityRendererProvider.Context`. With none, or a vanilla name the game can't draw, the entity is invisible and the log says so.
+  - Looks, by name so a dedicated server never loads a renderer: `looksLike("zombie")` borrows a vanilla entity's renderer (the entity SHOULD extend that entity's class, whose fields the renderer reads); `looksLikeItem()` draws the carried item (`ThrownItemRenderer`, for `ItemSupplier` entities such as `ThrowableItemProjectile`s); `renderedBy("com.example.MyRenderer")` makes the mod's own `EntityRenderer`, which needs a public constructor taking `EntityRendererProvider.Context`; `sculpted()` draws a model of the mod's own (below). With none, or a vanilla name the game can't draw, the entity is invisible and the log says so.
+  - `spawns(weight, min, max, biomes...)`: natural spawning (below).
+
+**Models.** `sculpted()` draws a mob from `assets/<ns>/geo/<name>.geo.json`, a geometry in Bedrock's format (what Blockbench saves for "Bedrock Entity" and "Generic Model" projects), painted with `assets/<ns>/textures/entity/<name>.png`; `sculpted(geometry, texture)` names other files (`"ns:name"` is `assets/ns/geo/name.geo.json`; the texture is a full id). The first geometry in the file is used:
+
+- bones become model parts, under their `parent` (a missing parent is noted, and the bone hangs from the root); a bone's `pivot` and `rotation` become the part's pose;
+- cubes become boxes: `origin`, `size`, box `uv`, `inflate`, `mirror` (a cube's own, or its bone's). Bedrock's origin is at the feet with Y up and every coordinate absolute; Java's is 24 pixels up with Y down, relative to the part's pivot. A part is at `(px, 24 − py, pz)`, or `(px − ppx, −(py − ppy), pz − ppz)` under a parent pivoted at `pp`; a box at `(ox − px, py − oy − h, oz − pz)`; rotations are `(−rx, −ry, rz)`;
+- a cube with a `rotation` becomes a part of its own, `<bone>_r<n>`, turned about the cube's `pivot` (Java boxes can't rotate);
+- per-face UV (which Java models can't do) is read as box UV from the north face, with a warning; `description.texture_width`/`height` size the texture (64 by default).
+
+Parts move by name: the part named `head` (any case) follows the mob's gaze; parts with `leg` in their name swing as it walks (1.4 × the walk speed), parts with `arm` against them (1.0 ×); `right` in the name goes first, `left` half a step later, and unnamed pairs alternate. Everything else keeps the pose the file gives it. The model is read again on every resource reload (F3+T). A file that is missing or can't be read is logged with the reason, and the mob is drawn as a 16-pixel block. Sculpted beings MUST be `Mob`s; they are drawn by a `MobRenderer` with a shadow of half their width.
+
+**Natural spawning.** `spawns(weight, min, max, biomes...)` lets a being turn up by itself in groups of `min` to `max`, in the given biomes (ids, or `#tags`), with `weight` against the other mobs of its category there. It MAY be called more than once. Everything else follows the entity type's `MobCategory`: which cap it counts against; where it spawns (water categories in water, the rest on the ground, by the `MOTION_BLOCKING_NO_LEAVES` heightmap); and its rules (`MONSTER`: `Monster.checkMonsterSpawnRules`, in the dark and not in peaceful; `CREATURE`: `Animal.checkAnimalSpawnRules`, on grass in the light; others: `Mob.checkMobSpawnRules`). A `MISC` being never spawns naturally, and the log says so. It spawns during play, not when chunks are generated.
 - Names: `entity.<ns>.<name>` in the lang file. Drops: `data/<ns>/loot_table/entities/<name>.json`, none without one.
 
 Mechanics:
@@ -750,6 +765,8 @@ Mechanics:
 | our types' attributes answer before vanilla's map | `DefaultAttributes#getSupplier(EntityType)` and `#hasSupplier(EntityType)` (head) |
 | our types need no save-data fixer, and the builder doesn't log an error about it | `Util#fetchChoiceType(TypeReference, String)` (head, for our ids) |
 | renderers join the game's providers before anyone reads them (clients) | `EntityRenderers#createEntityRenderers(Context)` and `#validateRegistrations()` (head) |
+| our beings join the mobs that may spawn at a spot, where their biomes match (the method's parameters changed in 26.3, so it is hooked by name and copes with both) | `NaturalSpawner#mobsAt` (return) |
+| where and how they spawn | `SpawnPlacements#getPlacementType(EntityType)`, `#getHeightmapType(EntityType)` and `#checkSpawnRules(EntityType, ServerLevelAccessor, EntitySpawnReason, BlockPos, RandomSource)` (head, for our types) |
 
 
 **Block entities.**
@@ -767,6 +784,8 @@ Shrine<Reliquary> stash = Creation.reliquary("stash", 3, Creation.block("stash",
   - opens its menu on a right click with nothing to use (`useWithoutItem`) when the block entity is a `MenuProvider`, and reports it as the block's menu provider.
   It MAY be extended for shapes, facing and the rest.
 - `Hallowed` is a `BlockEntity` whose saved data (`saveAdditional`) is sent to nearby clients when their chunk loads and whenever `sync()` is called (which also marks it to be saved).
+- `enshrines(slot)` shows the item in the block entity's container slot `slot` above the block, turning slowly and bobbing: the same on every version. A `Reliquary` whose shrine enshrines a slot sends every change of its items to nearby clients by itself; other block entities MUST sync their items.
+- `renderedBy("com.example.AltarRenderer")` draws it with a renderer of the mod's own: a class with a public constructor taking `BlockEntityRendererProvider.Context` that either extends `Altarpiece<T>`, whose `render(blockEntity, pose, collector, light, partialTick)` is called every frame on every supported version (the library implements the game's interface around it; `viewDistance()` defaults to 64), or implements the game's `BlockEntityRenderer` itself (full control; its `submit` takes a `CameraRenderState`, which moved between 1.21.11 and 26.1). A class that can't be made is logged, and the shrine falls back to enshrining slot 0.
 - `Reliquary(type, pos, state, rows)` is a container block entity with `rows` × 9 slots (1 to 6; other counts MUST fail): saved with the world (`ContainerHelper`), dropped when the block goes, reachable by hoppers, named after its block (or an anvil's name), opened in vanilla's chest menu of that many rows. `createMenu(id, inventory)` MAY be overridden for a menu of one's own; `sync()` sends the items to nearby clients. `reliquary(name, rows, blocks...)` is `shrine` with a plain Reliquary.
 
 **Menus.**
@@ -788,6 +807,7 @@ Mechanics (in addition to the table above):
 | block entity types right after blocks, menu types after items, made through their private constructors (found by shape, not name) | `BuiltInRegistries#freeze()V` (head) |
 | our menus' screens, made instead of vanilla's lookup (clients) | `MenuScreens#create(MenuType, Minecraft, int, Component)V` (head, for our types) |
 | captions (clients) | `AbstractContainerScreen#extractLabels(GuiGraphicsExtractor, II)V` (return); on 1.21.11 `#renderLabels(GuiGraphics, II)V`, through the library's fallback |
+| block entity renderers join the game's providers before anyone reads them (clients) | `BlockEntityRenderers#createEntityRenderers(Context)` (head) |
 
 Blocks, items, entity types, block entity types, menu types and block states travel as numbers, so client and server MUST have the same mods creating the same things in the same order; Communion (9.14) checks it at the door.
 
@@ -902,18 +922,19 @@ State other than these files is kept in memory and resets when the server restar
 
 Every game method named in section 9 has the same name and descriptor in all of them. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.
 
-"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer` or onto a local server with `--quickPlayMultiplayer`, a test mod pressing keys, throwing things and forging packets from inside: new blocks load in chunks, items and spawn eggs show in their tabs with their names, entities spawn, save, take hits and are drawn by the renderers they asked for, block entities tick, keep their items and progress across a server restart and drop their contents, menus open from a right click and from the server with the screens and captions they asked for (checked in screenshots), keys save and fire, messages go both ways, forged batches are caught, and Communion lets matching games in and turns away the rest (a missing mod, an extra one, no library at all, a server without it) with the right lines. What needs eyes (textures, titles, meters) still wants a person.
+"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer` or onto a local server with `--quickPlayMultiplayer`, a test mod pressing keys, throwing things and forging packets from inside: new blocks load in chunks, items and spawn eggs show in their tabs with their names, entities spawn, save, take hits and are drawn by the renderers they asked for, block entities tick, keep their items and progress across a server restart and drop their contents, menus open from a right click and from the server with the screens and captions they asked for (checked in screenshots), block entities are drawn with the items they enshrine and by `Altarpiece`s, sculpted mobs are drawn from their Blockbench models (checked in screenshots), new mobs spawn by themselves through the game's own spawner, keys save and fire, messages go both ways, forged batches are caught, and Communion lets matching games in and turns away the rest (a missing mod, an extra one, no library at all, a server without it) with the right lines. What needs eyes (textures, titles, meters) still wants a person.
 
 ## 12. Versioning and stability
 
 - The loader, the toolchain and the library share one version number, `MAJOR.MINOR.PATCH`. While `MAJOR` is 0, a minor release MAY change anything, and says what in its notes.
-- A mod states what it needs with `depends` (`"miracle>=0.4.0"`, `"miracle-toolchain>=0.4.0"`).
+- A mod states what it needs with `depends` (`"miracle>=0.5.0"`, `"miracle-toolchain>=0.5.0"`).
 - Stable within 0.x, unless a release note says otherwise: the file formats in sections 3.2, 3.3, 6.5 and 8.1; command names and aliases; the solemn and boring names in Appendix B.
 - Output wording is not an interface, apart from these markers, which scripts MAY rely on: `HERESY:`, `Baked:`, `Amen.`, `YOU DIED`, `BONFIRE LIT` (from `bonfire`/`backup`), and `[ok]`/`[!!]` in `confess`.
 
 ## 13. Known limits
 
-- New entities look like a vanilla one, like their item, or bring their own renderer class, but the library offers no models or textures for them; block entities have no renderers of their own (their blocks' models only).
+- Sculpted models move by part names only (a head that looks, legs that walk, arms that swing); Bedrock animation files are not read.
+- Natural spawning happens during play; new chunks aren't populated with sculpted beings at generation.
 - Screens of one's own are plain game code, and differ between versions; only captions are portable.
 - Modrinth doesn't list MiracleLoader as a loader, so `ascend modrinth` can't publish until it does (5.1).
 - New entities don't spawn by themselves in the world; spawn eggs and commands only.
@@ -969,6 +990,8 @@ Every game method named in section 9 has the same name and descriptor in all of 
 | `Hallowed` | synced block entity | library (9.11) |
 | `Reliquary` | container block entity | library (9.11) |
 | `Vision` | menu type and screen | library (9.11) |
+| `Altarpiece` | block entity renderer | library (9.11) |
+| `sculpted` | custom entity model | library (9.11) |
 | `scribe` | `assets` | command |
 | `dictionary` | `mappings` | command |
 | the Inquisition | packet tripwire | library (9.12) |

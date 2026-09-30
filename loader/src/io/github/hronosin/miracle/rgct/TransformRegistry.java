@@ -16,6 +16,9 @@ import java.lang.classfile.TypeKind;
 import java.lang.classfile.instruction.ReturnInstruction;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
+import java.lang.constant.DirectMethodHandleDesc;
+import java.lang.constant.DynamicCallSiteDesc;
+import java.lang.constant.MethodHandleDesc;
 import java.lang.constant.MethodTypeDesc;
 import java.lang.reflect.AccessFlag;
 import java.util.ArrayList;
@@ -72,8 +75,26 @@ public final class TransformRegistry {
         final List<RawBytesPatch> rawBytes = new ArrayList<>();
     }
 
+    /**
+     * Patched spots are invokedynamic sites bound to their hooks (see {@link HookDispatch}), unless
+     * {@code -Dmiracle.directCalls=false}.
+     */
+    static final boolean DIRECT = !"false".equals(System.getProperty("miracle.directCalls"));
+
+    // ConstantDescs first: touching MethodTypeDesc before it can trip a class-initialization
+    // cycle in the JDK's constant API.
     private static final ClassDesc DISPATCH = ClassDesc.of(HookDispatch.class.getName());
-    private static final MethodTypeDesc FIRE = MethodTypeDesc.ofDescriptor("(ILjava/lang/Object;)V");
+    private static final MethodTypeDesc FIRE = MethodTypeDesc.of(ConstantDescs.CD_void, ConstantDescs.CD_int,
+            ConstantDescs.CD_Object);
+    private static final DirectMethodHandleDesc BOOTSTRAP = MethodHandleDesc.ofMethod(
+            DirectMethodHandleDesc.Kind.STATIC, DISPATCH, "bootstrap", MethodTypeDesc.of(ConstantDescs.CD_CallSite,
+                    ConstantDescs.CD_MethodHandles_Lookup, ConstantDescs.CD_String, ConstantDescs.CD_MethodType,
+                    ConstantDescs.CD_int));
+    private static final MethodTypeDesc FIRE_DIRECT = MethodTypeDesc.of(ConstantDescs.CD_void, ConstantDescs.CD_Object);
+    private static final MethodTypeDesc HEAD_DIRECT = MethodTypeDesc.of(ConstantDescs.CD_Object,
+            ConstantDescs.CD_Object, ConstantDescs.CD_Object.arrayType());
+    private static final MethodTypeDesc RETURN_DIRECT = MethodTypeDesc.of(ConstantDescs.CD_Object,
+            ConstantDescs.CD_Object, ConstantDescs.CD_Object.arrayType(), ConstantDescs.CD_Object);
     private static final MethodTypeDesc INTERCEPT_HEAD = MethodTypeDesc.of(ConstantDescs.CD_Object,
             ConstantDescs.CD_int, ConstantDescs.CD_Object, ConstantDescs.CD_Object.arrayType());
     private static final MethodTypeDesc INTERCEPT_RETURN = MethodTypeDesc.of(ConstantDescs.CD_Object,
@@ -467,9 +488,31 @@ public final class TransformRegistry {
         }
 
         private void emitFire(CodeBuilder b, int id, boolean passSelf) {
+            if (DIRECT) {
+                loadSelf(b, passSelf);
+                b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, "fire", FIRE_DIRECT, id));
+                return;
+            }
             b.loadConstant(id);
             loadSelf(b, passSelf);
             b.invokestatic(DISPATCH, "fire", FIRE);
+        }
+
+        /** Calls the dispatcher for an intercept site: the self, args (and return value) are on the stack. */
+        private void callSite(CodeBuilder b, String name, int site) {
+            if (DIRECT) {
+                b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, name,
+                        name.equals("interceptHead") ? HEAD_DIRECT : RETURN_DIRECT, site));
+            } else {
+                b.invokestatic(DISPATCH, name, name.equals("interceptHead") ? INTERCEPT_HEAD : INTERCEPT_RETURN);
+            }
+        }
+
+        /** The old calls take the site id first. */
+        private void siteId(CodeBuilder b, int site) {
+            if (!DIRECT) {
+                b.loadConstant(site);
+            }
         }
 
         private void loadSelf(CodeBuilder b, boolean passSelf) {
@@ -501,10 +544,10 @@ public final class TransformRegistry {
             packArgs(b);
             b.astore(argsSlot);
 
-            b.loadConstant(headSite);
+            siteId(b, headSite);
             loadSelf(b, selfAvailableAtHead());
             b.aload(argsSlot);
-            b.invokestatic(DISPATCH, "interceptHead", INTERCEPT_HEAD);
+            callSite(b, "interceptHead", headSite);
             // stack: result (PROCEED, or the value to return because the method was cancelled)
             b.dup();
             b.getstatic(DISPATCH, "PROCEED", ConstantDescs.CD_Object);
@@ -531,13 +574,12 @@ public final class TransformRegistry {
         }
 
         private void emitInterceptReturn(CodeBuilder b) {
-            MethodTypeDesc desc = INTERCEPT_RETURN;
             if (shape.returnsVoid()) {
-                b.loadConstant(returnSite);
+                siteId(b, returnSite);
                 loadSelf(b, !shape.isStatic());
                 packArgs(b);
                 b.aconst_null();
-                b.invokestatic(DISPATCH, "interceptReturn", desc);
+                callSite(b, "interceptReturn", returnSite);
                 b.pop();
                 return;
             }
@@ -546,12 +588,12 @@ public final class TransformRegistry {
                 returnTemp = b.allocateLocal(kind);
             }
             b.storeLocal(kind, returnTemp);
-            b.loadConstant(returnSite);
+            siteId(b, returnSite);
             loadSelf(b, !shape.isStatic());
             packArgs(b);
             b.loadLocal(kind, returnTemp);
             box(b, kind);
-            b.invokestatic(DISPATCH, "interceptReturn", desc);
+            callSite(b, "interceptReturn", returnSite);
             unboxOrCast(b, shape.returnType());
             // the original return instruction follows
         }

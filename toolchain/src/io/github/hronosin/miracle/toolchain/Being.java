@@ -25,13 +25,14 @@ import java.util.function.Supplier;
  * class should extend that entity's class, since the renderer reads its fields),
  * {@link #looksLikeItem()} draws a thrown item (for {@code ThrowableItemProjectile}s and other
  * {@code ItemSupplier}s), and {@link #renderedBy(String)} names your own renderer class, made on
- * the client only. With none of these the entity exists but is invisible, and the log says so.
+ * the client only, and {@link #sculpted()} draws a model of your own from Blockbench. With none
+ * of these the entity exists but is invisible, and the log says so.
  *
  * @param <T> the entity's class
  */
 public final class Being<T extends Entity> implements Supplier<EntityType<T>> {
 
-    enum Looks { NONE, VANILLA, ITEM, CUSTOM }
+    enum Looks { NONE, VANILLA, ITEM, CUSTOM, SCULPTED }
 
     private final String namespace;
     private final String path;
@@ -42,6 +43,14 @@ public final class Being<T extends Entity> implements Supplier<EntityType<T>> {
     volatile Looks looks = Looks.NONE;
     volatile String looksLike;
     volatile ClassLoader loader;
+    volatile String geometry;
+    volatile String texture;
+    /** Where it turns up by itself, if anywhere. */
+    final java.util.List<Spawn> spawns = new java.util.concurrent.CopyOnWriteArrayList<>();
+
+    /** One {@link #spawns} rule. */
+    record Spawn(int weight, int min, int max, java.util.List<String> biomes) {
+    }
 
     Being(String namespace, String path, Supplier<EntityType.Builder<T>> builder) {
         this.namespace = namespace;
@@ -128,6 +137,61 @@ public final class Being<T extends Entity> implements Supplier<EntityType<T>> {
         this.looks = Looks.CUSTOM;
         this.looksLike = rendererClass;
         this.loader =StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE).getCallerClass().getClassLoader();
+        return this;
+    }
+
+    /**
+     * Drawn from a model of your own, made in Blockbench: a Bedrock geometry file at
+     * {@code assets/<namespace>/geo/<name>.geo.json}, painted with
+     * {@code assets/<namespace>/textures/entity/<name>.png}. Parts move by name: {@code head}
+     * follows the gaze, parts with {@code leg} walk and parts with {@code arm} swing. For mobs.
+     * {@code miracle scribe entity <name> --model} writes a starting pair.
+     */
+    public Being<T> sculpted() {
+        return sculpted(namespace + ":" + path, namespace + ":textures/entity/" + path + ".png");
+    }
+
+    /**
+     * {@link #sculpted()} from other files: {@code geometry} {@code "ns:name"} is
+     * {@code assets/ns/geo/name.geo.json}, and {@code texture} is a full texture id
+     * ({@code "ns:textures/entity/name.png"}). Beings may share a geometry.
+     */
+    public Being<T> sculpted(String geometry, String texture) {
+        Creation.checkOpen("Being.sculpted");
+        if (!geometry.matches("[a-z0-9_.-]+:[a-z0-9_./-]+") || !texture.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")) {
+            throw new IllegalArgumentException(this + ": sculpted(\"" + geometry + "\", \"" + texture
+                    + "\"): both are namespace:path ids");
+        }
+        this.looks = Looks.SCULPTED;
+        this.geometry = geometry;
+        this.texture = texture;
+        return this;
+    }
+
+    /**
+     * Turns up by itself, as vanilla mobs do: in groups of {@code min} to {@code max}, in the
+     * given biomes ({@code "minecraft:plains"}, or a tag: {@code "#minecraft:is_overworld"}), with
+     * {@code weight} against the other mobs of its category there (zombies are 95, skeletons 100,
+     * endermen 10). What category it counts in, and how it spawns, come from its
+     * {@code MobCategory}: a {@code MONSTER} needs darkness and counts against the monster cap, a
+     * {@code CREATURE} wants grass and light, water categories spawn in water. Call it more than
+     * once for different biomes and weights. During play only: new chunks aren't populated with it.
+     */
+    public Being<T> spawns(int weight, int min, int max, String... biomes) {
+        Creation.checkOpen("Being.spawns");
+        if (weight <= 0 || min <= 0 || max < min) {
+            throw new IllegalArgumentException(this + ": spawns(" + weight + ", " + min + ", " + max
+                    + ") needs weight > 0 and 0 < min <= max");
+        }
+        if (biomes.length == 0) {
+            throw new IllegalArgumentException(this + ": spawns where? Name a biome or a #tag");
+        }
+        for (String b : biomes) {
+            if (!b.replaceFirst("^#", "").matches("([a-z0-9_.-]+:)?[a-z0-9_./-]+")) {
+                throw new IllegalArgumentException(this + ": '" + b + "' isn't a biome id or #tag");
+            }
+        }
+        spawns.add(new Spawn(weight, min, max, java.util.List.of(biomes)));
         return this;
     }
 

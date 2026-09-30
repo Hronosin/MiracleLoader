@@ -55,6 +55,11 @@ public class Hallowed extends BlockEntity {
     /** {@link #sync()} for any block entity whose class sends an update packet (Hallowed and Reliquary do). */
     static void sync(BlockEntity be) {
         be.setChanged();
+        send(be);
+    }
+
+    /** Sends a block entity's update packet to the players who can see it (server side only). */
+    static void send(BlockEntity be) {
         Level level = be.getLevel();
         if (level != null && !level.isClientSide()) {
             BlockState state = be.getBlockState();

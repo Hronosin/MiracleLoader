@@ -47,7 +47,8 @@ public final class HookContext {
     private final Object returnValue;
     private final String methodLabel;
 
-    final List<Effect> effects = new ArrayList<>();
+    /** Null until a hook asks for something: most hooks only look. */
+    private List<Effect> effects;
 
     private int hookId = -1;
     private String modId = "?";
@@ -62,6 +63,15 @@ public final class HookContext {
         this.atHead = atHead;
         this.returnValue = returnValue;
         this.methodLabel = methodLabel;
+    }
+
+    /** Every effect asked for so far; empty when no hook asked for anything. */
+    List<Effect> effects() {
+        return effects == null ? List.of() : effects;
+    }
+
+    boolean hasEffects() {
+        return effects != null;
     }
 
     /** Called by the dispatcher before each hook, so effects know whose they are. */
@@ -205,6 +215,9 @@ public final class HookContext {
     }
 
     private void add(Op op, int slot, Object a, Object b) {
+        if (effects == null) {
+            effects = new ArrayList<>(2);
+        }
         effects.add(new Effect(op, slot, a, b, hookId, modId, priority));
     }
 

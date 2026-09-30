@@ -26,11 +26,18 @@ final class Scribe {
     }
 
     static int run(Path dir, List<String> args, String title, String egg, boolean force) throws IOException {
+        return run(dir, args, title, egg, false, force);
+    }
+
+    static int run(Path dir, List<String> args, String title, String egg, boolean model, boolean force) throws IOException {
         if (args.size() < 2 || !List.of("item", "block", "entity").contains(args.get(0))) {
             throw new Miracle.Heresy("scribe what? miracle scribe item <name>, block <name>, or entity <name>");
         }
         if (egg != null && !args.get(0).equals("entity")) {
             throw new Miracle.Heresy("--egg is for entities: their spawn egg can borrow a vanilla one's look");
+        }
+        if (model && !args.get(0).equals("entity")) {
+            throw new Miracle.Heresy("--model is for entities: a Blockbench geometry and a texture to paint over");
         }
         if (egg != null && !egg.isEmpty() && !egg.matches("[a-z0-9_]+")) {
             throw new Miracle.Heresy("--egg " + egg + ": a vanilla entity's name, like zombie or pig");
@@ -63,6 +70,11 @@ final class Scribe {
                     """.formatted(ns, name), force, wrote, kept, res);
             texture(assets.resolve("textures/item/" + name + ".png"), id, false, force, wrote, kept, res);
         } else if (kind.equals("entity")) {
+            if (model) {
+                write(assets.resolve("geo/" + name + ".geo.json"), BIPED.replace("__ID__", name.replace('/', '.')),
+                        force, wrote, kept, res);
+                skin(assets.resolve("textures/entity/" + name + ".png"), id, force, wrote, kept, res);
+            }
             String eggName = name + "_spawn_egg";
             if (egg != null && egg.isEmpty()) {
                 // --no-egg: a projectile or the like. Just its name.
@@ -137,7 +149,9 @@ final class Scribe {
         wrote.forEach(f -> System.out.println("  wrote " + f));
         kept.forEach(f -> System.out.println("  kept  " + f + " (exists; --force to overwrite)"));
         System.out.println("It is written. " + id + " has its scripture; now make it in code: Creation."
-                + kind + "(\"" + name + "\", ...)" + (kind.equals("entity") && !"".equals(egg) ? ".spawnEgg()" : "") + ".");
+                + kind + "(\"" + name + "\", ...)" + (model ? ".sculpted()" : "")
+                + (kind.equals("entity") && !"".equals(egg) ? ".spawnEgg()" : "") + "."
+                + (model ? " Open geo/" + name + ".geo.json in Blockbench to reshape it." : ""));
         return 0;
     }
 
@@ -208,6 +222,70 @@ final class Scribe {
         Files.createDirectories(file.getParent());
         ImageIO.write(img, "png", file.toFile());
         wrote.add(root.relativize(file).toString());
+    }
+
+    /** A biped in Bedrock's geometry format: body, head, arms and legs, laid out like a player skin. */
+    private static final String BIPED = """
+            {
+            \t"format_version": "1.12.0",
+            \t"minecraft:geometry": [
+            \t\t{
+            \t\t\t"description": {"identifier": "geometry.__ID__", "texture_width": 64, "texture_height": 64},
+            \t\t\t"bones": [
+            \t\t\t\t{"name": "body", "pivot": [0, 24, 0], "cubes": [{"origin": [-4, 12, -2], "size": [8, 12, 4], "uv": [16, 16]}]},
+            \t\t\t\t{"name": "head", "parent": "body", "pivot": [0, 24, 0], "cubes": [{"origin": [-4, 24, -4], "size": [8, 8, 8], "uv": [0, 0]}]},
+            \t\t\t\t{"name": "rightArm", "parent": "body", "pivot": [-5, 22, 0], "cubes": [{"origin": [-8, 12, -2], "size": [4, 12, 4], "uv": [40, 16]}]},
+            \t\t\t\t{"name": "leftArm", "parent": "body", "pivot": [5, 22, 0], "mirror": true, "cubes": [{"origin": [4, 12, -2], "size": [4, 12, 4], "uv": [40, 16]}]},
+            \t\t\t\t{"name": "rightLeg", "pivot": [-1.9, 12, 0], "cubes": [{"origin": [-3.9, 0, -2], "size": [4, 12, 4], "uv": [0, 16]}]},
+            \t\t\t\t{"name": "leftLeg", "pivot": [1.9, 12, 0], "mirror": true, "cubes": [{"origin": [-0.1, 0, -2], "size": [4, 12, 4], "uv": [0, 16]}]}
+            \t\t\t]
+            \t\t}
+            \t]
+            }
+            """;
+
+    /**
+     * A 64x64 placeholder for {@link #BIPED}: each box painted in a shade of one colour (from the
+     * id's hash), with a face on the head's front, so the model is recognizable before any art.
+     */
+    private static void skin(Path file, String id, boolean force, List<String> wrote, List<String> kept, Path root)
+            throws IOException {
+        if (Files.exists(file) && !force) {
+            kept.add(root.relativize(file).toString());
+            return;
+        }
+        int h = id.hashCode();
+        int r = 80 + Math.floorMod(h, 140);
+        int g = 80 + Math.floorMod(h >> 8, 140);
+        int b = 80 + Math.floorMod(h >> 16, 140);
+        BufferedImage img = new BufferedImage(64, 64, BufferedImage.TYPE_INT_ARGB);
+        int[][] boxes = {{0, 0, 8, 8, 8, 30}, {16, 16, 8, 12, 4, 0}, {40, 16, 4, 12, 4, -20}, {0, 16, 4, 12, 4, -40}};
+        for (int[] x : boxes) {
+            int u = x[0];
+            int v = x[1];
+            int w = x[2];
+            int ht = x[3];
+            int d = x[4];
+            int shade = x[5];
+            fill(img, u + d, v, 2 * w, d, rgb(r + shade + 15, g + shade + 15, b + shade + 15));
+            fill(img, u, v + d, 2 * d + 2 * w, ht, rgb(r + shade, g + shade, b + shade));
+            fill(img, u + d, v + d, w, ht, rgb(r + shade + 8, g + shade + 8, b + shade + 8)); // the front
+        }
+        int black = rgb(20, 20, 20);
+        for (int[] p : new int[][]{{9, 12}, {10, 12}, {13, 12}, {14, 12}, {10, 14}, {11, 14}, {12, 14}, {13, 14}}) {
+            img.setRGB(p[0], p[1], black); // two eyes and a mouth
+        }
+        Files.createDirectories(file.getParent());
+        ImageIO.write(img, "png", file.toFile());
+        wrote.add(root.relativize(file).toString());
+    }
+
+    private static void fill(BufferedImage img, int x, int y, int w, int h, int argb) {
+        for (int j = y; j < y + h; j++) {
+            for (int i = x; i < x + w; i++) {
+                img.setRGB(i, j, argb);
+            }
+        }
     }
 
     private static int rgb(int r, int g, int b) {

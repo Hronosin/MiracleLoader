@@ -96,7 +96,21 @@ public class Reliquary extends BaseContainerBlockEntity {
 
     /** Marks it to be saved and sends its items to the players who can see it. */
     public void sync() {
-        Hallowed.sync(this);
+        super.setChanged();
+        Hallowed.send(this);
+    }
+
+    /**
+     * Every change to the items lands here. A reliquary whose shrine {@link Shrine#enshrines}
+     * a slot also sends the change to nearby clients, so what floats above it stays true.
+     */
+    @Override
+    public void setChanged() {
+        super.setChanged();
+        Shrine<?> shrine = Creation.shrineOfType(getType());
+        if (shrine != null && shrine.enshrined >= 0) {
+            Hallowed.send(this);
+        }
     }
 
     @Override

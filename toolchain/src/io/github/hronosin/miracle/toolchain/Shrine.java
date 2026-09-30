@@ -47,6 +47,10 @@ public final class Shrine<T extends BlockEntity> implements Supplier<BlockEntity
     private volatile BlockEntityType<T> value;
     /** Whether its block entities keep {@link Vigil}: learned from the first one made. */
     volatile Boolean vigilant;
+    /** The container slot shown above the block, or -1. */
+    volatile int enshrined = -1;
+    volatile String renderer;
+    volatile ClassLoader loader;
 
     Shrine(String namespace, String path, Factory<T> factory, List<Relic<Block>> blocks) {
         this.namespace = namespace;
@@ -83,6 +87,35 @@ public final class Shrine<T extends BlockEntity> implements Supplier<BlockEntity
             vigilant = be instanceof Vigil;
         }
         return be;
+    }
+
+    /**
+     * Shows the item in container slot {@code slot} floating above the block, turning slowly, like
+     * a relic on display. For block entities that are {@code Container}s (a {@link Reliquary} is);
+     * the client needs to know the item, so {@link Reliquary#sync()} after changing it. The same on
+     * every supported version.
+     */
+    public Shrine<T> enshrines(int slot) {
+        Creation.checkOpen("Shrine.enshrines");
+        if (slot < 0) {
+            throw new IllegalArgumentException("slot " + slot + ": slots count from 0");
+        }
+        this.enshrined = slot;
+        return this;
+    }
+
+    /**
+     * Drawn by your own renderer, named so a dedicated server never loads it: a class with a
+     * public constructor taking {@code BlockEntityRendererProvider.Context} that extends
+     * {@link Altarpiece} (works on every supported version) or implements the game's
+     * {@code BlockEntityRenderer} itself (full control, but its {@code submit} takes a
+     * {@code CameraRenderState}, which moved between 1.21.11 and 26.1).
+     */
+    public Shrine<T> renderedBy(String rendererClass) {
+        Creation.checkOpen("Shrine.renderedBy");
+        this.renderer = rendererClass;
+        this.loader = StackWalker.getInstance(StackWalker.Option.RETAIN_CLASS_REFERENCE).getCallerClass().getClassLoader();
+        return this;
     }
 
     /** {@code namespace:path}, e.g. {@code hallelujah:altar}. */

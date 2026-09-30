@@ -22,16 +22,32 @@ final class Layers {
 
     /** Head: returns {@link HookDispatch#PROCEED}, or the value to return if the method was cancelled. */
     static Object head(HookContext ctx, Object[] args) {
-        List<Effect> cancels = ctx.effects.stream().filter(e -> e.op() == Op.CANCEL).toList();
+        if (!ctx.hasEffects()) {
+            return HookDispatch.PROCEED; // the common case: every hook only looked
+        }
+        List<Effect> cancels = new ArrayList<>();
+        long touched = 0; // argument slots some effect is about (bit i = argument i, up to 64)
+        boolean many = false;
+        for (Effect e : ctx.effects()) {
+            if (e.op() == Op.CANCEL) {
+                cancels.add(e);
+            } else if (e.slot() < 64) {
+                touched |= 1L << e.slot();
+            } else {
+                many = true;
+            }
+        }
         if (!cancels.isEmpty()) {
             if (ctx.returnKind() == 'V') {
                 return null; // any value but PROCEED; the patched code pops it and returns
             }
             return pick(lastPerHook(cancels), ctx.methodLabel(), "cancel value", "cancels with");
         }
-        Object[] merged = new Object[args.length];
+        Object[] merged = args.clone();
         for (int i = 0; i < args.length; i++) {
-            merged[i] = slot(ctx, i, ctx.argKinds().charAt(i), args[i], "argument " + i);
+            if (many || (i < 64 && (touched & (1L << i)) != 0)) {
+                merged[i] = slot(ctx, i, ctx.argKinds().charAt(i), args[i], "argument " + i);
+            }
         }
         System.arraycopy(merged, 0, args, 0, args.length);
         return HookDispatch.PROCEED;
@@ -39,33 +55,33 @@ final class Layers {
 
     /** Return: the value the method finally returns. */
     static Object ret(HookContext ctx, Object original) {
-        if (ctx.returnKind() == 'V') {
-            return null;
+        if (ctx.returnKind() == 'V' || !ctx.hasEffects()) {
+            return ctx.returnKind() == 'V' ? null : original;
         }
         return slot(ctx, HookContext.RETURN, ctx.returnKind(), original, "return value");
     }
 
     private static Object slot(HookContext ctx, int slot, char kind, Object original, String what) {
-        List<Effect> mine = new ArrayList<>();
-        for (Effect e : ctx.effects) {
-            if (e.slot() == slot && e.op() != Op.CANCEL) {
-                mine.add(e);
-            }
-        }
-        if (mine.isEmpty()) {
-            return original;
-        }
-
-        List<Effect> sets = mine.stream().filter(e -> e.op() == Op.SET).toList();
-        Object base = sets.isEmpty() ? original : pick(lastPerHook(sets), ctx.methodLabel(), what, "sets");
-
+        List<Effect> sets = null;
         double add = 0;
         double mul = 1;
-        Double lo = null;
-        Double hi = null;
+        double lo = Double.NEGATIVE_INFINITY;
+        double hi = Double.POSITIVE_INFINITY;
+        boolean clamped = false;
         boolean numeric = false;
-        for (Effect e : mine) {
+        List<Effect> effects = ctx.effects();
+        for (int i = 0; i < effects.size(); i++) {
+            Effect e = effects.get(i);
+            if (e.slot() != slot) {
+                continue;
+            }
             switch (e.op()) {
+                case SET -> {
+                    if (sets == null) {
+                        sets = new ArrayList<>(2);
+                    }
+                    sets.add(e);
+                }
                 case ADD -> {
                     add += ((Number) e.a()).doubleValue();
                     numeric = true;
@@ -76,19 +92,19 @@ final class Layers {
                 }
                 case CLAMP -> {
                     if (e.a() != null) {
-                        double v = ((Number) e.a()).doubleValue();
-                        lo = lo == null ? v : Math.max(lo, v);
+                        lo = Math.max(lo, ((Number) e.a()).doubleValue());
                     }
                     if (e.b() != null) {
-                        double v = ((Number) e.b()).doubleValue();
-                        hi = hi == null ? v : Math.min(hi, v);
+                        hi = Math.min(hi, ((Number) e.b()).doubleValue());
                     }
+                    clamped = true;
                     numeric = true;
                 }
                 default -> {
                 }
             }
         }
+        Object base = sets == null ? original : pick(lastPerHook(sets), ctx.methodLabel(), what, "sets");
         if (!numeric) {
             return base;
         }
@@ -96,20 +112,16 @@ final class Layers {
             throw new IllegalStateException(ctx.methodLabel() + ": " + what + " is " + base
                     + ", cannot add to or multiply it");
         }
-        if (lo != null && hi != null && lo > hi) {
-            String who = mine.stream().filter(e -> e.op() == Op.CLAMP)
+        if (clamped && lo > hi) {
+            String who = effects.stream().filter(e -> e.slot() == slot && e.op() == Op.CLAMP)
                     .map(e -> "'" + e.modId() + "' [" + bound(e.a()) + ", " + bound(e.b()) + "]")
                     .collect(Collectors.joining(", "));
             throw new RgctConflictException("RGCT conflict at " + ctx.methodLabel() + ", " + what
                     + ": the clamp ranges don't overlap: " + who + ". There is no value that satisfies all of them.");
         }
-
         double v = (n.doubleValue() + add) * mul;
-        if (lo != null) {
-            v = Math.max(v, lo);
-        }
-        if (hi != null) {
-            v = Math.min(v, hi);
+        if (clamped) {
+            v = Math.min(Math.max(v, lo), hi);
         }
         return convert(kind, v);
     }

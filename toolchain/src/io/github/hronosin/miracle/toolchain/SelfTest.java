@@ -18,7 +18,20 @@ final class SelfTest {
     private SelfTest() {
     }
 
-    public static void main(String[] args) {
+    public static void main(String[] args) throws java.io.IOException {
+        if (args.length == 2 && args[0].equals("--geometry")) {
+            // test.sh: does a geometry file read, and what's in it?
+            Clay.Model m = Clay.read(java.nio.file.Files.readString(java.nio.file.Path.of(args[1])));
+            List<String> names = new ArrayList<>();
+            java.util.ArrayDeque<Clay.Part> todo = new java.util.ArrayDeque<>(m.parts());
+            while (!todo.isEmpty()) {
+                Clay.Part p = todo.poll();
+                names.add(p.name());
+                todo.addAll(p.children());
+            }
+            System.out.println("geometry " + m.textureWidth() + "x" + m.textureHeight() + ": " + String.join(", ", names));
+            return;
+        }
         Scroll s = new Scroll().writeString("amen").writeInt(-3).writeLong(Long.MAX_VALUE).writeDouble(1.5)
                 .writeBoolean(true).writeBytes(new byte[] {1, 2, 3});
         Scroll r = Scroll.read(s.bytes());
@@ -99,6 +112,41 @@ final class SelfTest {
                 && !Communion.strangerRefusal(server).contains("smite-only"));
         check("creation fingerprints follow order", Communion.fingerprint(List.of("item a:b", "item a:c"))
                 != Communion.fingerprint(List.of("item a:c", "item a:b")));
+
+        // Bedrock geometry -> Java model parts: a zombie's head and right arm, in both editions' numbers.
+        Clay.Model zombie = Clay.read("""
+                {"format_version": "1.12.0", "minecraft:geometry": [{
+                  "description": {"identifier": "geometry.test", "texture_width": 64, "texture_height": 32},
+                  "bones": [
+                    {"name": "body", "pivot": [0, 24, 0], "cubes": [{"origin": [-4, 12, -2], "size": [8, 12, 4], "uv": [16, 16]}]},
+                    {"name": "head", "parent": "body", "pivot": [0, 24, 0],
+                     "cubes": [{"origin": [-4, 24, -4], "size": [8, 8, 8], "uv": [0, 0]}]},
+                    {"name": "rightArm", "parent": "body", "pivot": [-5, 22, 0], "rotation": [-90, 0, 0],
+                     "cubes": [{"origin": [-8, 12, -2], "size": [4, 12, 4], "uv": [40, 16], "mirror": true}]},
+                    {"name": "horn", "parent": "head", "pivot": [0, 32, 0],
+                     "cubes": [{"origin": [-1, 32, -1], "size": [2, 4, 2], "uv": [56, 0], "pivot": [0, 32, 0], "rotation": [0, 0, 30]}]}
+                  ]}]}
+                """);
+        Clay.Part body = zombie.parts().getFirst();
+        Clay.Part zHead = body.children().get(0);
+        Clay.Part zArm = body.children().get(1);
+        Clay.Box headBox = zHead.boxes().getFirst();
+        Clay.Box armBox = zArm.boxes().getFirst();
+        check("geometry: texture size and one top-level bone", zombie.textureWidth() == 64 && zombie.textureHeight() == 32
+                && zombie.parts().size() == 1 && body.name().equals("body") && body.y() == 0);
+        check("geometry: the head box is vanilla's (-4, -8, -4)", zHead.name().equals("head") && headBox.x() == -4
+                && headBox.y() == -8 && headBox.z() == -4 && headBox.w() == 8 && zHead.x() == 0 && zHead.y() == 0);
+        check("geometry: the arm hangs at vanilla's (-5, 2, 0), box (-3, -2, -2)", zArm.x() == -5 && zArm.y() == 2
+                && armBox.x() == -3 && armBox.y() == -2 && armBox.z() == -2 && armBox.u() == 40 && armBox.v() == 16
+                && armBox.mirror());
+        check("geometry: rotations flip x and y, keep z", Math.abs(zArm.xRot() - (float) Math.toRadians(90)) < 1e-5);
+        Clay.Part horn = zHead.children().getFirst();
+        check("geometry: a rotated cube becomes a part of its own", horn.boxes().isEmpty() && horn.children().size() == 1
+                && horn.children().getFirst().name().equals("horn_r1")
+                && Math.abs(horn.children().getFirst().zRot() - (float) Math.toRadians(30)) < 1e-5
+                && horn.children().getFirst().boxes().getFirst().y() == -4);
+        check("geometry: not a geometry file", throwsWith(() -> Clay.read("{\"hello\": 1}"), "no \"minecraft:geometry\""));
+        check("geometry: broken JSON names the line", throwsWith(() -> Clay.read("{\n\"a\": [1, 2,\n}"), "line 3"));
 
         System.out.println(passed + " passed, " + failed + " failed");
         System.exit(failed == 0 ? 0 : 1);

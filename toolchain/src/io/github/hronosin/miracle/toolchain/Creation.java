@@ -95,6 +95,7 @@ public class Creation {
     /** Filled when the registries are built; read by Sanctuaries and screens. */
     private static final Map<Block, Shrine<?>> SHRINE_OF = new IdentityHashMap<>();
     private static final Map<Object, Vision<?>> VISION_OF = new IdentityHashMap<>();
+    private static final Map<Object, Shrine<?>> SHRINE_OF_TYPE = new IdentityHashMap<>();
     private static volatile boolean done;
 
     protected Creation() {
@@ -222,10 +223,32 @@ public class Creation {
         return v;
     }
 
+    /** True once the game has built its registries (and ours are in them). */
+    static boolean built() {
+        return done;
+    }
+
+    /** Every being that spawns by itself. */
+    static synchronized List<Being<?>> wanderers() {
+        return BEINGS.stream().filter(b -> !b.spawns.isEmpty()).toList();
+    }
+
+    /** Every shrine, in creation order. */
+    static synchronized List<Shrine<?>> shrines() {
+        return List.copyOf(SHRINES);
+    }
+
     /** The shrine a block holds, or null. */
     static Shrine<?> shrineOf(Block block) {
         synchronized (SHRINE_OF) {
             return SHRINE_OF.get(block);
+        }
+    }
+
+    /** The shrine of a block entity type, or null for vanilla's and other loaders'. */
+    static Shrine<?> shrineOfType(Object type) {
+        synchronized (SHRINE_OF) {
+            return SHRINE_OF_TYPE.get(type);
         }
     }
 
@@ -307,7 +330,7 @@ public class Creation {
 
     // --- installation (startup, in the library's name) ------------------------------------------
 
-    static void install(Rgct rgct, boolean beings, boolean visions, boolean client) {
+    static void install(Rgct rgct, boolean beings, boolean visions, boolean shrineLooks, boolean client) {
         // After vanilla's own contents, before the registries freeze.
         rgct.target("net.minecraft.core.registries.BuiltInRegistries")
                 .method("freeze", "()V")
@@ -327,6 +350,13 @@ public class Creation {
                         }
                     });
             Easel.install(rgct);
+        }
+        if (shrineLooks && client) {
+            // Block entity renderers are made from a map of providers; ours join it first.
+            rgct.target("net.minecraft.client.renderer.blockentity.BlockEntityRenderers")
+                    .method("createEntityRenderers", "(Lnet/minecraft/client/renderer/blockentity/"
+                            + "BlockEntityRendererProvider$Context;)Ljava/util/Map;")
+                    .atHead(self -> Iconostasis.enlist());
         }
         if (!beings) {
             return;
@@ -474,6 +504,7 @@ public class Creation {
             }
             s.set(Registry.register(BuiltInRegistries.BLOCK_ENTITY_TYPE, key, type));
             synchronized (SHRINE_OF) {
+                SHRINE_OF_TYPE.put(type, s);
                 for (Block b : blocks) {
                     SHRINE_OF.put(b, s);
                     if (!(b instanceof net.minecraft.world.level.block.EntityBlock)) {
@@ -637,6 +668,7 @@ public class Creation {
                     }
                     case ITEM -> ctx -> new ThrownItemRenderer(ctx);
                     case CUSTOM -> custom(b);
+                    case SCULPTED -> (EntityRendererProvider) ctx -> Sculptor.renderer(b, ctx);
                     case NONE -> {
                         Log.warn("MiracleToolChain: " + b + " has no looks (looksLike, looksLikeItem or renderedBy),"
                                 + " so it's invisible. Spooky, but probably not what you meant.");
