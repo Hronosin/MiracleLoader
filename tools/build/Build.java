@@ -298,8 +298,10 @@ public final class Build {
         // Check the mods against every cached dictionary, and bake a variant for each obfuscated one.
         String mcId = versionId(mcJar);
         List<String> bakeArgs = new ArrayList<>(List.of("--native", mcId + "=" + mcJar));
+        // Only the targets: a dictionary some other project fetched into the shared cache isn't
+        // a promise that these mods work there.
         for (Path d : children(dicts)) {
-            if (!Files.isRegularFile(d.resolve("client.jar"))) {
+            if (!Files.isRegularFile(d.resolve("client.jar")) || !isTarget(d.getFileName().toString(), targets)) {
                 continue;
             }
             String v = d.getFileName().toString();
@@ -571,6 +573,26 @@ public final class Build {
                 return String.valueOf(id);
             }
         }
+    }
+
+    /**
+     * Whether a cached version is one of the targets: named exactly, or matched by a * pattern
+     * (26.*). Other patterns (&gt;=1.21, latest) are the toolchain's to expand; for those, every
+     * cached version counts, as before.
+     */
+    static boolean isTarget(String version, List<String> targets) {
+        for (String t : targets) {
+            if (t.equals(version)) {
+                return true;
+            }
+            if (t.contains("*") && version.matches(Pattern.quote(t).replace("*", "\\E.*\\Q"))) {
+                return true;
+            }
+            if (!t.contains("*") && !t.matches("[0-9][0-9.]*")) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** 26.1.2 &gt; 26.1 &gt; 1.21.11: numbers compared as numbers. */
