@@ -1,4 +1,4 @@
-build/
+/build/
 *.class
 .idea/
 *.iml
