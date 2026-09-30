@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.7.1";
+    static final String VERSION = "0.8.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -32,15 +32,24 @@ public final class Miracle {
             code = run(args);
         } catch (Heresy h) {
             System.err.println("HERESY: " + h.getMessage());
+            yukari(Yukari.onHeresy(h.getMessage()));
             code = 1;
         } catch (IOException e) {
             System.err.println("The heavens are silent: " + Dust.explain(e));
+            yukari(Yukari.onFiles(e));
             code = 1;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             code = 130;
         }
         System.exit(code);
+    }
+
+    private static void yukari(String remark) {
+        String line = Yukari.says(remark);
+        if (line != null) {
+            System.err.println(line);
+        }
     }
 
     static int run(String[] args) throws IOException, InterruptedException {

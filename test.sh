@@ -408,6 +408,9 @@ expect bake-nowhere "HERESY: No miracle.project.toml here or in any parent folde
 cli smite
 expect_code unknown 1
 expect unknown "HERESY: 'smite' is not in the scripture."
+expect yukari "  Yukari, from a gap: \""
+out="$(cd "$CLI_HOME" && MIRACLE_YUKARI=0 "$JAVA" -jar "$ROOT/build/miracle.jar" smite 2>&1)"
+expect_not yukari-asleep "Yukari"
 
 (cd "$CLI_HOME/holy-hops" && MIRACLE_HOME="$CLI_HOME/cache" "$JAVA" -jar "$ROOT/build/miracle.jar" pray > "$CLI_HOME/pray.log" 2>&1); code=$?; out="$(cat "$CLI_HOME/pray.log")"
 expect_code pray-what 1
@@ -568,7 +571,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.7.1"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.8.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -631,7 +634,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.7.1 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.8.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

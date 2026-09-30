@@ -185,20 +185,29 @@ final class Runner {
             System.out.println(String.join(" ", cmd));
         }
         long started = System.currentTimeMillis();
-        Process proc = new ProcessBuilder(cmd).directory(run.toFile()).inheritIO().start();
+        // The output passes through untouched, but an autopsy watches it for deaths worth explaining.
+        Process proc = new ProcessBuilder(cmd).directory(run.toFile())
+                .redirectInput(ProcessBuilder.Redirect.INHERIT).start();
+        Autopsy autopsy = new Autopsy();
+        Thread out = autopsy.pump(proc.getInputStream(), System.out, "miracle-game-out");
+        Thread err = autopsy.pump(proc.getErrorStream(), System.err, "miracle-game-err");
         int code = proc.waitFor();
-        // A crashed dedicated server still exits with 0; the fresh crash report gives it away.
+        out.join(2000);
+        err.join(2000);
+        // A crashed dedicated server still exits with 0; the fresh crash report gives it away. So
+        // does a client that found no graphics: it shows a message and leaves politely.
         Path report = newestCrashReport(run, started);
-        if (code == 0 && report == null) {
+        Autopsy.Cause cause = autopsy.cause();
+        if (code == 0 && report == null && (cause == null || !cause.fatal)) {
             System.out.println("Amen.");
             return 0;
         }
-        youDied(code, report);
+        youDied(code, report, cause);
         return code == 0 ? 1 : code;
     }
 
     /** The game didn't leave peacefully. Say so the way it deserves, and point at the evidence. */
-    private static void youDied(int code, Path report) {
+    private static void youDied(int code, Path report, Autopsy.Cause cause) {
         System.out.println("""
 
                 ==================================================
@@ -208,7 +217,15 @@ final class Runner {
         if (report != null) {
             System.out.println("Crash report: " + report);
         }
-        System.out.println("Read the log above, fix, and pray again. (Light a bonfire first next time: miracle bonfire)");
+        if (cause != null) {
+            System.out.println("What killed it: " + cause.meaning);
+        } else {
+            System.out.println("Read the log above, fix, and pray again. (Light a bonfire first next time: miracle bonfire)");
+        }
+        String remark = Yukari.says(Yukari.onDeath(cause, code));
+        if (remark != null) {
+            System.out.println(remark);
+        }
     }
 
     /** A crash report written since {@code since}, or null. */
