@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "0.8.0";
+    static final String VERSION = "0.9.0";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
@@ -148,6 +148,11 @@ public final class Miracle {
             case "tithe" -> {
                 return Rituals.tithe();
             }
+            case "scriptorium", "ide" -> {
+                boolean idea = rest.remove("--idea");
+                boolean eclipse = rest.remove("--vscode") | rest.remove("--eclipse");
+                return Scriptorium.run(Project.find(Path.of("")), idea, eclipse);
+            }
             case "consecrate", "install" -> {
                 return Consecrate.run(rest, option(rest, "--prism"));
             }
@@ -198,6 +203,9 @@ public final class Miracle {
                   miracle messages                (todo)    TODO/FIXME/HACK/XXX, as messages on the ground
                   miracle zandatsu [jar]          (inspect) cut a mod jar open: patches, library use, bakes
                   miracle exorcise [--yes]        (clean)   cast out build/, logs, crash reports (worlds spared)
+                  miracle scriptorium             (ide)     project files for IntelliJ IDEA, VS Code and Eclipse:
+                                                            the class path, sources, fallback modules, run configurations
+                      --idea | --vscode | --eclipse   only those
                   miracle consecrate "Instance"   (install) put MiracleLoader and the library into a Prism instance
                       --list              the instances   --uninstall   take it out again
                       --prism "folder"    Prism's data folder, if it isn't in the usual place (or PRISM_DATA)
@@ -248,6 +256,15 @@ public final class Miracle {
                 "The MiracleToolChain library isn't at %s. It comes in the release zip; in a checkout,"
                         + " ./build.sh builds it once it can find a Minecraft 26.x (run 'miracle pray client'"
                         + " in any project once, or set MC_JAR). Or point -Dmiracle.toolchainJar=... at it.");
+    }
+
+    /** The toolchain's own jar (miracle.jar). */
+    static Path selfJar() {
+        try {
+            return Path.of(Miracle.class.getProtectionDomain().getCodeSource().getLocation().toURI()).toAbsolutePath();
+        } catch (URISyntaxException e) {
+            throw new IllegalStateException(e);
+        }
     }
 
     private static Path sibling(String fileName, String property, String env, String missing) {

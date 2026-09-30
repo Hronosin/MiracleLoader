@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.8.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 0.9.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -27,6 +27,7 @@ ln -s "$PWD/miracle" ~/.local/bin/miracle     # the MiracleToolChain command lin
 miracle genesis holy-hops                     # a new mod project. Let there be mod.
 cd holy-hops
 miracle pray client                           # compile, bake, and play it
+miracle scriptorium                           # optional: open the folder in IntelliJ IDEA or VS Code
 ```
 
 That's the whole setup. No Gradle, no IDE plugin, no launcher: `miracle` downloads Minecraft, its libraries and assets from Mojang (cached in `~/.cache/miracle`), compiles the mod, runs the game with MiracleLoader and your mod, and logs you in offline. Details in [MiracleToolChain](#miracletoolchain).
@@ -151,7 +152,7 @@ More examples live in `examples/`.
 ### Dependencies and libraries
 
 ```toml
-depends = ["miracle-toolchain>=0.8.0", "some-other-mod", "miracle>=0.8.0"]
+depends = ["miracle-toolchain>=0.9.0", "some-other-mod", "miracle>=0.9.0"]
 ```
 
 Every mod listed must be in `mods/`, at least that version if one is given, and loads before the mod that needs it. `miracle` means the loader itself. A missing or outdated dependency, or a circle of mods waiting for each other, stops the game before it starts, with every problem listed at once.
@@ -423,6 +424,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle messages` | `todo` | Elden Ring: your TODO/FIXME/HACK/XXX comments as messages on the ground ("Try repent", "Be wary of the mixins") |
 | `miracle zandatsu [jar]` | `inspect` | Metal Gear Rising: Blade Mode for a mod jar. What it patches, which library parts it uses, what it was baked for |
 | `miracle exorcise [--yes]` | `clean` | casts out `build/`, logs and crash reports. Worlds, bonfires and configs are spared |
+| `miracle scriptorium` | `ide` | writes IntelliJ IDEA, VS Code and Eclipse project files with the class path `bake` uses, the loader's and library's sources attached, each `fallback/<version>` as its own IntelliJ module against that version's API, and run configurations for bake and pray |
 | `miracle consecrate "Instance"` | `install` | puts MiracleLoader and the library into a Prism Launcher instance, on any OS; `--list`, `--uninstall` |
 | `miracle ascend github\|modrinth` | `publish` | bakes, then publishes the jar as a new version: a GitHub release, or a Modrinth version. It claims exactly the Minecraft versions the bake checked or baked for. `--dry-run` shows what would go up |
 
@@ -571,7 +573,7 @@ Parts nobody uses patch nothing. The startup report, conflict checks and crash b
 
 ```
 Communion refused. Your mods and the server's don't match:
-  Missing: hallelujah 0.8.0
+  Missing: hallelujah 0.9.0
 
 No miracle today.
 ```
@@ -611,7 +613,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 
 ```
 [Miracle/WARN] miracle.lock: what the mods patch has changed since it was pinned:
-    miracle-toolchain 0.8.0 (same version, different patches: a setting?)
+    miracle-toolchain 0.9.0 (same version, different patches: a setting?)
       + net.minecraft.util.Util#fetchChoiceType(...) intercept@HEAD [cancels with a value]
 ```
 
@@ -627,14 +629,14 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] OSHI: `rawBytes` for bring-your-own bytecode tools
 - [x] OSHI: check against many versions' dictionaries at once, bake variants for obfuscated ones
 - [x] OSHI: fallback functions, and readable API jars to compile them against
-- [ ] Yarn dictionaries
+- [x] ~~Yarn dictionaries~~ Not needed: Fabric stopped Yarn and Intermediary after 1.21.11, the last obfuscated version, and Mojang's mappings cover every obfuscated version MiracleLoader can run
 - [x] Merge rules for well-known game values (MiracleToolChain's Blessings)
 - [x] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [x] Direct calls: patched spots bound to their hooks, so the JIT inlines them
 - [x] Mod dependencies in `miracle.mod.toml`, library mods, patching on behalf of dependents
 - [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
 - [x] MiracleToolChain: `ascend` (publish to GitHub; to Modrinth once it lists the loader)
-- [ ] MiracleToolChain: `ide`
+- [x] MiracleToolChain: `scriptorium` (`ide`): IntelliJ IDEA, VS Code and Eclipse projects, with sources and fallback modules
 - [x] MiracleToolChain library: events, well-known values, commands, configs, data and assets
 - [x] MiracleToolChain library: registries (items, blocks), networking, keybinds
 - [x] MiracleToolChain library: entities (attributes, spawn eggs, vanilla or custom renderers)

@@ -6,6 +6,7 @@ export LC_ALL=C.UTF-8  # keep the JVM from turning non-ASCII output into ????
 ./build.sh > /dev/null || { echo "build failed"; exit 1; }
 
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
+JAVAC_BIN="${JAVA_HOME:+$JAVA_HOME/bin/}javac"
 ROOT="$(pwd)"
 pass=0
 fail=0
@@ -571,7 +572,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.8.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.9.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -634,7 +635,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.8.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.9.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
@@ -689,6 +690,31 @@ expect_not lock-off "miracle.lock:"
 JAVA_OPTS=-Dmiracle.lock=maybe run_in "$LOCK_DIR" "$M/hello-mod.jar"
 expect_code lock-bad-mode 1
 expect lock-bad-mode "-Dmiracle.lock=maybe: that's not a mode. update, strict or off."
+
+# --- scriptorium: IDE files, when Minecraft 26.3 is in the real cache ------------------------
+REAL_CACHE="${MIRACLE_HOME:-$HOME/.cache/miracle}"
+if [ -f "$REAL_CACHE/minecraft/versions/26.3/client.jar" ]; then
+    IDE="$ROOT/build/test-ide"
+    rm -rf "$IDE" && mkdir -p "$IDE"
+    (cd "$IDE" && "$JAVA" -jar "$ROOT/build/miracle.jar" genesis scribe-test --minecraft 26.3 > /dev/null 2>&1)
+    mkdir -p "$IDE/scribe-test/fallback/1.21.11/src"
+    out="$(cd "$IDE/scribe-test" && "$JAVA" -jar "$ROOT/build/miracle.jar" scriptorium 2>&1)"; code=$?
+    expect_code scriptorium 0
+    expect scriptorium "The scriptorium is ready for"
+    expect scriptorium "fallbacks are modules of their own: 1.21.11"
+    out="$(cat "$IDE/scribe-test/.idea/scribe-test.iml" "$IDE/scribe-test/.classpath" "$IDE/scribe-test/.idea/runConfigurations/Pray_client.xml" \
+        "$IDE/scribe-test/.gitignore" 2>&1)"
+    expect scriptorium-iml 'miracle-toolchain-sources.jar!/'
+    expect scriptorium-classpath 'kind="lib" path="'
+    expect scriptorium-run '<option name="PROGRAM_PARAMETERS" value="pray client" />'
+    expect scriptorium-ignore ".idea/"
+    # The class path it writes is the one that compiles the mod.
+    cp="$(sed -n 's/.*kind="lib" path="\([^"]*\)".*/\1/p' "$IDE/scribe-test/.classpath" | paste -sd:)"
+    if "$JAVAC_BIN" -d "$IDE/out" -cp "$cp" $(find "$IDE/scribe-test/src" -name '*.java') > /dev/null 2>&1; then
+        pass=$((pass + 1)); else fail=$((fail + 1)); echo "FAIL [scriptorium-compiles]"; fi
+else
+    echo "(scriptorium tests skipped: no Minecraft 26.3 in $REAL_CACHE)"
+fi
 
 # --- consecrate: installing into a (fake) Prism Launcher ------------------------------------
 PRISM="$ROOT/build/test-prism"

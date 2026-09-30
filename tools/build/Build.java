@@ -149,6 +149,9 @@ public final class Build {
                 "loader/boot/src/io/github/hronosin/miracle/Resurrection.java"));
         buildJar(Paths.get("loader"), loaderJar, null, null);
         preach(loaderJar);
+        // Sources, for IDEs (miracle scriptorium attaches them): the API's docs on hover.
+        runJar("--create", "--file", OUT.resolve("miracle-loader-sources.jar").toString(),
+                "-C", "loader/src", ".", "-C", "loader/boot/src", ".");
 
         say("==> miracle-bake");
         Path bakeJar = OUT.resolve("miracle-bake.jar");
@@ -269,6 +272,7 @@ public final class Build {
         say("==> MiracleToolChain library");
         Path toolchain = OUT.resolve("miracle-toolchain.jar");
         buildJar(Paths.get("toolchain"), toolchain, loaderJar + SEP + mcCp, libsCp);
+        runJar("--create", "--file", OUT.resolve("miracle-toolchain-sources.jar").toString(), "-C", "toolchain/src", ".");
         for (String m : REAL_MODS) {
             buildJar(Paths.get("examples", m), OUT.resolve(m + ".jar"), cp(loaderJar, toolchain) + SEP + mcCp,
                     libsCp + SEP + toolchain);

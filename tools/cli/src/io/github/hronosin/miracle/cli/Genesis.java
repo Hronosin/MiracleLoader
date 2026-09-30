@@ -77,7 +77,7 @@ final class Genesis {
                 authors = ["%s"]
                 # icon = "icon.png"   # a square PNG (128x128 is plenty) in resources/, for launchers and Modrinth
                 """.formatted(id, title, pkg, cls, System.getProperty("user.name", "you"))
-                + (ascetic ? "" : "depends = [\"miracle-toolchain>=0.8.0\"]\n"));
+                + (ascetic ? "" : "depends = [\"miracle-toolchain>=0.9.0\"]\n"));
 
         write(dir.resolve(Project.PROJECT_FILE), """
                 # What you write and compile against. Must be unobfuscated (26.1+), so names are readable.
@@ -102,7 +102,7 @@ final class Genesis {
             write(src.resolve(cls + ".java"), (ascetic ? ASCETIC : BLESSED).formatted(pkg, cls, id));
         }
 
-        write(dir.resolve(".gitignore"), "build/\nrun/\n");
+        write(dir.resolve(".gitignore"), "build/\nrun/\n# IDE files (miracle scriptorium)\n.idea/\n*.iml\n.project\n.classpath\n.settings/\n.vscode/\n");
         write(dir.resolve("fallback/README.md"), """
                 # Fallbacks
 
