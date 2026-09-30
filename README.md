@@ -41,6 +41,13 @@ miracle pray client
 
 `miracle.cmd` finds Java through `JAVA_HOME` or the `PATH`, and says so if it's too old. No PowerShell scripts, so no execution policy to fight.
 
+Two things Windows does to everyone the first time:
+
+- **PowerShell doesn't run files from the current folder by name.** Until the folder is on your `PATH`, type `.\miracle.cmd` there, not `miracle.cmd` (cmd doesn't mind either way).
+- **Files from a downloaded zip are marked "from the internet"**, and double-clicking them brings up SmartScreen. Unblock the zip before extracting it (right-click > Properties > Unblock), or afterwards run `Get-ChildItem -Recurse | Unblock-File` in the extracted folder.
+
+Keep projects out of OneDrive-synced folders (the Desktop often is one): OneDrive syncing a running game's world files gets in the way.
+
 ## Quick start: hacking on the loader
 
 You need **JDK 25+** (Minecraft 26.x requires it anyway). On Fedora: `sudo dnf install java-25-openjdk-devel`; on Windows: `winget install EclipseAdoptium.Temurin.25.JDK`.
