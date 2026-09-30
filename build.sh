@@ -107,6 +107,10 @@ preach() {
 }
 
 echo "==> loader"
+# The one class any Java can run: on a Java older than 25 it finds a newer one and relaunches.
+mkdir -p "$OUT/classes/miracle-loader"
+"$JAVAC" --release 8 -encoding UTF-8 -Xlint:all,-options,-serial -Werror -d "$OUT/classes/miracle-loader" \
+    loader/boot/src/io/github/hronosin/miracle/Resurrection.java
 build_jar loader "$OUT/miracle-loader.jar"
 preach "$OUT/miracle-loader.jar"
 

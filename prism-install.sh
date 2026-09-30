@@ -82,8 +82,9 @@ PY
 case "$mc_version" in
     26.*) ;;
     *) echo "NOTE: Minecraft $mc_version is obfuscated. Mods need a variant baked for exactly $mc_version" >&2
-       echo "      (tools/fetch-dictionary.sh $mc_version, then ./build.sh), and MiracleLoader needs Java 25:" >&2
-       echo "      in Prism, Edit instance -> Settings -> Java -> pick a Java 25 installation." >&2 ;;
+       echo "      (miracle dictionary $mc_version, then ./build.sh). MiracleLoader needs Java 25; if Prism starts" >&2
+       echo "      this version with an older Java, it finds a Java 25 by itself and relaunches the game in it" >&2
+       echo "      (or pick one: Edit instance -> Settings -> Java)." >&2 ;;
 esac
 
 [ -f build/miracle-loader.jar ] && [ -f build/title-mod.jar ] || ./build.sh
@@ -99,7 +100,7 @@ cat > "$INSTANCE/patches/$UID_.json" <<JSON
     "uid": "$UID_",
     "name": "MiracleLoader",
     "version": "$VERSION",
-    "mainClass": "io.github.hronosin.miracle.MiracleMain",
+    "mainClass": "io.github.hronosin.miracle.Resurrection",
     "libraries": [
         { "name": "$LIB_NAME", "MMC-hint": "local" }
     ],

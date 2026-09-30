@@ -20,7 +20,9 @@ import net.minecraft.world.entity.Mob;
 import java.io.IOException;
 import java.io.Reader;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.Optional;
 
@@ -35,7 +37,7 @@ final class Sculptor {
     }
 
     /** The renderer for a sculpted being. Made again on every resource reload, so edits show after F3+T. */
-    static MobRenderer<Mob, LivingEntityRenderState, Sculpture> renderer(Being<?> b, EntityRendererProvider.Context ctx) {
+    static MobRenderer<Mob, Sculpture.State, Sculpture> renderer(Being<?> b, EntityRendererProvider.Context ctx) {
         Identifier geometry = Identifier.parse(b.geometry);
         Identifier file = Identifier.fromNamespaceAndPath(geometry.getNamespace(), "geo/" + geometry.getPath() + ".geo.json");
         Clay.Model clay;
@@ -49,7 +51,21 @@ final class Sculptor {
                     + ". It's a pink block until that's fixed.");
             clay = unformed();
         }
-        Sculpture model = new Sculpture(bake(clay));
+        Identifier animFile = Identifier.fromNamespaceAndPath(geometry.getNamespace(),
+                "animations/" + geometry.getPath() + ".animation.json");
+        Map<String, Liturgy.Rite> rites = Map.of();
+        Optional<Resource> animations = Minecraft.getInstance().getResourceManager().getResource(animFile);
+        if (animations.isPresent()) {
+            List<String> notes = new ArrayList<>();
+            try (Reader r = animations.get().openAsReader()) {
+                rites = Liturgy.read(text(r), notes);
+            } catch (IOException | RuntimeException e) {
+                Log.error("MiracleToolChain: " + b + "'s animations in " + animFile + " couldn't be read: " + e.getMessage()
+                        + ". It moves by part names instead.");
+            }
+            notes.forEach(n -> Log.warn("MiracleToolChain: " + b + "'s animations: " + n));
+        }
+        Sculpture model = new Sculpture(bake(clay), rites);
         Identifier texture = Identifier.parse(b.texture);
         float shadow = Math.max(0.1f, b.get().getWidth() * 0.5f);
         return new Effigy(ctx, model, shadow, texture);
@@ -61,13 +77,17 @@ final class Sculptor {
             throw new java.io.FileNotFoundException(file.toString());
         }
         try (Reader r = res.get().openAsReader()) {
-            StringBuilder sb = new StringBuilder();
-            char[] buf = new char[8192];
-            for (int n; (n = r.read(buf)) > 0; ) {
-                sb.append(buf, 0, n);
-            }
-            return Clay.read(sb.toString());
+            return Clay.read(text(r));
         }
+    }
+
+    private static String text(Reader r) throws IOException {
+        StringBuilder sb = new StringBuilder();
+        char[] buf = new char[8192];
+        for (int n; (n = r.read(buf)) > 0; ) {
+            sb.append(buf, 0, n);
+        }
+        return sb.toString();
     }
 
     /** What a being without a readable geometry looks like: one block, so it's at least there. */
@@ -99,20 +119,44 @@ final class Sculptor {
     }
 
     /**
-     * A sculpted being's model. Moves by the names of its parts: one called {@code head} follows
-     * the gaze, parts with {@code leg} in their name walk, parts with {@code arm} swing against
-     * the legs; {@code left}/{@code right} in the name set which foot goes first.
+     * A sculpted being's model. Plays the animations whose names end in {@code idle},
+     * {@code walk}, {@code attack} and {@code death}, if it has them; otherwise moves by the names
+     * of its parts: one called {@code head} follows the gaze (always), parts with {@code leg} in
+     * their name walk, parts with {@code arm} swing against the legs; {@code left}/{@code right}
+     * in the name set which foot goes first.
      */
     static final class Sculpture extends EntityModel<LivingEntityRenderState> {
+
+        /** The render state, plus how far along an attack swing is. */
+        static final class State extends LivingEntityRenderState {
+            float attack;
+        }
 
         private record Limb(ModelPart part, float phase, float amplitude) {
         }
 
+        private static final float DEG = (float) Math.PI / 180f;
+
         private final ModelPart head;
         private final List<Limb> limbs = new ArrayList<>();
+        private final Map<String, ModelPart> parts = new HashMap<>();
+        private final List<Liturgy.Rite> idle = new ArrayList<>();
+        private final List<Liturgy.Rite> walk = new ArrayList<>();
+        private final List<Liturgy.Rite> attack = new ArrayList<>();
+        private final List<Liturgy.Rite> death = new ArrayList<>();
 
-        Sculpture(ModelPart root) {
+        Sculpture(ModelPart root, Map<String, Liturgy.Rite> rites) {
             super(root);
+            for (Liturgy.Rite r : rites.values()) {
+                switch (r.kind()) {
+                    case "idle" -> idle.add(r);
+                    case "walk", "walking", "move", "run" -> walk.add(r);
+                    case "attack", "swing" -> attack.add(r);
+                    case "death", "die" -> death.add(r);
+                    default -> Log.warn("MiracleToolChain: animation " + r.name() + " plays at no time: names that end in"
+                            + " idle, walk, attack or death do.");
+                }
+            }
             ModelPart found = null;
             List<ModelPart> all = new ArrayList<>();
             List<String> names = new ArrayList<>();
@@ -120,6 +164,8 @@ final class Sculptor {
             int legs = 0;
             int arms = 0;
             for (int i = 0; i < all.size(); i++) {
+                parts.putIfAbsent(names.get(i), all.get(i));
+                parts.putIfAbsent(names.get(i).toLowerCase(Locale.ROOT), all.get(i));
                 String n = names.get(i).toLowerCase(Locale.ROOT);
                 ModelPart part = all.get(i);
                 if (found == null && n.equals("head")) {
@@ -178,20 +224,79 @@ final class Sculptor {
         @Override
         public void setupAnim(LivingEntityRenderState state) {
             resetPose();
-            if (head != null) {
-                head.yRot += state.yRot * ((float) Math.PI / 180f);
-                head.xRot += state.xRot * ((float) Math.PI / 180f);
-            }
             float pos = state.walkAnimationPos;
             float speed = Math.min(1f, state.walkAnimationSpeed);
-            for (Limb l : limbs) {
-                l.part().xRot += (float) Math.cos(pos * 0.6662f + l.phase()) * l.amplitude() * speed;
+            double life = state.ageInTicks / 20.0;
+            if (walk.isEmpty()) {
+                for (Limb l : limbs) {
+                    l.part().xRot += (float) Math.cos(pos * 0.6662f + l.phase()) * l.amplitude() * speed;
+                }
+            }
+            float walking = walk.isEmpty() ? 0 : Math.min(1f, speed * 1.5f);
+            for (Liturgy.Rite r : idle) {
+                play(r, life, 1 - walking, state);
+            }
+            for (Liturgy.Rite r : walk) {
+                play(r, life, walking, state);
+            }
+            float swing = state instanceof State s ? s.attack : 0;
+            if (swing > 0) {
+                for (Liturgy.Rite r : attack) {
+                    play(r, swing * r.length(), 1, state);
+                }
+            }
+            if (state.deathTime > 0) {
+                for (Liturgy.Rite r : death) {
+                    play(r, state.deathTime / 20.0, 1, state);
+                }
+            }
+            if (head != null) {
+                head.yRot += state.yRot * DEG;
+                head.xRot += state.xRot * DEG;
+            }
+        }
+
+        /** Adds one animation, at {@code seconds} into it, weighted by {@code weight}. */
+        private void play(Liturgy.Rite rite, double seconds, float weight, LivingEntityRenderState state) {
+            if (weight <= 0) {
+                return;
+            }
+            double t = rite.at(seconds);
+            Liturgy.Scene scene = new Liturgy.Scene(t, state.ageInTicks / 20.0, state.walkAnimationSpeed,
+                    state.walkAnimationPos, state.xRot, state.yRot);
+            for (var e : rite.bones().entrySet()) {
+                ModelPart part = parts.get(e.getKey());
+                if (part == null) {
+                    part = parts.get(e.getKey().toLowerCase(Locale.ROOT));
+                }
+                if (part == null) {
+                    continue;
+                }
+                Liturgy.Bone b = e.getValue();
+                if (b.rotation() != null) {
+                    double[] r = Liturgy.sample(b.rotation(), t, scene);
+                    part.xRot += (float) r[0] * DEG * weight;
+                    part.yRot += (float) r[1] * DEG * weight;
+                    part.zRot += (float) r[2] * DEG * weight;
+                }
+                if (b.position() != null) {
+                    double[] p = Liturgy.sample(b.position(), t, scene);
+                    part.x += (float) p[0] * weight;
+                    part.y -= (float) p[1] * weight;
+                    part.z += (float) p[2] * weight;
+                }
+                if (b.scale() != null) {
+                    double[] sc = Liturgy.sample(b.scale(), t, scene);
+                    part.xScale *= 1 + ((float) sc[0] - 1) * weight;
+                    part.yScale *= 1 + ((float) sc[1] - 1) * weight;
+                    part.zScale *= 1 + ((float) sc[2] - 1) * weight;
+                }
             }
         }
     }
 
     /** Draws a sculpted being with its texture. */
-    static final class Effigy extends MobRenderer<Mob, LivingEntityRenderState, Sculpture> {
+    static final class Effigy extends MobRenderer<Mob, Sculpture.State, Sculpture> {
 
         private final Identifier texture;
 
@@ -201,12 +306,18 @@ final class Sculptor {
         }
 
         @Override
-        public LivingEntityRenderState createRenderState() {
-            return new LivingEntityRenderState();
+        public Sculpture.State createRenderState() {
+            return new Sculpture.State();
         }
 
         @Override
-        public Identifier getTextureLocation(LivingEntityRenderState state) {
+        public void extractRenderState(Mob mob, Sculpture.State state, float partialTick) {
+            super.extractRenderState(mob, state, partialTick);
+            state.attack = Swing.progress(mob, partialTick);
+        }
+
+        @Override
+        public Identifier getTextureLocation(Sculpture.State state) {
             return texture;
         }
     }

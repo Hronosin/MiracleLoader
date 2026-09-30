@@ -360,22 +360,27 @@ final class Remapper {
     }
 
     private CodeTransform codeTransform(CodeModel code, String where) {
-        List<CodeElement> elements = code.elementList();
+        // The plan counts instructions only: labels, line numbers and catch entries may come in a
+        // different order in the list than in the stream (they do for code a fallback moved in).
+        List<CodeElement> elements = code.elementList().stream().filter(x -> x instanceof Instruction).toList();
         Plan plan = planRgctStrings(elements, where);
         int[] index = {0};
         return (b, e) -> {
-            int i = index[0]++;
-            if (i >= elements.size() || elements.get(i).getClass() != e.getClass()) {
-                throw new IllegalStateException("code element order changed while baking " + where);
-            }
-            List<ConstantDesc> ldc = plan.replaceLdc().get(i);
-            if (ldc != null) {
-                ldc.forEach(b::loadConstant);
-                return;
-            }
-            if (plan.upgradeInvoke().contains(i)) {
-                b.invokevirtual(ClassDesc.ofInternalName(CLASS_TARGET), "method", MethodTypeDesc.ofDescriptor(METHOD2_DESC));
-                return;
+            if (e instanceof Instruction) {
+                int i = index[0]++;
+                if (i >= elements.size() || elements.get(i).getClass() != e.getClass()) {
+                    throw new IllegalStateException("instruction order changed while baking " + where + " at " + i + ": "
+                            + (i < elements.size() ? elements.get(i) : "(end)") + " vs " + e);
+                }
+                List<ConstantDesc> ldc = plan.replaceLdc().get(i);
+                if (ldc != null) {
+                    ldc.forEach(b::loadConstant);
+                    return;
+                }
+                if (plan.upgradeInvoke().contains(i)) {
+                    b.invokevirtual(ClassDesc.ofInternalName(CLASS_TARGET), "method", MethodTypeDesc.ofDescriptor(METHOD2_DESC));
+                    return;
+                }
             }
             switch (e) {
                 case FieldInstruction fi -> {

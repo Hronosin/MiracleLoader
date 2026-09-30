@@ -163,6 +163,36 @@ expect badtype "NO MIRACLE OCCURRED"
 expect badtype "return value must be a Float (primitive float), got java.lang.Double 2.0"
 expect badtype "thrown by a hook of mod 'badtype-mod'"
 
+# --- Resurrection: started on an older Java, the game rises again in Java 25 -----------------
+OLD_JAVA="${MIRACLE_TEST_OLD_JAVA:-$(ls -d /usr/lib/jvm/java-21*/bin/java /usr/lib/jvm/java-17*/bin/java 2>/dev/null | head -1)}"
+NEW_HOME="$("$JAVA" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.home = //p')"
+res() {   # res <name> <java> [extra JVM options...]: the fake game through Resurrection
+    local name="$1" java="$2"; shift 2
+    local dir="$ROOT/build/test-runs/$name"
+    rm -rf "$dir" && mkdir -p "$dir/mods" && cp "$M/hello-mod.jar" "$dir/mods/"
+    out="$(cd "$dir" && env -u JAVA_HOME "$java" "$@" -cp "$ROOT/build/miracle-loader.jar:$ROOT/build/fake-minecraft.jar" \
+        io.github.hronosin.miracle.Resurrection --username Steve 2>&1)"; code=$?
+}
+res resurrect-new "$JAVA"
+expect_code resurrect-new 0
+expect resurrect-new "[FakeMinecraft] done"
+expect_not resurrect-new "Resurrecting"
+if [ -n "$OLD_JAVA" ]; then
+    MIRACLE_JAVA="$NEW_HOME" res resurrect "$OLD_JAVA" -Dmiracle.javaSearch=explicit -Dmiracle.test=kept
+    expect_code resurrect 0
+    expect resurrect "and MiracleLoader needs Java 25 or newer."
+    expect resurrect "[Miracle] Resurrecting the game in Java"
+    expect resurrect "[hello-mod] hop, bytecode patch for Steve"      # the mod ran, in the new Java
+    expect resurrect "[FakeMinecraft] done"
+    MIRACLE_JAVA="$(dirname "$(dirname "$OLD_JAVA")")" res resurrect-none "$OLD_JAVA" -Dmiracle.javaSearch=explicit
+    expect_code resurrect-none 1
+    expect resurrect-none "No Java 25 or newer was found, so there is no miracle today."
+    expect resurrect-none "Found, but too old:"
+    expect_not resurrect-none "[FakeMinecraft]"
+else
+    echo "  (no Java older than 25 around: Resurrection's relaunch not tested)"
+fi
+
 # --- layers: effects from several mods stack, whatever the load order ------------------------
 run_with stack "$T/stack-a.jar" "$T/stack-b.jar"
 expect_code stack 0
@@ -534,7 +564,7 @@ cli genesis --templates
 expect templates "grace       Elden Ring"
 cli genesis stylish-mod --template stylish --minecraft 26.2
 expect_code template 0
-grep -q 'depends = \["miracle-toolchain>=0.5.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
+grep -q 'depends = \["miracle-toolchain>=0.6.0"\]' "$CLI_HOME/stylish-mod/miracle.mod.toml" \
     && grep -q "Smokin' Sexy Style" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" \
     && ! grep -q "__" "$CLI_HOME/stylish-mod/src/com/example/stylishmod/StylishMod.java" && pass=$((pass + 1)) \
     || { fail=$((fail + 1)); echo "FAIL [template]: bad stylish project"; }
@@ -597,7 +627,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.5.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 0.6.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

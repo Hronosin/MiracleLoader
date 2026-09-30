@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 0.5.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 0.6.0.** Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -56,12 +56,24 @@ java -cp miracle-loader.jar:minecraft.jar:<libraries> \
 
 The launcher can leave everything else as it is. Mods are loaded from `./mods`.
 
+**Any Java will do to start it.** MiracleLoader needs Java 25 (RGCT is built on the JDK's ClassFile API, so its bytecode can't be downgraded), but launchers start each Minecraft version with the Java that version asks for, 21 for 1.21.11. So there's a second door: `io.github.hronosin.miracle.Resurrection`, the one class compiled for Java 8. On Java 25 or newer it hands over to `MiracleMain` in the same process. On anything older it finds a Java 25 or newer on the machine and resurrects the game in it, with the same JVM options, class path and arguments; it stays behind as a thin shepherd, so the output passes straight through, closing the launcher's process closes the game, and the exit code is the game's own:
+
+```
+[Miracle] This game was started with Java 21 (Minecraft 1.21.11 asks for Java 21), and MiracleLoader needs Java 25 or newer.
+[Miracle] Resurrecting the game in Java 25: /usr/lib/jvm/java-25-openjdk-amd64/bin/java
+```
+
+It looks in `-Dmiracle.java` or `MIRACLE_JAVA` (a Java home or a `java` binary) first, then `JAVA_HOME`, the `PATH`, and the usual places: system JVM folders, SDKMAN, IntelliJ's `~/.jdks`, Prism's and the official launcher's downloaded runtimes, Adoptium, Zulu and Microsoft on Windows, macOS's `JavaVirtualMachines`. If there's no Java 25 anywhere, it says so, lists what it found, and exits.
+
 | Property | Default | Purpose |
 |---|---|---|
 | `-Dmiracle.target` | `net.minecraft.client.main.Main` | the game's main class (`net.minecraft.server.Main` for servers) |
 | `-Dmiracle.modsDir` | `mods` | mods folder |
 | `-Dmiracle.gameClasspath` | JVM class path minus the loader | if the game is not on the class path |
 | `-Dmiracle.dump` | none | folder to write every patched class into, for debugging |
+| `-Dmiracle.java` | none | `Resurrection`: the Java 25+ to relaunch in (a Java home or a `java` binary); also `MIRACLE_JAVA` |
+| `-Dmiracle.javaSearch` | `auto` | `Resurrection`: `explicit` looks only at `miracle.java`/`MIRACLE_JAVA` and `JAVA_HOME` |
+| `-Dmiracle.showCommand` | `false` | `Resurrection`: print the relaunch command |
 
 ### Prism Launcher
 
@@ -71,7 +83,7 @@ The launcher can leave everything else as it is. Mods are loaded from `./mods`.
 ./prism-install.sh --uninstall "Name"       # remove
 ```
 
-The script puts the loader into the instance's `libraries/`, adds a MiracleLoader custom component (it overrides `mainClass`), and copies the example mods into `mods/`. The Flatpak install of Prism is found automatically; for anything else set `PRISM_DATA=/path/to/PrismLauncher`. Use a clean vanilla 26.x instance: Fabric or NeoForge in the same instance would fight over `mainClass`.
+The script puts the loader into the instance's `libraries/`, adds a MiracleLoader custom component (it overrides `mainClass` with `Resurrection`, so the instance's Java doesn't have to be 25), and copies the example mods into `mods/`. The Flatpak install of Prism is found automatically; for anything else set `PRISM_DATA=/path/to/PrismLauncher`. Use a clean vanilla 26.x instance: Fabric or NeoForge in the same instance would fight over `mainClass`.
 
 Tip: Mojang's 26.x launch arguments include `--enable-native-access=ALL-UNNAMED` and `--sun-misc-unsafe-memory-access=allow`. Adding them to the instance's JVM arguments silences LWJGL's startup warnings.
 
@@ -118,7 +130,7 @@ More examples live in `examples/`.
 ### Dependencies and libraries
 
 ```toml
-depends = ["miracle-toolchain>=0.5.0", "some-other-mod", "miracle>=0.5.0"]
+depends = ["miracle-toolchain>=0.6.0", "some-other-mod", "miracle>=0.6.0"]
 ```
 
 Every mod listed must be in `mods/`, at least that version if one is given, and loads before the mod that needs it. `miracle` means the loader itself. A missing or outdated dependency, or a circle of mods waiting for each other, stops the game before it starts, with every problem listed at once.
@@ -366,7 +378,7 @@ Fallbacks are merged in before the dictionary check, so a version is baked only 
 
 Limits, honestly:
 
-- MiracleLoader itself needs Java 25, so the oldest reachable versions are the ones that run on it (1.20.5+ in principle; 1.21.11 is what's tested). In Prism, set the instance's Java to 25.
+- MiracleLoader itself needs Java 25, so the oldest reachable versions are the ones that run on it (1.20.5+ in principle; 1.21.11 is what's tested). The game has to be happy on Java 25 too; the launcher's Java doesn't matter, since `Resurrection` relaunches in a Java 25 it finds.
 - Mojang's mappings may be used for development but not redistributed: they stay in your cache and are only read. Mods carry just the handful of readable names their RGCT targets need.
 - References into libraries (Brigadier, DataFixerUpper...) aren't obfuscated and aren't checked. Game names hidden in your own strings (reflection) aren't translated; only RGCT targets are.
 - Official Mojang mappings only, for now.
@@ -535,7 +547,7 @@ Parts nobody uses patch nothing. The startup report, conflict checks and crash b
 
 ```
 Communion refused. Your mods and the server's don't match:
-  Missing: hallelujah 0.5.0
+  Missing: hallelujah 0.6.0
 
 No miracle today.
 ```
@@ -550,11 +562,15 @@ A vanilla client meeting a server with such mods gets the list of what to instal
 
 ![A heretic: hooded, horned, holding a book](docs/heretic.png)
 
+**Animations, briefly.** Animate it in Blockbench too, and export the animations as `assets/<your mod>/animations/<name>.animation.json`, next to the model's name. They play by their names: `idle` while it stands, `walk` (or `move`, `run`) as fast as it walks, blended with idle, `attack` (or `swing`) through a melee swing, `death` while it dies. Keyframes are linear or Catmull-Rom, with pre and post values, and a value can be Molang: arithmetic, comparisons, `?:`, `math.*` and the queries a model needs (`query.anim_time`, `life_time`, `ground_speed`, `modified_distance_moved`, `head_x_rotation`, `head_y_rotation`). Without a `walk`, legs and arms still move the old way; the head always looks. Below, the heretic stands with its book, then swings it (the headless 26.3 client, the world frozen mid-swing).
+
+![The heretic, idle and mid-swing](docs/heretic-swing.png)
+
 **Spawning, briefly.** `.spawns(weight, min, max, biomes...)` puts a mob on the list of what may turn up at a spot, with a weight against vanilla's (zombies are 95), in the biomes or `#tags` you name. The rest comes from its category: a `MONSTER` spawns in the dark and counts against the monster cap, a `CREATURE` wants grass and light, water categories spawn in water.
 
 **Telepathy, briefly.** Each side collects what it has to say during a tick and sends it as one batch, in one custom payload packet, at the end of the tick. Channel names never cross the wire, only a hash of them; what crosses is data, never code, and a message can only reach a handler the receiving side registered itself. The server's Inquisition expects a client's batches numbered 1, 2, 3... and a few per tick at most; anything else (replayed, forged, flooded, garbage, unknown channels) is logged, and dropped or kicked as `config/miracle-toolchain.toml` says (`inquisition = "drop"`). It's a tripwire for crude packet injectors, not an anti-cheat: the server should still check everything it's told.
 
-Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. For 0.3, both versions again: heretics summoned, hit by thrown holy water (thrown by the item's real right-click code, too), killed, looted, saved with the world and loaded back; on the client, the heretic drawn by the zombie renderer and the holy water by the thrown-item renderer, the spawn egg in its tab. On a local server, with 26.3 and 1.21.11 clients: matching mods walk in (and Telepathy still works), a client missing a mod, a client with a mod the server lacks, a client without the library, and a client facing a server without it are each turned away with the right lines. For 0.4, both versions: an altar and a reliquary placed next to the player, filled, the altar opened by its real right-click code and a trial vision from the server, each in the screen it asked for with its caption drawn (the altar's picture is the headless 26.3 client's screenshot); bottles blessed on time, the reliquary broken and its diamonds on the ground; a `Hallowed` candle counting on the server and the client seeing every count; the same again with a client joining a dedicated 26.3 server; and on dedicated servers, items and blessing progress still there after a restart. For 0.5, both versions again: the heretic drawn from its Blockbench model (hood, horn on a rotated cube, book in hand), the altar's bottles floating above it, a candle drawn by an `Altarpiece`, and a dark stone room filled by the game's own spawner, where a test mob with weight 5000 made up 85 to 96 of every 100 monsters and the heretic turned up too; the same on a client joining a dedicated 26.3 server. Players' eyes are still needed for textures, titles and meters.
+Every target was checked on 1.21.11, 26.1.2, 26.2 and 26.3, and the library jar carries a baked variant for 1.21.11 like any other mod. Verified on dedicated servers (26.3 and 1.21.11): the Prophecy's patches, commands before and after `/reload`, server omens, damage multiplied then clamped, a cow walking away from a 120-block fall, `entityHurt` and `entityDied` on mobs, all five templates together, `/smite`, new blocks placed and broken (with loot), new items summoned. And on real clients, 26.3 and 1.21.11, run headless (software OpenGL, an offscreen window) straight into a world: the chunk with the new blocks loads, the new items show in their creative tabs with their names, keys land in Controls and `options.txt` and fire when pressed, messages go client → server → client, and hand-forged packets get the Inquisition's attention while the honest ones pass. For 0.3, both versions again: heretics summoned, hit by thrown holy water (thrown by the item's real right-click code, too), killed, looted, saved with the world and loaded back; on the client, the heretic drawn by the zombie renderer and the holy water by the thrown-item renderer, the spawn egg in its tab. On a local server, with 26.3 and 1.21.11 clients: matching mods walk in (and Telepathy still works), a client missing a mod, a client with a mod the server lacks, a client without the library, and a client facing a server without it are each turned away with the right lines. For 0.4, both versions: an altar and a reliquary placed next to the player, filled, the altar opened by its real right-click code and a trial vision from the server, each in the screen it asked for with its caption drawn (the altar's picture is the headless 26.3 client's screenshot); bottles blessed on time, the reliquary broken and its diamonds on the ground; a `Hallowed` candle counting on the server and the client seeing every count; the same again with a client joining a dedicated 26.3 server; and on dedicated servers, items and blessing progress still there after a restart. For 0.5, both versions again: the heretic drawn from its Blockbench model (hood, horn on a rotated cube, book in hand), the altar's bottles floating above it, a candle drawn by an `Altarpiece`, and a dark stone room filled by the game's own spawner, where a test mob with weight 5000 made up 85 to 96 of every 100 monsters and the heretic turned up too; the same on a client joining a dedicated 26.3 server. For 0.6, both versions: the heretic idle and frozen mid-swing, its book raised over its head, on 26.3 and 1.21.11; and a real 1.21.11 client started with Java 21, the way a launcher starts it, resurrected in Java 25 and played through the whole trial. Players' eyes are still needed for textures, titles and meters.
 
 ## Lifecycle
 
@@ -571,7 +587,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 
 ```
 [Miracle/WARN] miracle.lock: what the mods patch has changed since it was pinned:
-    miracle-toolchain 0.5.0 (same version, different patches: a setting?)
+    miracle-toolchain 0.6.0 (same version, different patches: a setting?)
       + net.minecraft.util.Util#fetchChoiceType(...) intercept@HEAD [cancels with a value]
 ```
 
@@ -601,7 +617,8 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] MiracleToolChain library: Communion, a join-time mod check with readable refusals
 - [x] MiracleToolChain library: block entities, inventories, menus and screens, portable captions
 - [x] MiracleToolChain library: block entity renderers, custom entity models from Blockbench, natural spawning
-- [ ] MiracleToolChain library: Bedrock animations for sculpted models
+- [x] MiracleToolChain library: Bedrock animations for sculpted models (with Molang)
+- [x] Resurrection: started by an older Java, the game relaunches itself in Java 25
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 
 ## License

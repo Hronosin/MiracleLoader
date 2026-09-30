@@ -1,7 +1,7 @@
 id = "hallelujah"
 name = "Hallelujah"
-version = "0.5.0"
+version = "0.6.0"
 entrypoint = "com.example.hallelujah.Hallelujah"
 authors = ["Hronosin"]
 icon = "icon.png"
-depends = ["miracle-toolchain>=0.5.0"]
+depends = ["miracle-toolchain>=0.6.0"]

@@ -139,7 +139,7 @@ final class SelfTest {
         check("geometry: the arm hangs at vanilla's (-5, 2, 0), box (-3, -2, -2)", zArm.x() == -5 && zArm.y() == 2
                 && armBox.x() == -3 && armBox.y() == -2 && armBox.z() == -2 && armBox.u() == 40 && armBox.v() == 16
                 && armBox.mirror());
-        check("geometry: rotations flip x and y, keep z", Math.abs(zArm.xRot() - (float) Math.toRadians(90)) < 1e-5);
+        check("geometry: rotations carry over as they are", Math.abs(zArm.xRot() - (float) Math.toRadians(-90)) < 1e-5);
         Clay.Part horn = zHead.children().getFirst();
         check("geometry: a rotated cube becomes a part of its own", horn.boxes().isEmpty() && horn.children().size() == 1
                 && horn.children().getFirst().name().equals("horn_r1")
@@ -147,6 +147,42 @@ final class SelfTest {
                 && horn.children().getFirst().boxes().getFirst().y() == -4);
         check("geometry: not a geometry file", throwsWith(() -> Clay.read("{\"hello\": 1}"), "no \"minecraft:geometry\""));
         check("geometry: broken JSON names the line", throwsWith(() -> Clay.read("{\n\"a\": [1, 2,\n}"), "line 3"));
+
+        // Bedrock animations: keyframes, jumps, curves and Molang.
+        List<String> animNotes = new ArrayList<>();
+        java.util.Map<String, Liturgy.Rite> rites = Liturgy.read("""
+                {"format_version": "1.8.0", "animations": {
+                  "animation.test.walk": {"loop": true, "animation_length": 1.0, "bones": {
+                    "leg": {"rotation": {"0.0": [30, 0, 0], "0.5": [-30, 0, 0], "1.0": [30, 0, 0]}},
+                    "arm": {"rotation": {"0.0": [0, 0, 0], "0.5": {"pre": [10, 0, 0], "post": [90, 0, 0]}, "1.0": [0, 0, 0]}},
+                    "tail": {"rotation": ["math.sin(query.anim_time * 360) * 10", 0, "q.anim_time > 0.5 ? 5 : -5"],
+                             "scale": 2},
+                    "body": {"position": {"0.0": [0, 0, 0], "0.5": {"post": [0, 4, 0], "lerp_mode": "catmullrom"},
+                                          "1.0": [0, 0, 0]}}
+                  }},
+                  "animation.test.death": {"loop": "hold_on_last_frame", "bones": {
+                    "head": {"position": {"0.0": [0, 0, 0], "2.0": [0, -8, 0]}}}},
+                  "animation.test.odd": {"bones": {"x": {"rotation": ["variable.foo + math.nope(1)", "v.bar", 0]}}}
+                }}
+                """, animNotes);
+        Liturgy.Scene scene = new Liturgy.Scene(0.125, 0, 0, 0, 0, 0);
+        Liturgy.Rite walkRite = rites.get("animation.test.walk");
+        double[] leg = Liturgy.sample(walkRite.bones().get("leg").rotation(), 0.25, scene);
+        check("animation: linear keyframes", walkRite.kind().equals("walk") && Math.abs(leg[0]) < 1e-9
+                && Math.abs(Liturgy.sample(walkRite.bones().get("leg").rotation(), 0.75, scene)[0]) < 1e-9);
+        check("animation: pre and post jump at a keyframe",
+                Math.abs(Liturgy.sample(walkRite.bones().get("arm").rotation(), 0.4999, scene)[0] - 10) < 0.01
+                && Math.abs(Liturgy.sample(walkRite.bones().get("arm").rotation(), 0.5, scene)[0] - 90) < 1e-9);
+        double[] tail = Liturgy.sample(walkRite.bones().get("tail").rotation(), 0.125, scene);
+        check("animation: Molang, in degrees", Math.abs(tail[0] - Math.sin(Math.toRadians(45)) * 10) < 1e-9 && tail[2] == -5);
+        check("animation: one number scales all three",
+                java.util.Arrays.equals(Liturgy.sample(walkRite.bones().get("tail").scale(), 0, scene), new double[]{2, 2, 2}));
+        double curve = Liturgy.sample(walkRite.bones().get("body").position(), 0.25, scene)[1];
+        check("animation: catmullrom curves (not the straight line's 2.0)", curve > 2.0 && curve < 4.0);
+        Liturgy.Rite deathRite = rites.get("animation.test.death");
+        check("animation: length from the last keyframe, held at the end", deathRite.length() == 2.0
+                && deathRite.at(5) == 2.0 && walkRite.at(1.25) == 0.25);
+        check("animation: unknown Molang is 0, and said", animNotes.size() == 1 && animNotes.getFirst().contains("math.nope"));
 
         System.out.println(passed + " passed, " + failed + " failed");
         System.exit(failed == 0 ? 0 : 1);

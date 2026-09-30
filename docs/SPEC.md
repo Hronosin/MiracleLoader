@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 0.5.0 |
+| Version | 0.6.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -47,7 +47,7 @@ Every name comes in two forms: a solemn one and a boring alias. They are equival
 | `miracle-loader.jar` | MiracleLoader: discovery, RGCT, launching | the JDK |
 | `miracle.jar` | the command line, with `miracle-bake` built in | the JDK, `miracle-loader.jar` (manifest `Class-Path`) |
 | `miracle-bake.jar` | `miracle-bake` alone, for scripts and `build.sh` | the JDK |
-| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.5.0, and the game |
+| `miracle-toolchain.jar` | the library: an ordinary mod (id `miracle-toolchain`) | MiracleLoader ≥ 0.6.0, and the game |
 | `miracle` | a shell wrapper that runs `build/miracle.jar`, building it first if it's missing | bash |
 
 All of them MUST run on Java 25 or newer and MUST NOT need anything beyond the JDK: JSON, TOML, HTTP, compilation (`javax.tools`) and bytecode work (`java.lang.classfile`) are the JDK's or our own.
@@ -160,6 +160,10 @@ Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the 
 | `-Dmiracle.modsDir` | property | loader | mods folder (default `mods`) |
 | `-Dmiracle.gameClasspath` | property | loader | game jars, instead of the JVM class path |
 | `-Dmiracle.dump` | property | loader | folder to write every patched class into |
+| `MIRACLE_JAVA`, `-Dmiracle.java` | env, property | `Resurrection` | the Java 25+ to relaunch in: a Java home or a `java` binary (8.8) |
+| `-Dmiracle.javaSearch=explicit` | property | `Resurrection` | look only at `miracle.java`/`MIRACLE_JAVA` and `JAVA_HOME` (8.8) |
+| `-Dmiracle.showCommand=true` | property | `Resurrection` | print the relaunch command (8.8) |
+| `-Dmiracle.resurrected` | property | `Resurrection` | set on the relaunched game (to the old Java's version); a relaunch that is still too old stops instead of looping |
 | `-Dmiracle.directCalls=false` | property | loader | patch the old way: every patched spot calls the dispatcher with an id, instead of an `invokedynamic` site bound to its hook |
 | `-Dmiracle.gameVersion`, `-Dmiracle.obfuscated` | property | loader | override version detection (8.3) |
 | `-Dmiracle.configDir` | property | library, templates | config folder (default `config`, relative to the game folder) |
@@ -193,7 +197,7 @@ Creates `./<name>/` as a new project. It MUST refuse if that folder exists and i
 - **minecraft**: `--minecraft`, or Mojang's latest release if it is unobfuscated, otherwise (or when Mojang can't be reached) `26.2`.
 - **targets**: `["<minecraft>", "26.*", "1.21.11"]`.
 
-Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.5.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
+Files created: `miracle.mod.toml` (version `0.1.0`, `authors` = the OS user name, and `depends = ["miracle-toolchain>=0.6.0"]` unless `--ascetic`), `miracle.project.toml` (with comments, the `ascend` keys commented out), `src/<package>/<Class>.java`, an empty `resources/`, `fallback/README.md`, `.gitignore` (`build/`, `run/`) and `README.md`.
 
 The source file is one of:
 
@@ -525,10 +529,10 @@ After the freeze the loader writes down what every mod patches, one line per pat
 
 ```
 game 26.3 server
-mod hallelujah 0.5.0
+mod hallelujah 0.6.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 0.5.0
+mod miracle-toolchain 0.6.0
   ...
 ```
 
@@ -538,11 +542,20 @@ mod miracle-toolchain 0.5.0
 - `-Dmiracle.lock`: `update` (default) prints the difference and pins the new state; `strict` prints it and stops the game without touching the file (delete it, or start once with `update`, to accept); `off` does nothing. Another value stops the game.
 - An unreadable lock is reported and replaced.
 
+### 8.8 Resurrection
+
+MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgraded. A launcher starts each game version with the Java that version asks for (21 for 1.21.11), so the loader jar has a second main class, `io.github.hronosin.miracle.Resurrection`, compiled for Java 8. Launchers SHOULD use it (`prism-install.sh` does); `MiracleMain` stays for launchers that already run Java 25.
+
+- On Java 25 or newer it calls `MiracleMain.main` in the same process.
+- On an older Java it prints which Java it was started with (and, from the class path, which version the game asks for), looks for Java installations, and picks the newest that is 25 or newer. Where it looks, in order: `-Dmiracle.java` or `MIRACLE_JAVA`; `JAVA_HOME`; then, unless `-Dmiracle.javaSearch=explicit`, every `java` on the `PATH` and the usual places (system JVM folders, SDKMAN, `~/.jdks`, Prism Launcher's and the official launcher's runtimes, Adoptium, Zulu and Microsoft on Windows, macOS's `JavaVirtualMachines`). A Java's version comes from its `release` file, or from asking it.
+- It then starts `<java> -XX:+IgnoreUnrecognizedVMOptions <its own JVM options> -Dmiracle.resurrected=<old version> -cp <its class path> io.github.hronosin.miracle.MiracleMain <arguments>`, with the same standard streams, and exits with the game's exit code. Stopping it stops the game.
+- With no Java 25 or newer, it prints `No Java 25 or newer was found, so there is no miracle today.`, what it found, and how to fix it, and exits with 1.
+
 ## 9. The library
 
 ### 9.1 What it is
 
-`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.5.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
+`miracle-toolchain.jar` is a mod (id `miracle-toolchain`, `depends = ["miracle>=0.6.0"]`) with an entrypoint. Its package is `io.github.hronosin.miracle.toolchain`. It has no privileges a mod couldn't have: everything below is built on RGCT and the API in section 8.
 
 | part | alias | covers |
 |---|---|---|
@@ -747,11 +760,19 @@ Being<ThrownHolyWater> thrown = Creation.entity("thrown_holy_water",
 **Models.** `sculpted()` draws a mob from `assets/<ns>/geo/<name>.geo.json`, a geometry in Bedrock's format (what Blockbench saves for "Bedrock Entity" and "Generic Model" projects), painted with `assets/<ns>/textures/entity/<name>.png`; `sculpted(geometry, texture)` names other files (`"ns:name"` is `assets/ns/geo/name.geo.json`; the texture is a full id). The first geometry in the file is used:
 
 - bones become model parts, under their `parent` (a missing parent is noted, and the bone hangs from the root); a bone's `pivot` and `rotation` become the part's pose;
-- cubes become boxes: `origin`, `size`, box `uv`, `inflate`, `mirror` (a cube's own, or its bone's). Bedrock's origin is at the feet with Y up and every coordinate absolute; Java's is 24 pixels up with Y down, relative to the part's pivot. A part is at `(px, 24 − py, pz)`, or `(px − ppx, −(py − ppy), pz − ppz)` under a parent pivoted at `pp`; a box at `(ox − px, py − oy − h, oz − pz)`; rotations are `(−rx, −ry, rz)`;
+- cubes become boxes: `origin`, `size`, box `uv`, `inflate`, `mirror` (a cube's own, or its bone's). Bedrock's origin is at the feet with Y up and every coordinate absolute; Java's is 24 pixels up with Y down, relative to the part's pivot. A part is at `(px, 24 − py, pz)`, or `(px − ppx, −(py − ppy), pz − ppz)` under a parent pivoted at `pp`; a box at `(ox − px, py − oy − h, oz − pz)`; rotations carry over as they are, in degrees (Blockbench exports them in Java's sense already);
 - a cube with a `rotation` becomes a part of its own, `<bone>_r<n>`, turned about the cube's `pivot` (Java boxes can't rotate);
 - per-face UV (which Java models can't do) is read as box UV from the north face, with a warning; `description.texture_width`/`height` size the texture (64 by default).
 
 Parts move by name: the part named `head` (any case) follows the mob's gaze; parts with `leg` in their name swing as it walks (1.4 × the walk speed), parts with `arm` against them (1.0 ×); `right` in the name goes first, `left` half a step later, and unnamed pairs alternate. Everything else keeps the pose the file gives it. The model is read again on every resource reload (F3+T). A file that is missing or can't be read is logged with the reason, and the mob is drawn as a 16-pixel block. Sculpted beings MUST be `Mob`s; they are drawn by a `MobRenderer` with a shadow of half their width.
+
+**Animations.** If `assets/<ns>/animations/<name>.animation.json` exists (the geometry's name; Bedrock's format, what Blockbench exports), its animations play by the last part of their names (`animation.heretic.walk` is `walk`):
+
+- `idle` loops while the mob stands; `walk`, `walking`, `move` or `run` loops at the mob's life time, weighted by how fast it walks (`min(1, 1.5 × speed)`), and idle fades out as it does; `attack` or `swing` plays through a melee swing (its progress × the animation's length); `death` or `die` plays while it dies (`deathTime / 20` seconds). Other names are logged and not played.
+- Each frame starts from the file's pose. Without a walking animation, parts still move by name as above; with one, they don't. The `head` still looks where the mob looks, on top of any animation.
+- Channels: `rotation` (degrees, added), `position` (pixels, added, Y up as in Bedrock), `scale` (multiplied). A channel is a constant or keyframes by time; a keyframe is a value or `{pre, post, lerp_mode}`, `linear` or `catmullrom`. `loop`: `true` wraps, `hold_on_last_frame` and `false` hold the end; `animation_length` defaults to the last keyframe.
+- A value is a number or Molang: numbers, `+ − * /`, comparisons, `&&`, `||`, `!`, `?:`, parentheses; `math.` `sin`, `cos` (degrees), `abs`, `sqrt`, `exp`, `ln`, `floor`, `ceil`, `round`, `trunc`, `min`, `max`, `pow`, `mod`, `clamp`, `lerp`, `random`, `pi`; `query.`/`q.` `anim_time`, `life_time`, `ground_speed`, `modified_move_speed`, `modified_distance_moved`, `head_x_rotation`, `head_y_rotation`. `variable.` and `temp.` read as 0; statements (`;`, assignments) and unknown queries are logged and read as 0.
+- The file is read again on every resource reload; one that can't be read is logged, and the model moves by part names instead.
 
 **Natural spawning.** `spawns(weight, min, max, biomes...)` lets a being turn up by itself in groups of `min` to `max`, in the given biomes (ids, or `#tags`), with `weight` against the other mobs of its category there. It MAY be called more than once. Everything else follows the entity type's `MobCategory`: which cap it counts against; where it spawns (water categories in water, the rest on the ground, by the `MOTION_BLOCKING_NO_LEAVES` heightmap); and its rules (`MONSTER`: `Monster.checkMonsterSpawnRules`, in the dark and not in peaceful; `CREATURE`: `Animal.checkAnimalSpawnRules`, on grass in the light; others: `Mob.checkMobSpawnRules`). A `MISC` being never spawns naturally, and the log says so. It spawns during play, not when chunks are generated.
 - Names: `entity.<ns>.<name>` in the lang file. Drops: `data/<ns>/loot_table/entities/<name>.json`, none without one.
@@ -922,22 +943,21 @@ State other than these files is kept in memory and resets when the server restar
 
 Every game method named in section 9 has the same name and descriptor in all of them. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.
 
-"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer` or onto a local server with `--quickPlayMultiplayer`, a test mod pressing keys, throwing things and forging packets from inside: new blocks load in chunks, items and spawn eggs show in their tabs with their names, entities spawn, save, take hits and are drawn by the renderers they asked for, block entities tick, keep their items and progress across a server restart and drop their contents, menus open from a right click and from the server with the screens and captions they asked for (checked in screenshots), block entities are drawn with the items they enshrine and by `Altarpiece`s, sculpted mobs are drawn from their Blockbench models (checked in screenshots), new mobs spawn by themselves through the game's own spawner, keys save and fire, messages go both ways, forged batches are caught, and Communion lets matching games in and turns away the rest (a missing mod, an extra one, no library at all, a server without it) with the right lines. What needs eyes (textures, titles, meters) still wants a person.
+"Run" above means started with the loader and mods and exercised. "Headless" means the real client with software OpenGL and no window (26.x: SDL's offscreen driver; 1.21.11: Xvfb), started straight into a world with `--quickPlaySingleplayer` or onto a local server with `--quickPlayMultiplayer`, a test mod pressing keys, throwing things and forging packets from inside: new blocks load in chunks, items and spawn eggs show in their tabs with their names, entities spawn, save, take hits and are drawn by the renderers they asked for, block entities tick, keep their items and progress across a server restart and drop their contents, menus open from a right click and from the server with the screens and captions they asked for (checked in screenshots), block entities are drawn with the items they enshrine and by `Altarpiece`s, sculpted mobs are drawn from their Blockbench models and play their animations (checked in screenshots, idle and frozen mid-swing), new mobs spawn by themselves through the game's own spawner, keys save and fire, messages go both ways, forged batches are caught, and Communion lets matching games in and turns away the rest (a missing mod, an extra one, no library at all, a server without it) with the right lines. What needs eyes (textures, titles, meters) still wants a person.
 
 ## 12. Versioning and stability
 
 - The loader, the toolchain and the library share one version number, `MAJOR.MINOR.PATCH`. While `MAJOR` is 0, a minor release MAY change anything, and says what in its notes.
-- A mod states what it needs with `depends` (`"miracle>=0.5.0"`, `"miracle-toolchain>=0.5.0"`).
+- A mod states what it needs with `depends` (`"miracle>=0.6.0"`, `"miracle-toolchain>=0.6.0"`).
 - Stable within 0.x, unless a release note says otherwise: the file formats in sections 3.2, 3.3, 6.5 and 8.1; command names and aliases; the solemn and boring names in Appendix B.
 - Output wording is not an interface, apart from these markers, which scripts MAY rely on: `HERESY:`, `Baked:`, `Amen.`, `YOU DIED`, `BONFIRE LIT` (from `bonfire`/`backup`), and `[ok]`/`[!!]` in `confess`.
 
 ## 13. Known limits
 
-- Sculpted models move by part names only (a head that looks, legs that walk, arms that swing); Bedrock animation files are not read.
+- Animations play by name (idle, walk, attack, death); there are no animation controllers, no Molang variables, and no way to play a named animation from code yet.
 - Natural spawning happens during play; new chunks aren't populated with sculpted beings at generation.
 - Screens of one's own are plain game code, and differ between versions; only captions are portable.
 - Modrinth doesn't list MiracleLoader as a loader, so `ascend modrinth` can't publish until it does (5.1).
-- New entities don't spawn by themselves in the world; spawn eggs and commands only.
 - Communion asks bound mods for exactly the same version; there is no way yet to declare a range of compatible versions.
 - Mappings are Mojang's only; no Yarn.
 - `miracle bake` does not fail on holes (6.5); read its report.
@@ -946,7 +966,7 @@ Every game method named in section 9 has the same name and descriptor in all of 
 - Fallbacks compile against the primary version's libraries, not the target's.
 - `bonfire` doesn't check whether the game is running.
 - `miracle bake` compiles fallbacks for any `fallback/<v>/` folder, target or not.
-- MiracleLoader needs Java 25, so the oldest reachable versions are those that run on it.
+- MiracleLoader needs Java 25, so the oldest reachable versions are those that run on it. `Resurrection` (8.8) fixes the launcher's Java, not the game's: the game itself has to work on Java 25.
 
 ---
 

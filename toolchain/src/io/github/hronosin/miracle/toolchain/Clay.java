@@ -12,7 +12,8 @@ import java.util.Map;
  *
  * <p>The two editions measure differently. Bedrock puts the origin at the feet with Y up, and
  * every coordinate is absolute; Java puts it 24 pixels above the feet with Y down, and a part's
- * boxes are relative to its pivot. Bones become parts, cubes become boxes, and a cube with a
+ * boxes are relative to its pivot. Rotations carry over as they are (Blockbench writes both
+ * formats from one model: it negates X and Y rotations for each, so they agree). Bones become parts, cubes become boxes, and a cube with a
  * rotation of its own becomes a small part of its own, since Java boxes can't rotate.
  *
  * <p>Supported: bones with parents, pivots and rotations; cubes with box UV, {@code inflate} and
@@ -118,7 +119,7 @@ final class Clay {
                     float[] r = vec(cr);
                     Box box = box(uv, origin, size, cp, inflate, mirror);
                     children.add(new Part(name + "_r" + (++i), cp[0] - pivot[0], -(cp[1] - pivot[1]), cp[2] - pivot[2],
-                            -r[0] * DEG, -r[1] * DEG, r[2] * DEG, List.of(box), List.of()));
+                            r[0] * DEG, r[1] * DEG, r[2] * DEG, List.of(box), List.of()));
                 } else {
                     boxes.add(box(uv, origin, size, pivot, inflate, mirror));
                 }
@@ -139,7 +140,7 @@ final class Clay {
             y = -(pivot[1] - parentPivot[1]);
             z = pivot[2] - parentPivot[2];
         }
-        return new Part(name, x, y, z, -rot[0] * DEG, -rot[1] * DEG, rot[2] * DEG, List.copyOf(boxes), List.copyOf(children));
+        return new Part(name, x, y, z, rot[0] * DEG, rot[1] * DEG, rot[2] * DEG, List.copyOf(boxes), List.copyOf(children));
     }
 
     /** A Bedrock cube (absolute, Y up, origin at its lowest corner) as a Java box relative to {@code pivot}. */

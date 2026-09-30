@@ -1,0 +1,93 @@
+{
+	"format_version": "1.8.0",
+	"animations": {
+		"animation.heretic.idle": {
+			"loop": true,
+			"animation_length": 3.0,
+			"bones": {
+				"horn": {
+					"rotation": ["0", "0", "math.sin(query.anim_time * 120) * 6"]
+				},
+				"rightArm": {
+					"rotation": {
+						"0.0": [-10, 0, 0],
+						"1.5": {"post": [-18, 0, 0], "lerp_mode": "catmullrom"},
+						"3.0": [-10, 0, 0]
+					}
+				},
+				"book": {
+					"rotation": {
+						"0.0": [0, 0, 0],
+						"1.5": [-12, 0, 0],
+						"3.0": [0, 0, 0]
+					}
+				},
+				"leftArm": {
+					"rotation": {
+						"0.0": [0, 0, 0],
+						"1.5": [-4, 0, -3],
+						"3.0": [0, 0, 0]
+					}
+				}
+			}
+		},
+		"animation.heretic.walk": {
+			"loop": true,
+			"animation_length": 1.0,
+			"bones": {
+				"rightLeg": {
+					"rotation": {"0.0": [30, 0, 0], "0.5": [-30, 0, 0], "1.0": [30, 0, 0]}
+				},
+				"leftLeg": {
+					"rotation": {"0.0": [-30, 0, 0], "0.5": [30, 0, 0], "1.0": [-30, 0, 0]}
+				},
+				"rightArm": {
+					"rotation": {"0.0": [-35, 0, 0], "0.5": [-5, 0, 0], "1.0": [-35, 0, 0]}
+				},
+				"leftArm": {
+					"rotation": {"0.0": [25, 0, 0], "0.5": [-25, 0, 0], "1.0": [25, 0, 0]}
+				},
+				"body": {
+					"position": {
+						"0.0": [0, 0, 0],
+						"0.25": {"post": [0, 0.6, 0], "lerp_mode": "catmullrom"},
+						"0.5": [0, 0, 0],
+						"0.75": {"post": [0, 0.6, 0], "lerp_mode": "catmullrom"},
+						"1.0": [0, 0, 0]
+					}
+				},
+				"horn": {
+					"rotation": ["0", "0", "math.sin(query.anim_time * 720) * 10"]
+				}
+			}
+		},
+		"animation.heretic.attack": {
+			"animation_length": 0.5,
+			"bones": {
+				"rightArm": {
+					"rotation": {
+						"0.0": [0, 0, 0],
+						"0.2": {"post": [-160, 0, 10], "lerp_mode": "catmullrom"},
+						"0.5": [-20, 0, 0]
+					}
+				},
+				"book": {
+					"rotation": {"0.0": [0, 0, 0], "0.25": [40, 0, 0], "0.5": [0, 0, 0]}
+				}
+			}
+		},
+		"animation.heretic.death": {
+			"loop": "hold_on_last_frame",
+			"animation_length": 1.0,
+			"bones": {
+				"horn": {
+					"position": {"0.0": [0, 0, 0], "1.0": [3, -6, 1]},
+					"rotation": {"0.0": [0, 0, 0], "1.0": [0, 0, 90]}
+				},
+				"book": {
+					"position": {"0.0": [0, 0, 0], "0.6": [0, -9, 3]}
+				}
+			}
+		}
+	}
+}
