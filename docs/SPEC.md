@@ -493,7 +493,7 @@ The game's output passes through byte for byte, stdin included (a server's conso
 | cause | seen as | fatal with exit 0 |
 |---|---|---|
 | no graphics | `No context is current`, `No supported graphics backend was found`, WGL and GL context failures | yes |
-| no display | `Unable to initialize SDL: No available video device`, `No X11 DISPLAY variable was set` | yes |
+| no display | `Unable to initialize SDL: No available video device`, `No X11 DISPLAY variable was set`, `The DISPLAY environment variable is missing` (GLFW, before 26.3) | yes |
 | port taken | `FAILED TO BIND TO PORT`, `Address already in use` | no |
 | out of memory | `java.lang.OutOfMemoryError` | no |
 
@@ -994,7 +994,7 @@ State other than these files is kept in memory and resets when the server restar
 |---|---|---|
 | 26.3 | no | primary; everything in section 9 checked; client and dedicated server run, client also headless in tests, multiplayer included |
 | 26.2 | no | checked; client and dedicated server run |
-| 26.1, 26.1.1, 26.1.2 | no | checked (every library and example reference present) |
+| 26.1, 26.1.1, 26.1.2 | no | checked (every library and example reference present); 26.1.2's client runs, headless, the whole trial included |
 | 1.21.11 | yes | baked; client (through Prism, and headless in tests, multiplayer included) and dedicated server run |
 
 Every game method named in section 9 has the same name and descriptor in all of them. A new version is supported once the library bakes (or checks) against it without holes; if a future version renames something, the library gets a fallback for it (6.4), and mods using the library need not change.

@@ -24,7 +24,8 @@ final class Autopsy {
                 "Could not create GL context", "Failed to create OpenGL context", "Pixel format not accelerated"),
         NO_DISPLAY(true, "No display to open a window on: this looks like a session without a desktop (SSH, a container, a"
                 + " service). Run it from a desktop session, use 'miracle pray server', or, if you like pain, xvfb-run.",
-                "Unable to initialize SDL: No available video device", "No X11 DISPLAY variable was set"),
+                "Unable to initialize SDL: No available video device", "No X11 DISPLAY variable was set",
+                "The DISPLAY environment variable is missing"),
         PORT_TAKEN(false, "The port is taken: something (probably another server, maybe one you forgot) is already listening"
                 + " on it. Stop that one, or change server-port in server.properties in the run folder.",
                 "FAILED TO BIND TO PORT", "Address already in use"),
