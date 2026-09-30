@@ -584,6 +584,15 @@ MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgrade
 - It then starts `<java> -XX:+IgnoreUnrecognizedVMOptions <its own JVM options> -Dmiracle.resurrected=<old version> -cp <its class path> io.github.hronosin.miracle.MiracleMain <arguments>`, with the same standard streams, and exits with the game's exit code. Stopping it stops the game.
 - With no Java 25 or newer, it prints `No Java 25 or newer was found, so there is no miracle today.`, what it found, and how to fix it, and exits with 1.
 
+### 8.9 The Java agent
+
+`miracle-loader.jar`'s manifest names `Premain-Class: io.github.hronosin.miracle.Agent` (compiled for Java 8), so the loader also runs as `-javaagent:miracle-loader.jar[=<mods folder>]` with the game's own main class:
+
+- On a Java older than 25 it prints which Java it got and where to change it, and exits with 1.
+- Otherwise, before the game's `main`: mods are found (in the folder after `=`, else `miracle.modsDir`, else `mods`), resolved, and appended to the system class path; a mod's baked variant (8.3) is copied into a temporary jar appended before the mod's own, whose classes still count as the mod's (`Mods.owner`). Then the same steps as 8.4: `transform()`, freeze, report, lint, `miracle.lock`, the too-early check, and `onLaunch()`. A class-file transformer applies RGCT to every class loaded afterwards outside the JDK; if patching fails, the game stops with the crash banner instead of loading the class unpatched.
+- An exception escaping the game's main thread gets the same crash banner and blame as under `MiracleMain`, and exit code 1.
+- `miracle.target` and `miracle.gameClasspath` don't apply; everything else in 4.2 does.
+
 ## 9. The library
 
 ### 9.1 What it is

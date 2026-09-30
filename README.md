@@ -95,6 +95,16 @@ It looks in `-Dmiracle.java` or `MIRACLE_JAVA` (a Java home or a `java` binary) 
 | `-Dmiracle.javaSearch` | `auto` | `Resurrection`: `explicit` looks only at `miracle.java`/`MIRACLE_JAVA` and `JAVA_HOME` |
 | `-Dmiracle.showCommand` | `false` | `Resurrection`: print the relaunch command |
 
+### As a Java agent: any launcher, the official one included
+
+The loader jar is also a Java agent. Leave the game's main class alone and add one JVM argument:
+
+```
+-javaagent:/path/to/miracle-loader.jar
+```
+
+Before the game's own `main` runs, the agent finds the mods, puts them on the class path and patches game classes as they load: the same mods, variants, layers, `miracle.lock` and crash reports as with `MiracleMain`. In the official Minecraft Launcher that's Installations > Edit > More options > JVM arguments; name the mods folder after an `=` if it isn't `mods` in the game folder: `-javaagent:C:\miracle\miracle-loader.jar=C:\Users\You\AppData\Roaming\.minecraft\mods`. The profile's Java has to be 25 or newer (26.x runs on 25 anyway); an agent can't relaunch the game in another Java the way `Resurrection` does, so on an older one it says which setting to change and stops. The whole test suite also runs this way: `AGENT=1 ./test.sh`.
+
 ### Prism Launcher
 
 ```bash
@@ -645,6 +655,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] MiracleToolChain library: block entity renderers, custom entity models from Blockbench, natural spawning
 - [x] MiracleToolChain library: Bedrock animations for sculpted models (with Molang)
 - [x] Resurrection: started by an older Java, the game relaunches itself in Java 25
+- [x] Java agent mode: `-javaagent:miracle-loader.jar` with the game's own main class, for any launcher
 - [x] Windows: `build.cmd`, `miracle.cmd`, and one Java build for every OS; `miracle consecrate` installs into Prism anywhere
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 

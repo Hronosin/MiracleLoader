@@ -18,9 +18,15 @@ run_with() {
     rm -rf "$dir" && mkdir -p "$dir/mods"
     for j in "$@"; do cp "$j" "$dir/mods/"; done
     # shellcheck disable=SC2086
-    out="$(cd "$dir" && "$JAVA" ${JAVA_OPTS:-} -Dmiracle.dump=dump \
-        -cp "$ROOT/build/miracle-loader.jar:${GAME_JAR:-$ROOT/build/fake-minecraft.jar}" \
-        io.github.hronosin.miracle.MiracleMain --username Steve 2>&1)"
+    if [ -n "${AGENT:-}" ]; then
+        # The same game, started as it is, with MiracleLoader as a Java agent.
+        out="$(cd "$dir" && "$JAVA" ${JAVA_OPTS:-} -Dmiracle.dump=dump -javaagent:"$ROOT/build/miracle-loader.jar" \
+            -cp "${GAME_JAR:-$ROOT/build/fake-minecraft.jar}" net.minecraft.client.main.Main --username Steve 2>&1)"
+    else
+        out="$(cd "$dir" && "$JAVA" ${JAVA_OPTS:-} -Dmiracle.dump=dump \
+            -cp "$ROOT/build/miracle-loader.jar:${GAME_JAR:-$ROOT/build/fake-minecraft.jar}" \
+            io.github.hronosin.miracle.MiracleMain --username Steve 2>&1)"
+    fi
     code=$?
 }
 
@@ -690,6 +696,28 @@ expect_not lock-off "miracle.lock:"
 JAVA_OPTS=-Dmiracle.lock=maybe run_in "$LOCK_DIR" "$M/hello-mod.jar"
 expect_code lock-bad-mode 1
 expect lock-bad-mode "-Dmiracle.lock=maybe: that's not a mode. update, strict or off."
+
+# --- the same games with MiracleLoader as a Java agent -------------------------------------
+# (AGENT=1 ./test.sh runs every game test this way.)
+AGENT=1 run_with agent-hello "$M/hello-mod.jar" "$M/chaos-mod.jar"
+expect_code agent-hello 0
+expect agent-hello "praying for a miracle, as a Java agent"
+expect agent-hello "[hello-mod] hop, bytecode patch for Steve"
+expect agent-hello "Handing over to the game's own main. Amen."
+AGENT=1 GAME_JAR="$OBF" run_with agent-obf "$BAKED/hello-mod.jar"
+expect_code agent-obf 0
+expect agent-obf "uses its variant baked for"
+expect agent-obf "[hello-mod] constructor done, self is a Player: true"
+AGENT=1 run_with agent-badtype "$T/badtype-mod.jar"
+expect_code agent-badtype 1
+expect agent-badtype "NO MIRACLE OCCURRED"
+expect agent-badtype "thrown by a hook of mod 'badtype-mod'"
+if [ -n "$OLD_JAVA" ]; then
+    out="$("$OLD_JAVA" -javaagent:"$ROOT/build/miracle-loader.jar" -cp "$ROOT/build/fake-minecraft.jar" \
+        net.minecraft.client.main.Main 2>&1)"; code=$?
+    expect_code agent-old-java 1
+    expect agent-old-java "MiracleLoader (as a Java agent) needs Java 25 or newer"
+fi
 
 # --- scriptorium: IDE files, when Minecraft 26.3 is in the real cache ------------------------
 REAL_CACHE="${MIRACLE_HOME:-$HOME/.cache/miracle}"

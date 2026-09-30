@@ -146,8 +146,13 @@ public final class Build {
         // The one class any Java can run: on a Java older than 25 it finds a newer one and relaunches.
         compile(List.of("--release", "8", "-encoding", "UTF-8", "-Xlint:all,-options,-serial", "-Werror",
                 "-d", OUT.resolve("classes/miracle-loader").toString(),
-                "loader/boot/src/io/github/hronosin/miracle/Resurrection.java"));
+                "loader/boot/src/io/github/hronosin/miracle/Resurrection.java",
+                "loader/boot/src/io/github/hronosin/miracle/Agent.java"));
         buildJar(Paths.get("loader"), loaderJar, null, null);
+        // -javaagent:miracle-loader.jar: the agent's entry point, also Java 8.
+        Path loaderManifest = OUT.resolve("classes/loader-manifest.txt");
+        Files.writeString(loaderManifest, "Premain-Class: io.github.hronosin.miracle.Agent\n");
+        runJar("--update", "--file", loaderJar.toString(), "--manifest", loaderManifest.toString());
         preach(loaderJar);
         // Sources, for IDEs (miracle scriptorium attaches them): the API's docs on hover.
         runJar("--create", "--file", OUT.resolve("miracle-loader-sources.jar").toString(),

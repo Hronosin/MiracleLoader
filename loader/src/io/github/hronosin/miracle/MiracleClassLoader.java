@@ -21,7 +21,7 @@ import java.security.CodeSource;
  * path and only swap the main class. Only the JDK and the loader itself are delegated upward,
  * so mods and the game share exactly one copy of the Miracle API.
  */
-final class MiracleClassLoader extends URLClassLoader {
+final class MiracleClassLoader extends URLClassLoader implements Host {
 
     static {
         registerAsParallelCapable();
@@ -41,7 +41,13 @@ final class MiracleClassLoader extends URLClassLoader {
         this.dumpDir = dumpDir;
     }
 
-    void addJar(Path jar) {
+    @Override
+    public ClassLoader loader() {
+        return this;
+    }
+
+    @Override
+    public void addMod(Path jar) {
         try {
             addURL(jar.toUri().toURL());
         } catch (MalformedURLException e) {
@@ -49,13 +55,15 @@ final class MiracleClassLoader extends URLClassLoader {
         }
     }
 
-    /** Any URL, e.g. a folder inside a jar: {@code jar:file:/x.jar!/META-INF/miracle/baked/1.21.11/}. */
-    void addUrl(URL url) {
-        addURL(url);
+    /** A folder inside the jar: {@code jar:file:/x.jar!/META-INF/miracle/baked/1.21.11/}. */
+    @Override
+    public void addVariant(Path jar, String dir) throws MalformedURLException {
+        addURL(URI.create("jar:" + jar.toUri() + "!/" + dir).toURL());
     }
 
     /** True if the class was already defined by this loader. */
-    boolean isAlreadyLoaded(String className) {
+    @Override
+    public boolean isAlreadyLoaded(String className) {
         return findLoadedClass(className) != null;
     }
 

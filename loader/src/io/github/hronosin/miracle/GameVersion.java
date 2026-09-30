@@ -20,7 +20,7 @@ record GameVersion(String id, boolean obfuscated) {
 
     private static final Pattern ID = Pattern.compile("\"id\"\\s*:\\s*\"([^\"]+)\"");
 
-    static GameVersion detect(MiracleClassLoader game) {
+    static GameVersion detect(Host game) {
         String id = System.getProperty("miracle.gameVersion");
         URL versionJson = game.findResource("version.json");
         if (id == null && versionJson != null) {

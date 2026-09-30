@@ -71,7 +71,29 @@ public final class MiracleMain {
         TransformRegistry rgct = new TransformRegistry();
         MiracleClassLoader loader = new MiracleClassLoader(
                 gameClasspath(), MiracleMain.class.getClassLoader(), rgct, dumpDir);
+        Thread.currentThread().setContextClassLoader(loader);
+        prepare(loader, rgct, modsDir, () -> { });
 
+        MethodHandle gameMain;
+        try {
+            Class<?> mainClass = Class.forName(target, false, loader);
+            gameMain = MethodHandles.publicLookup().findStatic(mainClass, "main",
+                    MethodType.methodType(void.class, String[].class));
+        } catch (ClassNotFoundException e) {
+            throw new MiracleFailure("Game main class " + target + " not found. Is the game jar on the class path? "
+                    + "(set -Dmiracle.target for servers or other games)", e);
+        }
+
+        Log.info("Handing over to " + target + ". Amen.");
+        gameMain.invokeExact(args);
+    }
+
+    /**
+     * Everything between the mods folder and the game's main: discovery, dependencies, variants,
+     * the mods' transform(), the freeze, and onLaunch(). {@code armed} runs right after the freeze,
+     * before any mod's onLaunch() can touch the game (the Java agent installs its transformer there).
+     */
+    static void prepare(Host host, TransformRegistry rgct, Path modsDir, Runnable armed) throws Throwable {
         // --- discover -------------------------------------------------------------------------
         List<ModDiscovery.ModInfo> infos;
         try {
@@ -80,26 +102,24 @@ public final class MiracleMain {
             throw new MiracleFailure(e.getMessage());
         }
         infos = Dependencies.resolve(infos, VERSION);
-        GameVersion game = GameVersion.detect(loader);
+        GameVersion game = GameVersion.detect(host);
         Log.info("Game: " + game.describe());
         Log.info("Found " + infos.size() + " mod(s)" + (infos.isEmpty() ? "." : ":"));
         infos.forEach(m -> Log.info("  - " + m.display() + (m.library() ? ", a library" : "")));
-        boolean client = loader.findResource("net/minecraft/client/main/Main.class") != null;
+        boolean client = host.findResource("net/minecraft/client/main/Main.class") != null;
         Mods.revealed(infos.stream().map(m -> new Mods.Mod(m.id(), m.name(), m.version(), List.copyOf(m.authors()),
                         m.jar(), m.library(), m.depends().stream().map(Dependencies.Requirement::id).toList(), m.icon())).toList(),
                 new Mods.Game(game.id(), game.obfuscated(), client));
         for (ModDiscovery.ModInfo info : infos) {
-            pickVariant(info, game, loader, rgct);
-            loader.addJar(info.jar());
+            pickVariant(info, game, host, rgct);
+            host.addMod(info.jar());
         }
-
-        Thread.currentThread().setContextClassLoader(loader);
 
         // --- instantiate ----------------------------------------------------------------------
         Map<ModDiscovery.ModInfo, MiracleMod> mods = new LinkedHashMap<>();
         for (ModDiscovery.ModInfo info : infos) {
             if (!info.library()) {
-                mods.put(info, instantiate(info, loader));
+                mods.put(info, instantiate(info, host.loader()));
             }
         }
 
@@ -114,12 +134,12 @@ public final class MiracleMain {
         rgct.freeze();
         rgct.report().forEach(Log::info);
         rgct.lint().forEach(Log::warn);
-        warnAboutMissingTargets(rgct, loader, game);
+        warnAboutMissingTargets(rgct, host, game);
         pin(rgct, infos, modsDir, game, client);
 
         List<String> tooEarly = new ArrayList<>();
         for (String cls : rgct.targetedClasses()) {
-            if (loader.isAlreadyLoaded(cls)) {
+            if (host.isAlreadyLoaded(cls)) {
                 tooEarly.add(cls + " (targeted by " + String.join(", ", rgct.modsTargeting(cls)) + ")");
             }
         }
@@ -128,6 +148,7 @@ public final class MiracleMain {
                     + "can no longer apply. Some mod touched game classes inside transform():\n    "
                     + String.join("\n    ", tooEarly));
         }
+        armed.run();
 
         // --- phase 2: launch ------------------------------------------------------------------
         Mods.launch();
@@ -138,19 +159,6 @@ public final class MiracleMain {
                 throw new MiracleFailure("Mod " + e.getKey().display() + " failed in onLaunch()", t);
             }
         }
-
-        MethodHandle gameMain;
-        try {
-            Class<?> mainClass = Class.forName(target, false, loader);
-            gameMain = MethodHandles.publicLookup().findStatic(mainClass, "main",
-                    MethodType.methodType(void.class, String[].class));
-        } catch (ClassNotFoundException e) {
-            throw new MiracleFailure("Game main class " + target + " not found. Is the game jar on the class path? "
-                    + "(set -Dmiracle.target for servers or other games)", e);
-        }
-
-        Log.info("Handing over to " + target + ". Amen.");
-        gameMain.invokeExact(args);
     }
 
     /** miracle.lock: compare what the mods patch with what they patched when it was pinned. */
@@ -172,12 +180,12 @@ public final class MiracleMain {
      * A hook on a class the game doesn't have would wait forever for a class that never loads.
      * Say so up front, with the likely reason.
      */
-    private static void warnAboutMissingTargets(TransformRegistry rgct, MiracleClassLoader loader, GameVersion game) {
+    private static void warnAboutMissingTargets(TransformRegistry rgct, Host loader, GameVersion game) {
         for (String cls : rgct.targetedClasses()) {
             if (loader.findResource(cls.replace('.', '/') + ".class") == null) {
                 String why = game.obfuscated()
                         ? " Minecraft " + game.id() + " is obfuscated: the mod needs a variant baked for it"
-                          + " (tools/fetch-dictionary.sh " + game.id() + ", then rebuild). Until then these hooks do nothing."
+                          + " (miracle dictionary " + game.id() + ", then bake again). Until then these hooks do nothing."
                         : " Wrong game version, or a typo in the class name? These hooks will never run.";
                 Log.warn("RGCT: " + String.join(", ", rgct.modsTargeting(cls)) + " hook(s) " + cls
                         + ", but this game has no such class." + why);
@@ -189,12 +197,12 @@ public final class MiracleMain {
      * OSHI: a mod baked with miracle-bake carries ready-made variants for obfuscated versions.
      * The one for the running game goes on the class path in front of the mod's own classes.
      */
-    private static void pickVariant(ModDiscovery.ModInfo info, GameVersion game, MiracleClassLoader loader,
+    private static void pickVariant(ModDiscovery.ModInfo info, GameVersion game, Host loader,
                                     TransformRegistry rgct) throws java.io.IOException {
         ModDiscovery.BakeInfo bake = info.bake();
         if (bake != null && bake.baked().contains(game.id())) {
             String dir = "META-INF/miracle/baked/" + game.id() + "/";
-            loader.addUrl(java.net.URI.create("jar:" + info.jar().toUri() + "!/" + dir).toURL());
+            loader.addVariant(info.jar(), dir);
             Log.info("OSHI: " + info.id() + " uses its variant baked for " + game.id());
             try (java.util.jar.JarFile jf = new java.util.jar.JarFile(info.jar().toFile())) {
                 var names = jf.getJarEntry(dir + "rgct-names.txt");
@@ -271,7 +279,7 @@ public final class MiracleMain {
         return urls.toArray(URL[]::new);
     }
 
-    private static void crash(Throwable t) {
+    static void crash(Throwable t) {
         PrintStream err = System.err;
         err.println();
         err.println("==================================================");

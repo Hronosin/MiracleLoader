@@ -106,12 +106,23 @@ public final class Mods {
         } catch (RuntimeException e) {
             return Optional.empty();
         }
+        where = STAND_INS.getOrDefault(where, where);
         for (Mod m : require().values()) {
             if (m.jar().toAbsolutePath().normalize().equals(where)) {
                 return Optional.of(m);
             }
         }
         return Optional.empty();
+    }
+
+    private static final java.util.Map<Path, Path> STAND_INS = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * Loader use only: classes from {@code standIn} belong to the mod in {@code modJar}. The Java
+     * agent copies a baked variant into a jar of its own, and its classes are still the mod's.
+     */
+    public static void standIn(Path standIn, Path modJar) {
+        STAND_INS.put(standIn.toAbsolutePath().normalize(), modJar.toAbsolutePath().normalize());
     }
 
     /** Loader use only: called once RGCT is frozen, right before the first onLaunch(). */
