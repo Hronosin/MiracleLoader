@@ -976,7 +976,7 @@ Every game method named in section 9 has the same name and descriptor in all of 
 - The Prophecy sees only calls written in the dependent mod's own classes (9.3); `Blessing.priority` needs a constant.
 - String references to game names outside RGCT targets (reflection) are never translated (6.3).
 - Fallbacks compile against the primary version's libraries, not the target's.
-- Windows: the `.cmd` wrappers have been run under Wine with stand-in Javas, not yet on a real Windows machine; `test.sh` is bash (WSL on Windows).
+- Windows: checked under Wine with stand-in Javas and on one real Windows 11 (in a VM, so without OpenGL: the client stops at its window); `test.sh` is bash (WSL on Windows).
 - `bonfire` doesn't check whether the game is running.
 - `miracle bake` compiles fallbacks for any `fallback/<v>/` folder, target or not.
 - MiracleLoader needs Java 25, so the oldest reachable versions are those that run on it. `Resurrection` (8.8) fixes the launcher's Java, not the game's: the game itself has to work on Java 25.
