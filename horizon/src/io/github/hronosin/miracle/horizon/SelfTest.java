@@ -26,6 +26,8 @@ final class SelfTest {
         ballistics();
         frames();
         scheduler();
+        foam();
+        penrose();
         System.out.println("event-horizon self-test: " + passed + " passed, " + failed + " failed");
         if (failed > 0) {
             System.exit(1);
@@ -211,5 +213,242 @@ final class SelfTest {
         clock.tick();
         check("redshift: cancelled never runs", !log.toString().contains("x"));
         clock.reset();
+    }
+
+    private static void foam() {
+        QuantumFoam.Foam a = QuantumFoam.seeded(1);
+        QuantumFoam.Foam b = QuantumFoam.seeded(1);
+        boolean same = true;
+        for (int i = 0; i < 100; i++) {
+            same &= a.nextLong() == b.nextLong();
+        }
+        check("foam: the same seed, the same stream", same);
+        check("foam: another seed, another stream", QuantumFoam.seeded(1).nextLong() != QuantumFoam.seeded(2).nextLong());
+        check("foam: the same key, the same stream", QuantumFoam.keyed(5, "mymod:daily", 3, true).nextLong()
+                == QuantumFoam.keyed(5, "mymod:daily", 3, true).nextLong());
+        check("foam: another key, another stream", QuantumFoam.keyed(5, "mymod:daily", 3).nextLong()
+                != QuantumFoam.keyed(5, "mymod:daily", 4).nextLong());
+        check("foam: 1 and 1L are the same key, \"1\" isn't", QuantumFoam.keyed(5, 1).nextLong() == QuantumFoam.keyed(5, 1L).nextLong()
+                && QuantumFoam.keyed(5, 1).nextLong() != QuantumFoam.keyed(5, "1").nextLong());
+        java.util.UUID u = java.util.UUID.fromString("f81d4fae-7dec-11d0-a765-00a0c91e6bf6");
+        check("foam: UUIDs and Vecs as keys", QuantumFoam.keyed(9, u, new Vec(1, 2, 3)).nextLong()
+                == QuantumFoam.keyed(9, java.util.UUID.fromString(u.toString()), new Vec(1, 2, 3)).nextLong());
+        QuantumFoam.Foam used = QuantumFoam.keyed(7, "x");
+        used.nextLong();
+        used.nextLong();
+        check("foam: fork doesn't care about draws", used.fork("y").nextLong() == QuantumFoam.keyed(7, "x").fork("y").nextLong());
+        boolean refused = false;
+        try {
+            QuantumFoam.keyed(1, new Object());
+        } catch (IllegalArgumentException e) {
+            refused = true;
+        }
+        check("foam: an unusable key is refused", refused);
+        check("foam: a world's secret isn't its seed, and is stable", QuantumFoam.secret(42) != 42
+                && QuantumFoam.secret(42) == QuantumFoam.secret(42) && QuantumFoam.secret(42) != QuantumFoam.secret(43));
+
+        QuantumFoam.Foam r = QuantumFoam.seeded(99);
+        int lo = Integer.MAX_VALUE;
+        int hi = Integer.MIN_VALUE;
+        for (int i = 0; i < 10_000; i++) {
+            int v = r.between(-3, 3);
+            lo = Math.min(lo, v);
+            hi = Math.max(hi, v);
+        }
+        check("foam: between includes both ends", lo == -3 && hi == 3);
+        check("foam: between on the edge", r.between(Integer.MAX_VALUE - 1, Integer.MAX_VALUE) >= Integer.MAX_VALUE - 1);
+        List<Integer> nums = List.of(1, 2, 3, 4, 5, 6, 7, 8);
+        List<Integer> sample = r.sample(nums, 5);
+        check("foam: sample is distinct", sample.size() == 5 && new java.util.HashSet<>(sample).size() == 5 && nums.containsAll(sample));
+        List<Integer> sh = r.shuffled(nums);
+        check("foam: shuffled keeps everything", sh.size() == 8 && new java.util.HashSet<>(sh).equals(new java.util.HashSet<>(nums)));
+        Vec sum = Vec.ZERO;
+        boolean unit = true;
+        for (int i = 0; i < 20_000; i++) {
+            Vec d = r.direction();
+            unit &= near(d.length(), 1);
+            sum = sum.add(d);
+        }
+        check("foam: directions are unit and even", unit && sum.length() / 20_000 < 0.02);
+        Shape ball = Shape.sphere(new Vec(10, 64, 10), 3);
+        boolean in = true;
+        for (int i = 0; i < 200; i++) {
+            in &= r.inside(ball).map(ball::contains).orElse(false);
+        }
+        check("foam: points inside a shape", in);
+
+        QuantumFoam.Pool<String> loot = QuantumFoam.<String>pool().add("diamond", 1).add("iron", 9).add("dirt", 90);
+        java.util.Map<String, Integer> seen = new java.util.HashMap<>();
+        for (int i = 0; i < 200_000; i++) {
+            seen.merge(loot.roll(r), 1, Integer::sum);
+        }
+        check("foam: pool weights", Math.abs(seen.get("dirt") / 200_000.0 - 0.9) < 0.005
+                && Math.abs(seen.get("iron") / 200_000.0 - 0.09) < 0.004 && Math.abs(seen.get("diamond") / 200_000.0 - 0.01) < 0.002);
+        QuantumFoam.Pool<String> rare = QuantumFoam.<String>pool().add("star", 1).add("moon", 3);
+        QuantumFoam.Pool<String> chest = QuantumFoam.<String>pool().add(rare, 1).add("moon", 1).nothing(2);
+        check("foam: chance of, nested pools included", near(chest.chanceOf("moon"), 0.25 * 0.75 + 0.25)
+                && near(chest.chanceOf("star"), 0.0625) && near(chest.chanceOf(null), 0.5));
+        check("foam: outcomes", chest.outcomes().containsAll(java.util.Arrays.asList("star", "moon", null)) && chest.outcomes().size() == 3);
+        check("foam: an empty pool rolls nothing", QuantumFoam.<String>pool().roll(r) == null);
+        boolean negative = false;
+        try {
+            QuantumFoam.<String>pool().add("x", -1);
+        } catch (IllegalArgumentException e) {
+            negative = true;
+        }
+        check("foam: negative weights refused", negative);
+        QuantumFoam.Pool<String> named = QuantumFoam.pool("selftest:named");
+        named.add("a", 1);
+        check("foam: named pools are listed", QuantumFoam.named().get("selftest:named") == named);
+        boolean twice = false;
+        try {
+            QuantumFoam.pool("selftest:named");
+        } catch (IllegalArgumentException e) {
+            twice = true;
+        }
+        check("foam: pool names are unique", twice);
+        check("foam: histogram", QuantumFoam.histogram(loot, 1000).startsWith("null, 1000 rolls")
+                && QuantumFoam.histogram(loot, 1000).contains("dirt:"));
+
+        QuantumFoam.Bag<String> bag = QuantumFoam.bag(List.of("a", "b", "c", "d"));
+        boolean deals = true;
+        String last = null;
+        boolean noRepeat = true;
+        for (int round = 0; round < 300; round++) {
+            java.util.Set<String> got = new java.util.HashSet<>();
+            for (int i = 0; i < 4; i++) {
+                String s = bag.next(r);
+                noRepeat &= !s.equals(last);
+                last = s;
+                got.add(s);
+            }
+            deals &= got.size() == 4;
+        }
+        check("foam: a bag deals everything once a round", deals);
+        check("foam: a bag never repeats across a reshuffle", noRepeat);
+
+        QuantumFoam.Pity pity = QuantumFoam.pity(0.25);
+        check("foam: pity's step gives exactly its chance", Math.abs(QuantumFoam.Pity.rate(QuantumFoam.Pity.stepFor(0.25)) - 0.25) < 1e-9);
+        int hits = 0;
+        int streak = 0;
+        int longest = 0;
+        for (int i = 0; i < 200_000; i++) {
+            if (pity.roll("p", r)) {
+                hits++;
+                streak = 0;
+            } else {
+                longest = Math.max(longest, ++streak);
+            }
+        }
+        check("foam: pity hits as often as it says", Math.abs(hits / 200_000.0 - 0.25) < 0.005);
+        check("foam: pity's dry streaks are short", longest < pity.longest() && pity.longest() <= 12);
+        pity.roll("q", QuantumFoam.seeded(3));
+        check("foam: pity streaks are per owner", pity.streak("q") <= 1 && pity.streak("nobody") == 0);
+        QuantumFoam.reset();
+        check("foam: reset forgets streaks", pity.streak("p") == 0 && pity.streak("q") == 0);
+    }
+
+    private enum Weather { CLEAR, RAIN, THUNDER }
+
+    private static void penrose() {
+        Penrose.Number blade = Penrose.number("selftest:blade", 7).range(0, 100);
+        Penrose.touch("selftest:blade").by("swordplus").add(2);
+        Penrose.touch("selftest:blade").by("enchanty").multiply(1.5);
+        Penrose.Layer cap = Penrose.touch("selftest:blade").by("mymod").clamp(0, 12);
+        check("penrose: clamp((base + adds) * factors)", blade.getAsDouble() == 12.0);
+        cap.remove();
+        check("penrose: removing a layer, and the cache notices", blade.getAsDouble() == 13.5);
+        check("penrose: owner and explain", blade.explain(null).contains("+ 2.0 (swordplus)") && blade.explain(null).contains("× 1.5 (enchanty)")
+                && blade.explain(null).startsWith("selftest:blade = 13.5"));
+        check("penrose: apply to a base of one's own", blade.apply(10, null) == 18.0);
+
+        // the same result to the last bit, whatever the order
+        Random rnd = new Random(1);
+        boolean stable = true;
+        double expected = Double.NaN;
+        List<Object[]> ops = new java.util.ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            ops.add(new Object[] {"mod" + rnd.nextInt(6), rnd.nextInt(3), rnd.nextDouble() * 3 - 1});
+        }
+        for (int trial = 0; trial < 200; trial++) {
+            String id = "selftest:shuffle_" + trial;
+            Penrose.Number n = Penrose.number(id, 0.1);
+            List<Object[]> order = new java.util.ArrayList<>(ops);
+            java.util.Collections.shuffle(order, rnd);
+            for (Object[] op : order) {
+                Penrose.Touch<Object> t = Penrose.touch(id).by((String) op[0]);
+                double x = (double) op[2];
+                switch ((int) op[1]) {
+                    case 0 -> t.add(x);
+                    case 1 -> t.multiply(1 + x / 10);
+                    default -> t.add(x / 7);
+                }
+            }
+            double v = n.getAsDouble();
+            if (trial == 0) {
+                expected = v;
+            } else {
+                stable &= Double.doubleToLongBits(v) == Double.doubleToLongBits(expected);
+            }
+        }
+        check("penrose: any load order, the same bits", stable);
+
+        Penrose.Number speed = Penrose.number("selftest:speed", 1);
+        Penrose.touch("selftest:speed").by("a").set(2);
+        Penrose.touch("selftest:speed").by("b").priority(5).set(3);
+        check("penrose: the highest priority set wins", speed.getAsDouble() == 3.0 && speed.conflicts(null).isEmpty());
+        Penrose.touch("selftest:speed").by("c").priority(5).set(4);
+        check("penrose: a tie with different values: nobody wins", speed.getAsDouble() == 1.0
+                && speed.conflicts(null).size() == 1 && speed.conflicts(null).get(0).contains("'b' sets 3.0")
+                && speed.conflicts(null).get(0).contains("'c' sets 4.0"));
+        Penrose.touch("selftest:speed").by("b").priority(5).set(4);
+        check("penrose: within a mod, its last set counts; agreeing is fine", speed.getAsDouble() == 4.0 && speed.conflicts(null).isEmpty());
+
+        Penrose.Number hp = Penrose.number("selftest:hp", 20).range(1, 30);
+        Penrose.touch("selftest:hp").by("x").clamp(0, 5);
+        Penrose.touch("selftest:hp").by("y").clamp(10, 50);
+        check("penrose: ranges that don't overlap: none applies, the owner's range still does", hp.getAsDouble() == 20.0
+                && hp.conflicts(null).size() == 1);
+        Penrose.touch("selftest:hp").by("z").add(100);
+        check("penrose: the owner's range is last", hp.getAsDouble() == 30.0);
+
+        Penrose.Number ctx = Penrose.number("selftest:ctx", 10);
+        Penrose.touch("selftest:ctx", String.class).by("s").add(5);
+        Penrose.touch("selftest:ctx", Integer.class).by("i").when(i -> i > 3).multiply(2);
+        Penrose.touch("selftest:ctx").by("f").add(o -> o instanceof Integer i ? i : 0);
+        check("penrose: typed and conditional layers", ctx.getAsDouble() == 10.0 && ctx.getAsDouble("hi") == 15.0
+                && ctx.getAsDouble(2) == 12.0 && ctx.getAsDouble(4) == 28.0);
+        Penrose.touch("selftest:ctx").by("bad").when(o -> o.toString().isEmpty()).add(1000);
+        check("penrose: a condition that throws doesn't count", ctx.getAsDouble() == 10.0);
+
+        Penrose.touch("selftest:late").by("early").add(3);
+        check("penrose: touched before declared, waiting", Penrose.declared("selftest:late").isEmpty()
+                && Penrose.layers("selftest:late").size() == 1);
+        check("penrose: declared later picks them up", Penrose.number("selftest:late", 1).getAsDouble() == 4.0);
+        boolean again = false;
+        try {
+            Penrose.number("selftest:late", 2);
+        } catch (IllegalArgumentException e) {
+            again = true;
+        }
+        check("penrose: one declaration per id", again);
+        boolean badId = false;
+        try {
+            Penrose.touch("No Spaces Please");
+        } catch (IllegalArgumentException e) {
+            badId = true;
+        }
+        check("penrose: ids look like mod:name", badId);
+
+        Penrose.Choice<Boolean> pvp = Penrose.flag("selftest:pvp", true);
+        Penrose.touch("selftest:pvp").by("peace").set(false);
+        Penrose.touch("selftest:pvp").by("chaos").add(1);
+        check("penrose: flags take set, and nothing else", !pvp.get() && pvp.conflicts(null).size() == 1);
+        Penrose.Choice<Weather> weather = Penrose.choice("selftest:weather", Weather.CLEAR);
+        Penrose.touch("selftest:weather").by("storms").priority(1).set(Weather.THUNDER);
+        Penrose.touch("selftest:weather").by("wrong").priority(2).set("RAIN");
+        check("penrose: choices, and a wrong type doesn't count", weather.get() == Weather.THUNDER
+                && weather.explain(null).contains("THUNDER (storms, priority 1)"));
+        check("penrose: everything is listed", Penrose.ids().containsAll(List.of("selftest:blade", "selftest:pvp", "selftest:late")));
     }
 }

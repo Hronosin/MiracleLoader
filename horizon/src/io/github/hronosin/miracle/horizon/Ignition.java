@@ -18,8 +18,10 @@ final class Ignition {
             Redshift.server().reset();
             Accretion.reset();
             Ergosphere.reset();
+            QuantumFoam.reset();
         });
         Omens.entityDied((entity, source) -> Accretion.forget(entity));
         Omens.clientTick(() -> Redshift.client().tick());
+        Telescope.install();
     }
 }

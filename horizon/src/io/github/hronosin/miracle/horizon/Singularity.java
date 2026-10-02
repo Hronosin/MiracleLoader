@@ -1,6 +1,7 @@
 package io.github.hronosin.miracle.horizon;
 
 import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.projectile.ProjectileUtil;
 import net.minecraft.world.level.ClipContext;
@@ -14,7 +15,9 @@ import net.minecraft.world.phys.Vec3;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.function.Predicate;
+import java.util.random.RandomGenerator;
 
 /**
  * Singularity (boring name: Raycast): what a ray hits, and what's inside a {@link Shape}. Works
@@ -106,5 +109,42 @@ public final class Singularity {
             out.add(Geodesic.block(b));
         }
         return out;
+    }
+
+    /**
+     * A random spot within {@code radius} of {@code center} where a mob can stand: a sturdy top
+     * under its feet, no collision and no fluid in the two blocks above. Only loaded chunks are
+     * looked at. Returns the middle of the block, at the height of the feet.
+     */
+    public static Optional<Vec> somewhere(Level level, Vec center, double radius, RandomGenerator rng) {
+        int top = (int) Math.floor(center.y() + radius);
+        int bottom = (int) Math.floor(center.y() - radius);
+        for (int i = 0; i < 64; i++) {
+            double a = rng.nextDouble() * Math.PI * 2;
+            double r = radius * Math.sqrt(rng.nextDouble());
+            int x = (int) Math.floor(center.x() + Math.cos(a) * r);
+            int z = (int) Math.floor(center.z() + Math.sin(a) * r);
+            for (int y = top; y >= bottom; y--) {
+                BlockPos feet = new BlockPos(x, y, z);
+                if (!level.isLoaded(feet)) {
+                    break;
+                }
+                if (standable(level, feet)) {
+                    return Optional.of(new Vec(x + 0.5, y, z + 0.5));
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
+    /** Whether a mob fits with its feet in this block. */
+    public static boolean standable(Level level, BlockPos feet) {
+        BlockPos below = feet.below();
+        BlockPos head = feet.above();
+        return level.getBlockState(below).isFaceSturdy(level, below, Direction.UP)
+                && level.getBlockState(feet).getCollisionShape(level, feet).isEmpty()
+                && level.getBlockState(head).getCollisionShape(level, head).isEmpty()
+                && level.getFluidState(feet).isEmpty()
+                && level.getFluidState(head).isEmpty();
     }
 }

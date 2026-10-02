@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.0.0 |
+| Version | 1.0.1 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -565,7 +565,7 @@ game 26.3 server
 mod hallelujah 1.0.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 1.0.0
+mod miracle-toolchain 1.0.1
   ...
 ```
 
@@ -973,6 +973,9 @@ A refusal reads `Communion refused. Your mods and the server's don't match:`, th
 - `Redshift`: `server()` (default) and `client()` clocks; `in`/`after`, `repeat`/`every` (`times`), `during`/`over` (progress 0 to exactly 1 over n calls); `bound(entity)`; a failing task is cancelled and logged. `cooldown(ticks)` per entity. Everything scheduled, every boost and aura, and every cooldown ends when the server stops.
 - `Hawking`: `points`, `line`, `circle`, `sphere` (Fibonacci), `helix`, `curve`, `outline` (server side), and the same shapes as lists of points.
 - `Spaghettification`: `stretch` (at once or eased over ticks), `restore`, `factor`: a `SCALE` modifier with id `event-horizon:spaghettification`.
+- `QuantumFoam` (0.2): streams are `Foam`s (a `java.util.random.RandomGenerator`; xoroshiro128++): `random()` (per thread, securely seeded), `seeded(seed)`, `keyed(seed, key...)` and `of(level, key...)` (the same for the same seed and key, whatever was drawn before; `fork(key...)` keys further from where a stream started), `from(RandomSource)`. Key parts: strings, whole numbers (1 and 1L are the same), other numbers, booleans, characters, UUIDs, enums, `Vec`s, int arrays, entities (by UUID) and block positions; anything else is refused. A world's streams start from the first 8 bytes of SHA-256 of `"event-horizon:quantum-foam:" + seed`, never from the seed itself. On `Foam` and, for `random()`, statically: `chance`, `maybe`, `between` (whole numbers: both ends included), `oneOf`, `pick`, `sample` (distinct), `shuffled`; on `Foam`: `gaussian`, `direction` (uniform on the sphere), `inside(shape)` (uniform, empty after 4096 misses), `roll(pool)`. `pool()` / `pool(id)` (named pools are unique and listed by Telescope): `add(item, weight)`, `add(pool, weight)`, `nothing(weight)`; weights from 0 up; `roll` (null for nothing or an empty pool), `roll(n)` (nothings left out), `chanceOf`, `outcomes`. `bag(items)`: every item once per round, never the same item twice in a row across a reshuffle. `pity(p)`: each miss raises the next try's chance by a step chosen so the long-run rate is exactly p, a hit starts over; streaks per owner (entities by UUID), forgotten when the server stops; `longest()` is the most tries it can take. `somewhere(level, center, radius)`, through `Singularity.somewhere`/`standable`: a sturdy top below, no collision and no fluid in the two blocks above, loaded chunks only.
+- `Penrose` (0.2): `number(id, base)` (with `range(min, max)`, the owner's bounds), `flag(id, base)`, `choice(id, base)` declare a value, once per id (`namespace:path`); the declaring mod is its owner. `touch(id)` or `touch(id, contextType)` changes a value by id, declared or not yet (layers wait), with `when` (all must hold), `priority` (for `set`), `by(modId)` (default: the mod whose code calls, by its jar), then `add`, `multiply` (numbers or formulas of the context), `clamp`, `set`; each returns a `Layer` (`remove()`). A layer with a context type applies only when the value is read for a context of that type. Numbers: `range(clamp((base + Σ adds) × Π factors))`, base = the winning `set` or the declared base (or, for `apply(base, context)`, the given one); adds and factors are applied in order of mod id, then amount, then the order the layers were made in, so any load order gives the same bits. `set`: the highest priority wins, each mod's last `set` at a priority counts; different values at the same top priority are a conflict and nobody wins (the base stays). Clamps intersect; ranges that don't overlap are a conflict and none of them applies. Choices take only `set` of their type. A layer of the wrong kind or type, a condition or a formula that throws, doesn't count. Conflicts are logged once each (`[Event Horizon] Penrose: ...`) and never thrown; `conflicts(context)` and `explain(context)` show them. Values are read with `get`/`getAsDouble`/`getInt`, with or without a context; without one, numbers with only unconditional constant layers are cached until a layer changes.
+- `Telescope` (0.2): `/horizon` for permission level 2: `values`, `why <id>` (for the command's entity: `execute as`), `dice <rolls> <pool>`.
 
 ## 10. Templates
 
@@ -1024,7 +1027,7 @@ What isn't:
 - The bytecode RGCT writes into game classes, the order of lines in reports, and all other output wording (Yukari included).
 - Which game versions are supported (section 11): new ones are added as they come; an old one is dropped only in a minor release that says so.
 
-A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.1.0"`).
+A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.2.0"`).
 
 ## 13. Known limits
 

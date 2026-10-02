@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 1.0.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 1.0.1, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -622,6 +622,9 @@ MiracleToolChain covers what most mods need. Event Horizon covers what they don'
 | `Redshift` | Scheduler | later, every N ticks, N times, smoothly over a stretch of ticks, bound to an entity's life; cooldowns per entity |
 | `Hawking` | Particles | lines, circles, Fibonacci spheres, helices, curves and shape outlines, in particles |
 | `Spaghettification` | Scale | grow and shrink living things through the game's scale attribute, eased over time |
+| `QuantumFoam` | Dice | randomness for the especially lazy: weighted pools (nested, with "nothing"), a bag that deals everything once before repeating, pity that makes 25% feel like 25%, streams that are the same for the same world and key (a daily reward that can't be rerolled by relogging), points in shapes, safe spots to stand |
+| `Penrose` | Values | the loader's merge rules for your own numbers, flags and choices: other mods change them by name without depending on you, in any load order, to the last bit the same; ties and impossible ranges are reported, never thrown |
+| `Telescope` | Debug | `/horizon values`, `/horizon why <id>` (how a value came out, step by step, and who did what), `/horizon dice <rolls> <pool>` (what came up against what should have) |
 
 ```java
 Singularity.Hit hit = Singularity.look(player, 32);
@@ -633,7 +636,31 @@ if (hit.entity() instanceof LivingEntity target && COOLDOWN.tryStart(player)) {
 }
 ```
 
-Checked on real 26.3 and 1.21.11 clients, in a world: an armor stand launched onto a spot 12 ticks away landed within a millionth of a block of it; a player flung upward rose 6 blocks as their own client saw it; boosts applied and expired on time, a stat clamped and spent, an aura found what was in it, scaling eased to 1.5, the scheduler ran everything in order. Plus 53 checks of the math in `SelfTest`, no game needed.
+Penrose and QuantumFoam, together:
+
+```java
+// your mod
+static final Penrose.Number REACH = Penrose.number("mymod:reach", 4).range(0, 64);
+static final QuantumFoam.Pool<Item> LOOT = QuantumFoam.<Item>pool("mymod:loot")
+        .add(Items.DIAMOND, 1).add(Items.IRON_INGOT, 9).add(Items.DIRT, 90);
+double reach = REACH.get(player);
+Item daily = QuantumFoam.of(level, "mymod:daily", player, day).roll(LOOT);   // the same all day, relog or not
+
+// someone else's mod, no depends on yours: does nothing unless yours is there
+Penrose.touch("mymod:reach").add(1);
+Penrose.touch("mymod:reach", Player.class).when(Player::isCrouching).multiply(2);
+```
+
+```
+> /horizon why mymod:reach
+mymod:reach = 10.0 (for Pilgrim)
+  base 4.0 (mymod)
+  + 1.0 (other-mod)
+  × 2.0 (other-mod, for Player, when...)
+  range 0.0..64.0 (mymod)
+```
+
+Checked on real 26.3 and 1.21.11 clients, in a world: an armor stand launched onto a spot 12 ticks away landed within a millionth of a block of it; a player flung upward rose 6 blocks as their own client saw it; boosts applied and expired on time, a stat clamped and spent, an aura found what was in it, scaling eased to 1.5, the scheduler ran everything in order. For 0.2, on 26.3, 1.21.11 and 26.1.2: a value declared by one mod and changed by name by another, for a player and for nobody; world-keyed rolls the same twice and different the next day; a safe spot found on a platform in the sky; `/horizon values`, `why` (also `execute as` the player) and `dice` (10,000 rolls: 90.1% dirt, 8.7% iron, 1.2% diamond). Plus 102 checks in `SelfTest`, no game needed, among them 200 shuffled load orders giving the same value to the last bit.
 
 ## Lifecycle
 
@@ -684,6 +711,8 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] Resurrection: started by an older Java, the game relaunches itself in Java 25
 - [x] Java agent mode: `-javaagent:miracle-loader.jar` with the game's own main class, for any launcher
 - [x] Event Horizon Extension (experimental): vectors, curves, raycasts, ballistics, boosts and stats, auras, scheduler, particles, scale
+- [x] Event Horizon 0.2: QuantumFoam (random for the lazy), Penrose (merge rules for mods' own values), Telescope (`/horizon`)
+- [ ] Event Horizon 0.3: Wormhole (optional links between mods), Lensing (bring-your-own shaders, one dialect for every version)
 - [x] Windows: `build.cmd`, `miracle.cmd`, and one Java build for every OS; `miracle consecrate` installs into Prism anywhere
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 
