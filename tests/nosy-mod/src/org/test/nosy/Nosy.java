@@ -14,6 +14,7 @@ public final class Nosy implements MiracleMod {
     @Override
     public void onLaunch() {
         System.out.println("[nosy] launched, did nothing nosy");
+        System.out.println("[nosy] backend: " + io.github.hronosin.miracle.api.Mods.graphicsBackend());
     }
 
     static void phoneHome() throws Exception {

@@ -105,6 +105,55 @@ final class LensingClient {
         return out;
     }
 
+    /** By the GPU device's own classes: their packages say which backend they belong to. */
+    static String backend() {
+        Object device;
+        try {
+            Class<?> rs = Class.forName("com.mojang.blaze3d.systems.RenderSystem", true, Minecraft.class.getClassLoader());
+            device = rs.getMethod("getDevice").invoke(null);
+        } catch (ReflectiveOperationException | RuntimeException e) {
+            return "unknown";
+        }
+        if (device == null) {
+            return "unknown";
+        }
+        String found = backendOf(device, 0, java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>()));
+        return found == null ? "unknown" : found;
+    }
+
+    private static String backendOf(Object o, int depth, Set<Object> seen) {
+        if (o == null || depth > 2 || !seen.add(o)) {
+            return null;
+        }
+        String n = o.getClass().getName();
+        if (n.contains(".vulkan.")) {
+            return "vulkan";
+        }
+        if (n.contains(".opengl.")) {
+            return "opengl";
+        }
+        if (!n.startsWith("com.mojang.")) {
+            return null;
+        }
+        for (Class<?> k = o.getClass(); k != null && k != Object.class; k = k.getSuperclass()) {
+            for (Field f : k.getDeclaredFields()) {
+                if (Modifier.isStatic(f.getModifiers()) || f.getType().isPrimitive()) {
+                    continue;
+                }
+                try {
+                    f.setAccessible(true);
+                    String r = backendOf(f.get(o), depth + 1, seen);
+                    if (r != null) {
+                        return r;
+                    }
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                    // not ours to look into
+                }
+            }
+        }
+        return null;
+    }
+
     static double screenEffectScale() {
         return Minecraft.getInstance().options.screenEffectScale().get();
     }

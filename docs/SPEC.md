@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.2.0 |
+| Version | 1.3.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -174,6 +174,7 @@ Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the 
 | `-Dmiracle.lock` | property | loader | `update` (default), `strict` or `off` (8.7) |
 | `-Dmiracle.lockFile` | property | loader | where `miracle.lock` lives (default: next to the mods folder) |
 | `-Dmiracle.rawGraphics` | property | loader | since 1.2.0: `warn` (default), `refuse` or `allow`, for mods that call OpenGL or Vulkan directly (8.10) |
+| `-Dmiracle.backend` | property | loader | since 1.3.0: `auto` (default: the game's own `options.txt`), `opengl` or `vulkan`: which graphics backend the game is set to use (8.10) |
 
 ## 5. Commands
 
@@ -563,6 +564,7 @@ Available from phase 2 on.
 | `game()` | `Game(version, obfuscated, client)`; `client` is false on a dedicated server |
 | `launched()` | true from phase 3 on |
 | `owner(Class)` | the mod whose jar (baked variants included) a class came from, or empty |
+| `graphicsBackend()` | since 1.3.0: the graphics backend the game is set to use, known before it starts: `"opengl"`, `"vulkan"`, `"default"` (the game picks when it starts) or `"none"` (a server) (8.10) |
 | `entangled(id)` | since 1.1.0: the mods `id` is entangled with (8.2), in its `entangles` order; empty for a mod with none, or one that isn't there |
 
 ### 8.6 Patching on behalf of dependents
@@ -578,7 +580,7 @@ game 26.3 server
 mod hallelujah 1.0.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 1.2.0
+mod miracle-toolchain 1.3.0
   ...
 ```
 
@@ -624,7 +626,9 @@ Right after the mod list, the loader reads every mod jar's classes (and fallback
 
 A mod that names notable kinds gets one line: `Reach: <id> starts processes, uses the network. (miracle zandatsu shows where.)`. This is a label, not a verdict and not a sandbox (Java 25 has none): it sees what the code names, not what it does; reflection can hide more, and naming isn't misusing.
 
-**Raw graphics.** A mod that calls OpenGL or Vulkan past the game's own API (blaze3d, renderpearl) breaks on the other backend and in other mods' rendering. `-Dmiracle.rawGraphics`: `warn` (default) logs, per mod, the first such call and where; `refuse` stops the game listing every such mod; `allow` says nothing (the kind still shows in the `Reach` line). Another value stops the game. `bake` warns the author about the same, after baking.
+**The backend** (since 1.3.0). On clients, before the mods' code runs, the loader works out which graphics backend the game is set to use and logs it (`Graphics: Vulkan (options.txt)`): `-Dmiracle.backend=opengl|vulkan` if the player says so; otherwise (`auto`, the default) `preferredGraphicsBackend` in `options.txt` in the game folder (`--gameDir`, else the working folder): `"opengl"`, `"vulkan"` or `"default"`, which is also what a missing file or setting means. Versions before 26.2 have OpenGL only, whatever is set. Servers: `none`. Another `-Dmiracle.backend` value stops the game. `Mods.graphicsBackend()` returns it; what the game ends up running is Event Horizon's `Lensing.backend()` (9.15).
+
+**Raw graphics.** A mod that calls OpenGL or Vulkan past the game's own API (blaze3d, renderpearl) breaks other mods' rendering, and doesn't work on the other backend. `-Dmiracle.rawGraphics`: `warn` (default) logs, per mod, the first such call and where, and what that means for the backend the game is set to (can work here; won't work here; won't if the game picks the other); `refuse` stops the game listing every such mod; `allow` says nothing (the kind still shows in the `Reach` line). Another value stops the game. Servers draw nothing, so the rule doesn't apply there. `bake` warns the author about the same, after baking.
 
 ## 9. The library
 
@@ -1011,7 +1015,7 @@ A refusal reads `Communion refused. Your mods and the server's don't match:`, th
 - `Telescope` (0.2): `/horizon` for permission level 2: `values`, `why <id>` (for the command's entity: `execute as`), `dice <rolls> <pool>`, and (0.3) `bridges`.
 - `Wormhole` (0.3): `to("<id>")` or `to("<id> >= <version>")` makes a bridge from the calling mod; `open(className)` runs it once, if the other mod is there and new enough: the class is loaded by the caller's class loader only then, MUST be a `Runnable` with a public constructor that takes nothing, and is run at once. Returns true if it ran; false if the other mod is missing or too old (`CLOSED`: nothing loaded) or the bridge failed (`FAILED`: not found, not a `Runnable`, a linkage error, or anything it threw; logged with the first lines of the stack, never rethrown). A second `open` on one bridge is an error. Opening a bridge to a mod not in the caller's `entangles` works, with a warning once. `possible()`, `state()`, `why()`, `bridges()`. Services: `offer(id, service)` (`priority(n)`, `withdraw()`), `seek(id, type)` (the offers that are a `type`: the highest priority wins; different offers tied at the top are a conflict, logged once, and nobody wins: empty), `all(id, type)` (highest priority first, then by mod id). `report()` is what `/horizon bridges` shows.
 - `Lensing` (0.3): GLSL comes in two dialects: *classic* (1.21.11 to 26.2: `#moj_import`, `in`/`out` without locations) and *separate* (26.3 on: `#include`, `#extension GL_ARB_separate_shader_objects : require` after `#version`, raised to at least 330, and `layout(location = N)` on every top-level `in` and `out` of `.vsh` and `.fsh` files). On clients, every shader file the game loads from a namespace other than `minecraft` (stages and, separately loaded or imported, includes) is translated to the running version's dialect (logged once per file); a file already in it is left as it is, and classic to separate and back gives the same text. Added locations are numbered in declaration order, separately for `in` and `out`, skipping numbers already written; for classic, locations on `in`/`out` are removed. Function parameters, block comments and anything inside braces are left alone; only syntax is translated. `translate(source, dialect, stage)`, `dialectOf`, `dialect()` (of the running game). Post effects: `add`, `remove`, `clear`, `forTicks` on a `ServerPlayer` use the game's own per-player list from 26.3 on (sent to the player, saved with them; `add` is false if it was already there); before 26.3 they return false (said once in the log). `here(id)`, `hereForTicks`, `clearHere`, `showing()` on clients, any version: from 26.3 the effect joins the player's list and stays when the server changes it (a hook on `LocalPlayer#setActivePostEffects`); before, it takes the game renderer's one slot. Hooks: `ShaderManager#loadShader` (and from 26.3 `loadInclude`), clients only.
-  (0.4) Uniforms from code: `uniform(effect, name, DoubleSupplier | Supplier<float[]> | float...)`, `clearUniforms(effect)`. A uniform named in a block of a pass of that effect's `post_effect` JSON takes its value from code, worked out before each frame the pass is drawn (render thread); the block's other fields keep the JSON's values. When a block's bytes change, it gets a new buffer (the game's are read-only), laid out by std140 in the JSON's field order, padded to 16 bytes: `float`, `int` (rounded), `vec2`, `vec3`, `vec4`, `ivec3`, `matrix4x4` (column by column); other types are refused. If that machinery fails once, it stops (logged) and the JSON's values stay. `std140(fields, values)` and `Field` are public. `screenEffectScale()`: the player's "Distortion Effects" setting, 0 to 1 (1 outside a client).
+  (0.4) Uniforms from code: `uniform(effect, name, DoubleSupplier | Supplier<float[]> | float...)`, `clearUniforms(effect)`. A uniform named in a block of a pass of that effect's `post_effect` JSON takes its value from code, worked out before each frame the pass is drawn (render thread); the block's other fields keep the JSON's values. When a block's bytes change, it gets a new buffer (the game's are read-only), laid out by std140 in the JSON's field order, padded to 16 bytes: `float`, `int` (rounded), `vec2`, `vec3`, `vec4`, `ivec3`, `matrix4x4` (column by column); other types are refused. If that machinery fails once, it stops (logged) and the JSON's values stay. `std140(fields, values)` and `Field` are public. `screenEffectScale()`: the player's "Distortion Effects" setting, 0 to 1 (1 outside a client). (0.4.1) `backend()`: what the game actually runs once started, `"opengl"` or `"vulkan"`, from the packages of the GPU device's classes; `"unknown"` before there is one, `"none"` off a client.
   (0.4) A broken effect: when a post effect outside `minecraft` fails to load (26.3: a compilation error), the game's recovery (a resource reload without packs, which ends in a crash for a mod's resources) is skipped: the effect stays off (the game remembers the failure until resources reload), logged once. Before 26.3 the game itself only logs a shader that doesn't compile and draws nothing. Hooks: `ShaderManager#getPostChain`, `#tryTriggerRecovery`, `PostPass#addToFrame`.
 - `Chirp` (0.3): sounds by id, nothing registered: `play(level, at, id[, volume, pitch[, source]])` and `play(entity, id[, volume, pitch])` from a place for everyone near; `to(player, id[, volume, pitch])` (master) and `music(player, id)` (music) for one player, at their position; `here(id[, volume, pitch])` on the client, for this player only; `event(id)`.
 

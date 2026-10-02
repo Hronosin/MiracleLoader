@@ -1,6 +1,6 @@
 id = "event-horizon"
 name = "Event Horizon Extension"
-version = "0.4.0"
+version = "0.4.1"
 authors = ["Hronosin"]
 icon = "icon.png"
 # Experimental: its API may still change in any release, unlike MiracleToolChain's.

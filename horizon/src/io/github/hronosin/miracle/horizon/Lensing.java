@@ -323,6 +323,19 @@ public final class Lensing {
         return UNIFORMS.computeIfAbsent(effect, k -> new ConcurrentHashMap<>());
     }
 
+    /**
+     * The graphics backend the game actually runs, once it has started: "opengl" or "vulkan";
+     * "unknown" before the device exists, "none" outside a client. (Before it starts,
+     * {@code Mods.graphicsBackend()} says what it's set to.)
+     */
+    public static String backend() {
+        try {
+            return LensingClient.backend();
+        } catch (RuntimeException | LinkageError noClient) {
+            return "none";
+        }
+    }
+
     /** The player's "Distortion Effects" setting, 0 to 1 (1 outside a client): scale your effects by it. */
     public static double screenEffectScale() {
         try {

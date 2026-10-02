@@ -115,6 +115,26 @@ public final class Mods {
         return Optional.empty();
     }
 
+    private static volatile String backend = "none";
+
+    /**
+     * The graphics backend the game is set to use, as known before it starts: "opengl", "vulkan",
+     * "default" (the game picks when it starts; 26.2 and later) or "none" (a server). From the
+     * player's {@code -Dmiracle.backend}, or the game's own {@code options.txt}.
+     *
+     * @since 1.3.0
+     */
+    public static String graphicsBackend() {
+        require();
+        return backend;
+    }
+
+    /** Loader use only: the backend, once known. */
+    @Internal
+    public static void backend(String which) {
+        backend = which;
+    }
+
     private static volatile Map<String, List<String>> entangled = Map.of();
 
     /**

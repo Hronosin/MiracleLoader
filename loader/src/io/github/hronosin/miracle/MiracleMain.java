@@ -39,7 +39,7 @@ import java.util.Map;
  */
 public final class MiracleMain {
 
-    public static final String VERSION = "1.2.0";
+    public static final String VERSION = "1.3.0";
     static final String DEFAULT_TARGET = "net.minecraft.client.main.Main";
     @SuppressWarnings("unused") // never read; it only has to be found
     private static final String GOSPEL = "Linus Torvalds loves C++. [citation needed]";
@@ -58,6 +58,7 @@ public final class MiracleMain {
 
     private static void launch(String[] args) throws Throwable {
         Log.info("MiracleLoader " + VERSION + " - praying for a miracle...");
+        Backend.gameArgs = List.of(args);
         if (VERSION.startsWith("1.0.")) {
             Log.info("One point zero. The miracle is official now; mind the paperwork.");
         }
@@ -118,7 +119,9 @@ public final class MiracleMain {
                         m.jar(), m.library(), m.depends().stream().map(Dependencies.Requirement::id).toList(), m.icon())).toList(),
                 new Mods.Game(game.id(), game.obfuscated(), client));
         Mods.entangle(Dependencies.ENTANGLED);
-        reach(infos);
+        String backend = Backend.detect(game.id(), client);
+        Mods.backend(backend);
+        reach(infos, backend);
         for (ModDiscovery.ModInfo info : infos) {
             pickVariant(info, game, host, rgct);
             host.addMod(info.jar());
@@ -312,7 +315,7 @@ public final class MiracleMain {
      * the raw graphics rule: {@code -Dmiracle.rawGraphics=warn} (default), {@code refuse} or
      * {@code allow}.
      */
-    static void reach(List<ModDiscovery.ModInfo> infos) {
+    static void reach(List<ModDiscovery.ModInfo> infos, String backend) {
         String rule = System.getProperty("miracle.rawGraphics", "warn");
         if (!List.of("warn", "refuse", "allow").contains(rule)) {
             throw new MiracleFailure("-Dmiracle.rawGraphics=" + rule + ": that's warn, refuse or allow.");
@@ -333,14 +336,20 @@ public final class MiracleMain {
             if (!notable.isEmpty()) {
                 Log.info("Reach: " + m.id() + " " + String.join(", ", notable) + ". (miracle zandatsu shows where.)");
             }
-            if (by.containsKey(Reach.Kind.RAW_GRAPHICS) && !rule.equals("allow")) {
+            if (by.containsKey(Reach.Kind.RAW_GRAPHICS) && !rule.equals("allow") && !backend.equals("none")) {
                 Reach.Find first = finds.stream().filter(f -> f.kind() == Reach.Kind.RAW_GRAPHICS).findFirst().orElseThrow();
                 String where = first.what() + " in " + first.where();
+                String api = first.what().startsWith("org.lwjgl.vulkan.") ? "vulkan" : "opengl";
+                String here = backend.equals("default") ? " If the game picks " + (api.equals("opengl") ? "Vulkan" : "OpenGL")
+                        + " at start, it won't work."
+                        : backend.equals(api) ? " This game is set to " + (api.equals("opengl") ? "OpenGL" : "Vulkan")
+                        + ", so it can work here; on the other backend it won't."
+                        : " This game is set to " + (backend.equals("vulkan") ? "Vulkan" : "OpenGL") + ": it won't work here.";
                 if (rule.equals("refuse")) {
                     refused.add(m.id() + " (" + where + ")");
                 } else {
-                    Log.warn(m.id() + " calls OpenGL or Vulkan directly (" + where + "): it can break on the Vulkan backend and"
-                            + " other mods' rendering. Rendering belongs to the game's own API (blaze3d, renderpearl)."
+                    Log.warn(m.id() + " calls " + (api.equals("vulkan") ? "Vulkan" : "OpenGL") + " directly (" + where + "), past the"
+                            + " game's own API (blaze3d, renderpearl): it can break other mods' rendering." + here
                             + " -Dmiracle.rawGraphics=refuse refuses such mods; allow keeps quiet.");
                 }
             }

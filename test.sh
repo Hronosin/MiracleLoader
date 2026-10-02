@@ -683,7 +683,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.2.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.3.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
@@ -722,7 +722,9 @@ expect reach "[nosy] launched"
 expect_not reach "writes, moves or deletes files"
 run_with rawgl "$T/raw-gl.jar"
 expect_code rawgl 0
-expect rawgl "raw-gl calls OpenGL or Vulkan directly (org.lwjgl.opengl.GL11.glFinish in org.test.rawgl.RawGl)"
+expect rawgl "raw-gl calls OpenGL directly (org.lwjgl.opengl.GL11.glFinish in org.test.rawgl.RawGl)"
+expect rawgl "This game is set to OpenGL, so it can work here; on the other backend it won't."
+expect rawgl "Graphics: OpenGL (no options.txt yet; this version has OpenGL only)"
 expect rawgl "[raw-gl] launched"
 JAVA_OPTS="-Dmiracle.rawGraphics=refuse" run_with rawgl-refuse "$T/raw-gl.jar" "$T/nosy-mod.jar"
 expect_code rawgl-refuse 1
@@ -731,7 +733,7 @@ expect rawgl-refuse "raw-gl (org.lwjgl.opengl.GL11.glFinish in org.test.rawgl.Ra
 expect_not rawgl-refuse "[raw-gl] launched"
 JAVA_OPTS="-Dmiracle.rawGraphics=allow" run_with rawgl-allow "$T/raw-gl.jar"
 expect_code rawgl-allow 0
-expect_not rawgl-allow "calls OpenGL or Vulkan directly ("
+expect_not rawgl-allow "calls OpenGL directly ("
 JAVA_OPTS="-Dmiracle.rawGraphics=maybe" run_with rawgl-bad "$T/raw-gl.jar"
 expect_code rawgl-bad 1
 expect rawgl-bad "-Dmiracle.rawGraphics=maybe: that's warn, refuse or allow."
@@ -749,6 +751,29 @@ run_in() {
         io.github.hronosin.miracle.MiracleMain --username Steve 2>&1)"
     code=$?
 }
+
+# graphics backend: the player's word, or the game's own options.txt; Vulkan only from 26.2
+GB="$ROOT/build/test-runs/backend" && rm -rf "$GB" && mkdir -p "$GB"
+printf 'version:4786\npreferredGraphicsBackend:"vulkan"\nfov:0.0\n' > "$GB/options.txt"
+JAVA_OPTS="-Dmiracle.gameVersion=26.3" run_in "$GB" "$T/raw-gl.jar" "$T/nosy-mod.jar"
+expect_code backend-vulkan 0
+expect backend-vulkan "Graphics: Vulkan (options.txt)"
+expect backend-vulkan "[nosy] backend: vulkan"
+expect backend-vulkan "This game is set to Vulkan: it won't work here."
+JAVA_OPTS="-Dmiracle.gameVersion=26.3 -Dmiracle.backend=opengl" run_in "$GB" "$T/nosy-mod.jar"
+expect backend-said "Graphics: OpenGL (-Dmiracle.backend)"
+expect backend-said "[nosy] backend: opengl"
+printf 'preferredGraphicsBackend:"default"\n' > "$GB/options.txt"
+JAVA_OPTS="-Dmiracle.gameVersion=26.3" run_in "$GB" "$T/raw-gl.jar" "$T/nosy-mod.jar"
+expect backend-default "Graphics: the game's own pick at start (OpenGL or Vulkan) (options.txt)"
+expect backend-default "[nosy] backend: default"
+expect backend-default "If the game picks Vulkan at start, it won't work."
+printf 'preferredGraphicsBackend:"vulkan"\n' > "$GB/options.txt"
+JAVA_OPTS="-Dmiracle.gameVersion=26.1.2" run_in "$GB" "$T/nosy-mod.jar"
+expect backend-old "Graphics: OpenGL (options.txt; this version has OpenGL only)"
+JAVA_OPTS="-Dmiracle.backend=metal" run_in "$GB" "$T/nosy-mod.jar"
+expect_code backend-bad 1
+expect backend-bad "-Dmiracle.backend=metal: that's auto (the game's own setting), opengl or vulkan."
 LOCK_DIR="$ROOT/build/test-runs/lock"
 rm -rf "$LOCK_DIR"
 run_in "$LOCK_DIR" "$M/hello-mod.jar"
