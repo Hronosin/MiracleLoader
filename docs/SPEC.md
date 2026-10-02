@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.1.0 |
+| Version | 1.1.1 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -577,7 +577,7 @@ game 26.3 server
 mod hallelujah 1.0.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 1.1.0
+mod miracle-toolchain 1.1.1
   ...
 ```
 
@@ -990,6 +990,8 @@ A refusal reads `Communion refused. Your mods and the server's don't match:`, th
 - `Telescope` (0.2): `/horizon` for permission level 2: `values`, `why <id>` (for the command's entity: `execute as`), `dice <rolls> <pool>`, and (0.3) `bridges`.
 - `Wormhole` (0.3): `to("<id>")` or `to("<id> >= <version>")` makes a bridge from the calling mod; `open(className)` runs it once, if the other mod is there and new enough: the class is loaded by the caller's class loader only then, MUST be a `Runnable` with a public constructor that takes nothing, and is run at once. Returns true if it ran; false if the other mod is missing or too old (`CLOSED`: nothing loaded) or the bridge failed (`FAILED`: not found, not a `Runnable`, a linkage error, or anything it threw; logged with the first lines of the stack, never rethrown). A second `open` on one bridge is an error. Opening a bridge to a mod not in the caller's `entangles` works, with a warning once. `possible()`, `state()`, `why()`, `bridges()`. Services: `offer(id, service)` (`priority(n)`, `withdraw()`), `seek(id, type)` (the offers that are a `type`: the highest priority wins; different offers tied at the top are a conflict, logged once, and nobody wins: empty), `all(id, type)` (highest priority first, then by mod id). `report()` is what `/horizon bridges` shows.
 - `Lensing` (0.3): GLSL comes in two dialects: *classic* (1.21.11 to 26.2: `#moj_import`, `in`/`out` without locations) and *separate* (26.3 on: `#include`, `#extension GL_ARB_separate_shader_objects : require` after `#version`, raised to at least 330, and `layout(location = N)` on every top-level `in` and `out` of `.vsh` and `.fsh` files). On clients, every shader file the game loads from a namespace other than `minecraft` (stages and, separately loaded or imported, includes) is translated to the running version's dialect (logged once per file); a file already in it is left as it is, and classic to separate and back gives the same text. Added locations are numbered in declaration order, separately for `in` and `out`, skipping numbers already written; for classic, locations on `in`/`out` are removed. Function parameters, block comments and anything inside braces are left alone; only syntax is translated. `translate(source, dialect, stage)`, `dialectOf`, `dialect()` (of the running game). Post effects: `add`, `remove`, `clear`, `forTicks` on a `ServerPlayer` use the game's own per-player list from 26.3 on (sent to the player, saved with them; `add` is false if it was already there); before 26.3 they return false (said once in the log). `here(id)`, `hereForTicks`, `clearHere`, `showing()` on clients, any version: from 26.3 the effect joins the player's list and stays when the server changes it (a hook on `LocalPlayer#setActivePostEffects`); before, it takes the game renderer's one slot. Hooks: `ShaderManager#loadShader` (and from 26.3 `loadInclude`), clients only.
+  (0.4) Uniforms from code: `uniform(effect, name, DoubleSupplier | Supplier<float[]> | float...)`, `clearUniforms(effect)`. A uniform named in a block of a pass of that effect's `post_effect` JSON takes its value from code, worked out before each frame the pass is drawn (render thread); the block's other fields keep the JSON's values. When a block's bytes change, it gets a new buffer (the game's are read-only), laid out by std140 in the JSON's field order, padded to 16 bytes: `float`, `int` (rounded), `vec2`, `vec3`, `vec4`, `ivec3`, `matrix4x4` (column by column); other types are refused. If that machinery fails once, it stops (logged) and the JSON's values stay. `std140(fields, values)` and `Field` are public. `screenEffectScale()`: the player's "Distortion Effects" setting, 0 to 1 (1 outside a client).
+  (0.4) A broken effect: when a post effect outside `minecraft` fails to load (26.3: a compilation error), the game's recovery (a resource reload without packs, which ends in a crash for a mod's resources) is skipped: the effect stays off (the game remembers the failure until resources reload), logged once. Before 26.3 the game itself only logs a shader that doesn't compile and draws nothing. Hooks: `ShaderManager#getPostChain`, `#tryTriggerRecovery`, `PostPass#addToFrame`.
 - `Chirp` (0.3): sounds by id, nothing registered: `play(level, at, id[, volume, pitch[, source]])` and `play(entity, id[, volume, pitch])` from a place for everyone near; `to(player, id[, volume, pitch])` (master) and `music(player, id)` (music) for one player, at their position; `here(id[, volume, pitch])` on the client, for this player only; `event(id)`.
 
 ## 10. Templates
@@ -1042,7 +1044,7 @@ What isn't:
 - The bytecode RGCT writes into game classes, the order of lines in reports, and all other output wording (Yukari included).
 - Which game versions are supported (section 11): new ones are added as they come; an old one is dropped only in a minor release that says so.
 
-A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.3.0"`). A mod that uses something added in a minor release (`Mods.entangled`, `entangles`, `against`: 1.1.0) depends on that release: `"miracle>=1.1.0"`.
+A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.4.0"`). A mod that uses something added in a minor release (`Mods.entangled`, `entangles`, `against`: 1.1.0) depends on that release: `"miracle>=1.1.0"`.
 
 ## 13. Known limits
 
@@ -1050,7 +1052,7 @@ A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolcha
 - Natural spawning happens during play; new chunks aren't populated with sculpted beings at generation.
 - Screens of one's own are plain game code, and differ between versions; only captions are portable.
 - Modrinth doesn't list MiracleLoader as a loader, so `ascend modrinth` can't publish until it does (5.1).
-- Lensing translates GLSL syntax, not meaning: includes and uniforms that one version has and another doesn't are the shader's business. Locations it adds follow declaration order, so varyings must be declared in the same order in both stages (or numbered by hand). A post effect that doesn't compile stops the game, by the game's own rule (it tries to recover by dropping resource packs, and a mod's resources can't be dropped). Server-side post effects need 26.3; before, one effect at a time, from the client.
+- Lensing translates GLSL syntax, not meaning: includes and uniforms that one version has and another doesn't are the shader's business. Locations it adds follow declaration order, so varyings must be declared in the same order in both stages (or numbered by hand). Server-side post effects need 26.3; before, one effect at a time, from the client. Uniforms from code are for post effects only; mods' own pipelines (shaders for their entities and particles) aren't covered yet.
 - `scribe sound` converts with ffmpeg or oggenc, which the toolchain doesn't bring: only ready Ogg Vorbis files need neither.
 - Communion asks bound mods for exactly the same version; there is no way yet to declare a range of compatible versions.
 - Mappings are Mojang's only. Yarn and Intermediary ended with 1.21.11, the last obfuscated version, so none are planned.

@@ -105,6 +105,10 @@ final class LensingClient {
         return out;
     }
 
+    static double screenEffectScale() {
+        return Minecraft.getInstance().options.screenEffectScale().get();
+    }
+
     /** 26.3+: the server's list, with ours after it; null when we have nothing to add. Hooked in. */
     static Object merge(Object list) {
         if (!(list instanceof List<?> l)) {

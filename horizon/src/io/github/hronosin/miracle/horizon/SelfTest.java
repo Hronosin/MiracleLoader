@@ -552,6 +552,28 @@ final class SelfTest {
                 && Lensing.Stage.of("x.VSH") == Lensing.Stage.VERTEX && Lensing.Stage.of("x.glsl") == Lensing.Stage.INCLUDE
                 && Lensing.Stage.of("x.json") == null);
         check("lensing: no game, no dialect", Lensing.dialect() == null);
+        List<Lensing.Field> fields = List.of(new Lensing.Field("A", "float", new float[] {1.5f}),
+                new Lensing.Field("B", "vec3", new float[] {1, 2, 3}), new Lensing.Field("C", "vec2", new float[] {4, 5}),
+                new Lensing.Field("D", "int", new float[] {7}));
+        java.nio.ByteBuffer b = Lensing.std140(fields, n -> n.equals("C") ? new float[] {9, 10} : null);
+        check("lensing: std140 offsets and padding", b.capacity() == 48 && b.getFloat(0) == 1.5f && b.getFloat(16) == 1
+                && b.getFloat(24) == 3 && b.getFloat(32) == 9 && b.getFloat(36) == 10 && b.getInt(40) == 7);
+        check("lensing: std140 vec4 and matrices align to 16", Lensing.std140(List.of(new Lensing.Field("x", "float", new float[] {1}),
+                new Lensing.Field("m", "matrix4x4", new float[16])), n -> null).capacity() == 80
+                && Lensing.std140(List.of(new Lensing.Field("v", "vec4", new float[] {1, 2, 3, 4})), n -> null).getFloat(12) == 4);
+        boolean badType = false;
+        try {
+            Lensing.std140(List.of(new Lensing.Field("q", "quaternion", new float[0])), n -> null);
+        } catch (IllegalArgumentException e) {
+            badType = true;
+        }
+        check("lensing: unknown uniform types refused", badType);
+        Lensing.uniform("selftest:warp", "Strength", () -> 0.5);
+        Lensing.uniform("selftest:warp", "Center", 1f, 2f);
+        check("lensing: uniforms kept by effect and name", Lensing.UNIFORMS.get("selftest:warp").get("Strength").get()[0] == 0.5f
+                && Lensing.UNIFORMS.get("selftest:warp").get("Center").get()[1] == 2f && Lensing.screenEffectScale() == 1);
+        Lensing.clearUniforms("selftest:warp");
+        check("lensing: and forgotten", !Lensing.UNIFORMS.containsKey("selftest:warp"));
     }
 
     /** Every vanilla shader of a classic version and of a separate one, through the translator. */

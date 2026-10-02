@@ -2,11 +2,18 @@ package io.github.hronosin.miracle.horizon;
 
 import io.github.hronosin.miracle.api.Mods;
 
+import java.nio.ByteBuffer;
+import java.nio.ByteOrder;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.DoubleSupplier;
+import java.util.function.Function;
+import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -42,8 +49,25 @@ import java.util.regex.Pattern;
  * server can't reach it ({@link #add} says so and returns false). From 26.3 on, effects stack;
  * {@code here} adds to what the server set, and stays when the server changes its list.
  *
- * <p>Effects are what you make them: keep flashing out of them, or offer a switch; players with
- * photosensitive epilepsy play this game too.
+ * <p><b>Uniforms from code</b> (0.4): a uniform declared in the post effect's JSON (a block and its
+ * fields, with their types and values) takes its value from your code instead, worked out every
+ * frame on the render thread:
+ * <pre>{@code
+ * Lensing.uniform("mymod:warp", "Strength", () -> 0.5 + 0.5 * Math.sin(time) * Lensing.screenEffectScale());
+ * Lensing.uniform("mymod:warp", "Center", () -> new float[] {cx, cy});      // a vec2
+ * }</pre>
+ * By name, in every pass of that effect whose block has it; the JSON's value is the default for
+ * the fields you leave alone. Supported types: {@code float}, {@code int}, {@code vec2},
+ * {@code vec3}, {@code vec4}, {@code ivec3}, {@code matrix4x4}.
+ *
+ * <p><b>A broken effect doesn't stop the game</b> (0.4): the game's own reaction to a post effect
+ * that fails to compile is to reload resources without resource packs, which can't drop a mod's
+ * and so ends in a crash. For any post effect outside {@code minecraft}, Event Horizon skips that
+ * recovery: the effect stays off, the error stays in the log, F3+T tries again.
+ *
+ * <p>Effects are what you make them: keep flashing out of them, or offer a switch (and scale
+ * strength by {@link #screenEffectScale()}, the player's own "Distortion Effects" setting);
+ * players with photosensitive epilepsy play this game too.
  */
 public final class Lensing {
 
@@ -264,6 +288,99 @@ public final class Lensing {
     /** Client: takes back what {@link #here} put on this screen. */
     public static void clearHere() {
         LensingClient.clear();
+    }
+
+    // --- uniforms -------------------------------------------------------------------------------
+
+    /** Effect id -> uniform name -> where its value comes from. */
+    static final Map<String, Map<String, Supplier<float[]>>> UNIFORMS = new ConcurrentHashMap<>();
+
+    /** A uniform's value from code, worked out every frame: a float or an int. */
+    public static void uniform(String effect, String name, DoubleSupplier value) {
+        uniforms(effect).put(name, () -> new float[] {(float) value.getAsDouble()});
+    }
+
+    /** A vector's (or matrix's, column by column) value from code, worked out every frame. */
+    public static void uniform(String effect, String name, Supplier<float[]> value) {
+        uniforms(effect).put(name, value);
+    }
+
+    /** A value set once, until changed. */
+    public static void uniform(String effect, String name, float... value) {
+        float[] v = value.clone();
+        uniforms(effect).put(name, () -> v);
+    }
+
+    /** Back to the JSON's values. */
+    public static void clearUniforms(String effect) {
+        UNIFORMS.remove(effect);
+    }
+
+    private static Map<String, Supplier<float[]>> uniforms(String effect) {
+        if (!effect.matches("[a-z0-9_.-]+:[a-z0-9_./-]+")) {
+            throw new IllegalArgumentException("A post effect id looks like \"mymod:warp\", not \"" + effect + "\".");
+        }
+        return UNIFORMS.computeIfAbsent(effect, k -> new ConcurrentHashMap<>());
+    }
+
+    /** The player's "Distortion Effects" setting, 0 to 1 (1 outside a client): scale your effects by it. */
+    public static double screenEffectScale() {
+        try {
+            return LensingClient.screenEffectScale();
+        } catch (RuntimeException | LinkageError noClient) {
+            return 1;
+        }
+    }
+
+    /** One field of a uniform block, as the post effect's JSON declares it. */
+    public record Field(String name, String type, float[] value) {
+    }
+
+    /**
+     * A uniform block's bytes by std140's rules, the fields in their declared order, each from
+     * {@code values} (by name; null for the declared value). Native byte order, a direct buffer,
+     * padded to a multiple of 16.
+     */
+    public static ByteBuffer std140(List<Field> fields, Function<String, float[]> values) {
+        int size = 0;
+        int[] at = new int[fields.size()];
+        for (int i = 0; i < fields.size(); i++) {
+            int[] as = layout(fields.get(i).type());
+            size = (size + as[0] - 1) / as[0] * as[0];
+            at[i] = size;
+            size += as[1];
+        }
+        ByteBuffer b = ByteBuffer.allocateDirect(Math.max(16, (size + 15) / 16 * 16)).order(ByteOrder.nativeOrder());
+        for (int i = 0; i < fields.size(); i++) {
+            Field f = fields.get(i);
+            float[] v = values.apply(f.name());
+            if (v == null) {
+                v = f.value();
+            }
+            int n = layout(f.type())[2];
+            boolean ints = f.type().equals("int") || f.type().equals("ivec3");
+            for (int k = 0; k < n; k++) {
+                float x = v != null && k < v.length ? v[k] : 0;
+                if (ints) {
+                    b.putInt(at[i] + 4 * k, Math.round(x));
+                } else {
+                    b.putFloat(at[i] + 4 * k, x);
+                }
+            }
+        }
+        return b;
+    }
+
+    /** {alignment, size, number of components} of a std140 type. */
+    static int[] layout(String type) {
+        return switch (type) {
+            case "float", "int" -> new int[] {4, 4, 1};
+            case "vec2" -> new int[] {8, 8, 2};
+            case "vec3", "ivec3" -> new int[] {16, 12, 3};
+            case "vec4" -> new int[] {16, 16, 4};
+            case "matrix4x4" -> new int[] {16, 64, 16};
+            default -> throw new IllegalArgumentException("Lensing doesn't know the uniform type '" + type + "'.");
+        };
     }
 
     /** Client: the post effects this screen is showing (or asked to show), by id. */

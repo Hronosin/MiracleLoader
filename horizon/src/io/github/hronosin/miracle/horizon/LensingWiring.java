@@ -19,6 +19,15 @@ final class LensingWiring {
         } else {
             classic(rgct);
         }
+        // every version: a mod's broken effect doesn't stop the game, and uniforms come from code
+        rgct.target("net.minecraft.client.renderer.ShaderManager").method("getPostChain").interceptHead(ctx -> LensingSafety.loading(ctx.arg(0)));
+        rgct.target("net.minecraft.client.renderer.ShaderManager").method("getPostChain").interceptReturn(ctx -> LensingSafety.done());
+        rgct.target("net.minecraft.client.renderer.ShaderManager").method("tryTriggerRecovery").interceptHead(ctx -> {
+            if (LensingSafety.spare()) {
+                ctx.cancel();
+            }
+        });
+        rgct.target("net.minecraft.client.renderer.PostPass").method("addToFrame").atHead(self -> LensingUniforms.beforeFrame(self));
     }
 
     /** Up to 26.2: shaders and the includes they import come in one call. */
