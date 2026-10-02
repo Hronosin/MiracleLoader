@@ -1,0 +1,3 @@
+id = "raw-gl"
+version = "0.1.0"
+entrypoint = "org.test.rawgl.RawGl"

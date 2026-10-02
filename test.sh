@@ -548,6 +548,16 @@ expect_code zandatsu 0
 expect zandatsu "BLADE MODE. Cutting needs-lib.jar"
 expect zandatsu "Spine:      org.test.needslib.NeedsLib"
 expect zandatsu "ZANDATSU! 1 class(es) taken. Rules of Nature."
+expect zandatsu "Reaches for: nothing outside the game"
+cli zandatsu "$ROOT/build/test-mods/nosy-mod.jar"
+expect zandatsu-reach "Reaches for (what its code names; reflection can hide more, and naming isn't misusing):"
+expect zandatsu-reach "! starts processes"
+expect zandatsu-reach "in org.test.nosy.Nosy: java.lang.ProcessBuilder"
+expect zandatsu-reach "! uses the network"
+expect zandatsu-reach "java.net.http.HttpClient"
+expect zandatsu-reach "  writes, moves or deletes files"
+expect zandatsu-reach "java.nio.file.Files.writeString"
+expect zandatsu-reach "java.lang.System.exit"
 if [ -f "$ROOT/build/hallelujah.jar" ]; then   # built only when a real Minecraft jar is around
     cli zandatsu "$ROOT/build/hallelujah.jar"
     expect zandatsu-hallelujah "Creation.shrine"
@@ -673,7 +683,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.1.1 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.2.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
@@ -703,6 +713,30 @@ expect entangles-alone "[entangler] entangled: [], z-partner's: [], nobody's: []
 run_with self-tangle "$T/self-tangle.jar"
 expect_code self-tangle 1
 expect self-tangle "self-tangle entangles itself."
+
+# --- reach: what mods name outside the game; the raw graphics rule -------------------------------
+run_with reach "$T/nosy-mod.jar"
+expect_code reach 0
+expect reach "Reach: nosy-mod starts processes, uses the network, can end the game itself (System.exit, halt). (miracle zandatsu shows where.)"
+expect reach "[nosy] launched"
+expect_not reach "writes, moves or deletes files"
+run_with rawgl "$T/raw-gl.jar"
+expect_code rawgl 0
+expect rawgl "raw-gl calls OpenGL or Vulkan directly (org.lwjgl.opengl.GL11.glFinish in org.test.rawgl.RawGl)"
+expect rawgl "[raw-gl] launched"
+JAVA_OPTS="-Dmiracle.rawGraphics=refuse" run_with rawgl-refuse "$T/raw-gl.jar" "$T/nosy-mod.jar"
+expect_code rawgl-refuse 1
+expect rawgl-refuse "These mods call OpenGL or Vulkan directly, and -Dmiracle.rawGraphics=refuse:"
+expect rawgl-refuse "raw-gl (org.lwjgl.opengl.GL11.glFinish in org.test.rawgl.RawGl)"
+expect_not rawgl-refuse "[raw-gl] launched"
+JAVA_OPTS="-Dmiracle.rawGraphics=allow" run_with rawgl-allow "$T/raw-gl.jar"
+expect_code rawgl-allow 0
+expect_not rawgl-allow "calls OpenGL or Vulkan directly ("
+JAVA_OPTS="-Dmiracle.rawGraphics=maybe" run_with rawgl-bad "$T/raw-gl.jar"
+expect_code rawgl-bad 1
+expect rawgl-bad "-Dmiracle.rawGraphics=maybe: that's warn, refuse or allow."
+run_with reach-quiet "$T/dep-lib.jar"
+expect_not reach-quiet "Reach:"
 
 # --- miracle.lock: pinned patches, diffs, strictness --------------------------------------------
 # run_in <dir> <mod jars...>: like run_with, but keeps the folder (and its miracle.lock) between runs.

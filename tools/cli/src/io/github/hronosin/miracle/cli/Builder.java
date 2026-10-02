@@ -106,9 +106,23 @@ final class Builder {
         }
         args.add(jar.toString());
         bake(args.toArray(String[]::new));
+        rawGraphics(jar);
         System.out.println("Baked: " + p.dir().relativize(jar));
         System.out.println(style((System.nanoTime() - started) / 1_000_000));
         return jar;
+    }
+
+    /** Tells the author, before any player, that the mod calls OpenGL or Vulkan past the game. */
+    static void rawGraphics(Path jar) {
+        try {
+            io.github.hronosin.miracle.Reach.scan(jar).stream()
+                    .filter(f -> f.kind() == io.github.hronosin.miracle.Reach.Kind.RAW_GRAPHICS).findFirst()
+                    .ifPresent(f -> System.out.println("WARNING: this mod calls OpenGL or Vulkan directly (" + f.what() + " in " + f.where()
+                            + "). On the Vulkan backend that breaks, and players starting with -Dmiracle.rawGraphics=refuse"
+                            + " won't load it. Render through the game's own API (blaze3d, renderpearl), or Event Horizon's Lensing."));
+        } catch (IOException | RuntimeException e) {
+            // the label is a courtesy; the bake itself went fine
+        }
     }
 
     /** How stylish the bake was, by how long it took (Devil May Cry rules; Gradle scores D on a good day). */

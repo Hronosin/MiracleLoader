@@ -185,7 +185,10 @@ final class SelfTest {
         check("animation: unknown Molang is 0, and said", animNotes.size() == 1 && animNotes.getFirst().contains("math.nope"));
 
         System.out.println(passed + " passed, " + failed + " failed");
-        System.exit(failed == 0 ? 0 : 1);
+        if (failed != 0) {
+            // an uncaught throw ends the JVM with 1; no System.exit, so the jar's label stays honest
+            throw new AssertionError(failed + " check(s) failed");
+        }
     }
 
     /** "id version [bound]" per mod. */

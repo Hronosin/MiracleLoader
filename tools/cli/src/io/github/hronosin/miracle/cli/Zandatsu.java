@@ -117,6 +117,7 @@ final class Zandatsu {
         } else {
             System.out.println("  bake.toml:  none (never baked: fine on 26.x, blind on obfuscated versions)");
         }
+        reach(jar);
         System.out.println("ZANDATSU! " + classes + " class(es) taken. Rules of Nature.");
         return 0;
     }
@@ -161,6 +162,26 @@ final class Zandatsu {
     private static String read(JarFile jf, JarEntry e) throws IOException {
         try (InputStream in = jf.getInputStream(e)) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    /** The label: what the code reaches for outside the game, and where. */
+    static void reach(Path jar) throws IOException {
+        java.util.List<io.github.hronosin.miracle.Reach.Find> finds = io.github.hronosin.miracle.Reach.scan(jar);
+        var by = io.github.hronosin.miracle.Reach.byKind(finds);
+        if (by.isEmpty()) {
+            System.out.println("  Reaches for: nothing outside the game (no processes, native code, network, file writes,"
+                    + " classes from bytes, Unsafe, private members, raw graphics or exits named in its code)");
+            return;
+        }
+        System.out.println("  Reaches for (what its code names; reflection can hide more, and naming isn't misusing):");
+        for (var e : by.entrySet()) {
+            java.util.List<String> what = finds.stream().filter(f -> f.kind() == e.getKey()).map(io.github.hronosin.miracle.Reach.Find::what)
+                    .distinct().limit(3).toList();
+            java.util.List<String> where = e.getValue().stream().limit(3).toList();
+            System.out.println("    " + (e.getKey().notable ? "! " : "  ") + e.getKey().says);
+            System.out.println("        in " + String.join(", ", where) + (e.getValue().size() > 3 ? " and " + (e.getValue().size() - 3) + " more" : "")
+                    + ": " + String.join(", ", what));
         }
     }
 }

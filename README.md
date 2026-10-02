@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 1.1.1, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 1.2.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -435,7 +435,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle bonfire [list\|rest [name]]` | `backup` | Dark Souls: checkpoints the worlds in `run/`; `rest` brings one back (the world you leave is kept too) |
 | `miracle grace ...` | | the same, for the Tarnished |
 | `miracle messages` | `todo` | Elden Ring: your TODO/FIXME/HACK/XXX comments as messages on the ground ("Try repent", "Be wary of the mixins") |
-| `miracle zandatsu [jar]` | `inspect` | Metal Gear Rising: Blade Mode for a mod jar. What it patches, which library parts it uses, what it was baked for |
+| `miracle zandatsu [jar]` | `inspect` | Metal Gear Rising: Blade Mode for a mod jar. What it patches, which library parts it uses, what it was baked for, and what its code reaches for outside the game: processes, native code, network, files, classes from bytes, Unsafe, private members, raw OpenGL/Vulkan, exits |
 | `miracle exorcise [--yes]` | `clean` | casts out `build/`, logs and crash reports. Worlds, bonfires and configs are spared |
 | `miracle scriptorium` | `ide` | writes IntelliJ IDEA, VS Code and Eclipse project files with the class path `bake` uses, the loader's and library's sources attached, each `fallback/<version>` as its own IntelliJ module against that version's API, and run configurations for bake and pray |
 | `miracle consecrate "Instance"` | `install` | puts MiracleLoader and the library into a Prism Launcher instance, on any OS; `--list`, `--uninstall` |
@@ -681,6 +681,14 @@ Chirp.play(level, Geodesic.center(pos), "mymod:bell");    // from `miracle scrib
 
 Checked on real 26.3 and 1.21.11 clients, in a world: an armor stand launched onto a spot 12 ticks away landed within a millionth of a block of it; a player flung upward rose 6 blocks as their own client saw it; boosts applied and expired on time, a stat clamped and spent, an aura found what was in it, scaling eased to 1.5, the scheduler ran everything in order. For 0.2, on 26.3, 1.21.11 and 26.1.2: a value declared by one mod and changed by name by another, for a player and for nobody; world-keyed rolls the same twice and different the next day; a safe spot found on a platform in the sky; `/horizon values`, `why` (also `execute as` the player) and `dice` (10,000 rolls: 90.1% dirt, 8.7% iron, 1.2% diamond). For 0.3, on the same three: a bridge to hallelujah opened (compiled against its jar, loaded only because it was there), one to a missing mod stayed closed with nothing loaded, one that threw was logged and the game went on; services sought; sounds played four ways; a red tint written the classic way and a mirror written the 26.3 way, both shown on all three versions (stacked on 26.3, server and client together; one at a time before), as screenshots show. For 0.4, on the same three: a tint whose JSON says strength 0 shows at strength 1 from code (red over green 3.7 in the screenshots, 0.85 without), and a post effect that can't compile, put on screen on purpose, switched off with the game going on (26.3 used to crash there). Plus 136 checks in `SelfTest`, no game needed, among them 200 shuffled load orders giving the same value to the last bit, and every vanilla shader of 26.2 and 26.3 through the translator: untouched in its own dialect, and classic to 26.3 and back giving each file back exactly.
 
+## What a mod reaches for
+
+Every start, the loader reads the mods' classes (without loading them) and says, for each mod that names something notable outside the game, what: `Reach: some-mod starts processes, uses the network. (miracle zandatsu shows where.)`. `miracle zandatsu some-mod.jar` lays out the rest: which classes, naming what. A mod that only uses the game and the library gets no line at all.
+
+It's a label, not a lock. It reads what the code names, not what it does: reflection can hide more, and a mod that names the network may only check for updates. Java 25 has no sandbox (the Security Manager is gone), so a loader can't stop a mod from doing what Java allows; it can tell you what to ask about. Open source, Modrinth's own scans and `miracle.lock` do the rest.
+
+One rule it does enforce, if you ask: **rendering goes through the game's own API** (blaze3d, renderpearl). A mod that calls OpenGL or Vulkan directly breaks on the other backend and in other mods' rendering. By default that's a warning naming the call; `-Dmiracle.rawGraphics=refuse` won't start with such mods, `allow` keeps quiet. `miracle bake` tells the author first.
+
 ## Lifecycle
 
 1. Find mods in `mods/`, check their `depends`, and order them: dependencies first, otherwise by id, so load order never depends on the file system's mood.
@@ -734,6 +742,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] `entangles` (soft dependencies) and `against` (compile against other mods); `miracle scribe sound`
 - [x] Event Horizon 0.3: Wormhole (optional links between mods), Lensing (bring-your-own shaders, one dialect for every version), Chirp (sounds)
 - [x] Event Horizon 0.4: uniforms from code for post effects; a broken post effect switched off instead of crashing the game
+- [x] Reach: what each mod's code reaches for, at startup and in `zandatsu`; rendering only through the game's API (`-Dmiracle.rawGraphics`)
 - [ ] Event Horizon 0.5: Lensing's own pipelines, for mods' entities and particles
 - [x] Windows: `build.cmd`, `miracle.cmd`, and one Java build for every OS; `miracle consecrate` installs into Prism anywhere
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))

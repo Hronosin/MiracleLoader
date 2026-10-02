@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.1.1 |
+| Version | 1.2.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -173,6 +173,7 @@ Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the 
 | `-Dmiracle.configDir` | property | library, templates | config folder (default `config`, relative to the game folder) |
 | `-Dmiracle.lock` | property | loader | `update` (default), `strict` or `off` (8.7) |
 | `-Dmiracle.lockFile` | property | loader | where `miracle.lock` lives (default: next to the mods folder) |
+| `-Dmiracle.rawGraphics` | property | loader | since 1.2.0: `warn` (default), `refuse` or `allow`, for mods that call OpenGL or Vulkan directly (8.10) |
 
 ## 5. Commands
 
@@ -289,7 +290,7 @@ A comment is `//`, `/*`, `*` or `#` followed by the tag; trailing `/*` and `*/` 
 
 #### `zandatsu [jar]` (alias `inspect`)
 
-Opens a mod jar (default: the project's last bake) without running anything and prints: name, id and version; entrypoint ("spine"); `depends`; class count; the game classes (simple names) it names in `rgct.target(...)` calls with a constant string; the library API it calls (public parts only); whether it brings OSHI hooks (`raw`, `rawBytes`); the versions it has baked variants and fallbacks for; and its `bake.toml`. A jar without a readable `miracle.mod.toml` exits 1; a missing jar is a heresy.
+Opens a mod jar (default: the project's last bake) without running anything and prints: name, id and version; entrypoint ("spine"); `depends`; class count; the game classes (simple names) it names in `rgct.target(...)` calls with a constant string; the library API it calls (public parts only); whether it brings OSHI hooks (`raw`, `rawBytes`); the versions it has baked variants and fallbacks for; and its `bake.toml`; and (since 1.2.0) what its code reaches for outside the game (8.10), each kind with up to three classes and three of the things named, the notable kinds marked `!`, or `Reaches for: nothing outside the game`. A jar without a readable `miracle.mod.toml` exits 1; a missing jar is a heresy.
 
 #### `scriptorium [--idea] [--vscode] [--eclipse]` (alias `ide`)
 
@@ -577,7 +578,7 @@ game 26.3 server
 mod hallelujah 1.0.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 1.1.1
+mod miracle-toolchain 1.2.0
   ...
 ```
 
@@ -604,6 +605,26 @@ MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgrade
 - Otherwise, before the game's `main`: mods are found (in the folder after `=`, else `miracle.modsDir`, else `mods`), resolved, and appended to the system class path; a mod's baked variant (8.3) is copied into a temporary jar appended before the mod's own, whose classes still count as the mod's (`Mods.owner`). Then the same steps as 8.4: `transform()`, freeze, report, lint, `miracle.lock`, the too-early check, and `onLaunch()`. A class-file transformer applies RGCT to every class loaded afterwards outside the JDK; if patching fails, the game stops with the crash banner instead of loading the class unpatched.
 - An exception escaping the game's main thread gets the same crash banner and blame as under `MiracleMain`, and exit code 1.
 - `miracle.target` and `miracle.gameClasspath` don't apply; everything else in 4.2 does.
+
+### 8.10 Reach (since 1.2.0)
+
+Right after the mod list, the loader reads every mod jar's classes (and fallbacks) without loading them, and notes what their constant pools name outside the game:
+
+| kind | what counts | notable |
+|---|---|---|
+| starts processes | `ProcessBuilder`, `Runtime.exec` | yes |
+| loads native code | `System`/`Runtime` `load`/`loadLibrary`, `java.lang.foreign.Linker`/`SymbolLookup` | yes |
+| uses the network | `Socket`, `ServerSocket`, `DatagramSocket`, `URLConnection`, `HttpURLConnection`, `java.net.http.*`, socket and datagram channels, `URL.openConnection`/`openStream` | yes |
+| makes classes from bytes | `ClassLoader.defineClass`, `Lookup.defineClass`/`defineHiddenClass`, `URLClassLoader` | yes |
+| uses Unsafe | `sun.misc.Unsafe`, `jdk.internal.misc.Unsafe` | yes |
+| calls OpenGL or Vulkan directly | anything in `org.lwjgl.opengl`, `org.lwjgl.opengles`, `org.lwjgl.vulkan`, named from outside `org.lwjgl` | yes |
+| can end the game itself | `System.exit`, `Runtime.exit`/`halt` | yes |
+| writes, moves or deletes files | `Files` writing, moving, copying, deleting and creating methods, `FileOutputStream`, `FileWriter`, `RandomAccessFile`, `File.delete`/`renameTo`/`mkdirs`... | no |
+| opens private members | `setAccessible`, `trySetAccessible`, `MethodHandles.privateLookupIn` | no |
+
+A mod that names notable kinds gets one line: `Reach: <id> starts processes, uses the network. (miracle zandatsu shows where.)`. This is a label, not a verdict and not a sandbox (Java 25 has none): it sees what the code names, not what it does; reflection can hide more, and naming isn't misusing.
+
+**Raw graphics.** A mod that calls OpenGL or Vulkan past the game's own API (blaze3d, renderpearl) breaks on the other backend and in other mods' rendering. `-Dmiracle.rawGraphics`: `warn` (default) logs, per mod, the first such call and where; `refuse` stops the game listing every such mod; `allow` says nothing (the kind still shows in the `Reach` line). Another value stops the game. `bake` warns the author about the same, after baking.
 
 ## 9. The library
 
@@ -1053,6 +1074,7 @@ A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolcha
 - Screens of one's own are plain game code, and differ between versions; only captions are portable.
 - Modrinth doesn't list MiracleLoader as a loader, so `ascend modrinth` can't publish until it does (5.1).
 - Lensing translates GLSL syntax, not meaning: includes and uniforms that one version has and another doesn't are the shader's business. Locations it adds follow declaration order, so varyings must be declared in the same order in both stages (or numbered by hand). Server-side post effects need 26.3; before, one effect at a time, from the client. Uniforms from code are for post effects only; mods' own pipelines (shaders for their entities and particles) aren't covered yet.
+- Reach (8.10) reads names, not behavior: it's for telling players what a mod reaches for, not for catching a mod that hides it.
 - `scribe sound` converts with ffmpeg or oggenc, which the toolchain doesn't bring: only ready Ogg Vorbis files need neither.
 - Communion asks bound mods for exactly the same version; there is no way yet to declare a range of compatible versions.
 - Mappings are Mojang's only. Yarn and Intermediary ended with 1.21.11, the last obfuscated version, so none are planned.

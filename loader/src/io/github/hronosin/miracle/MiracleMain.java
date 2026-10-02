@@ -39,7 +39,7 @@ import java.util.Map;
  */
 public final class MiracleMain {
 
-    public static final String VERSION = "1.1.1";
+    public static final String VERSION = "1.2.0";
     static final String DEFAULT_TARGET = "net.minecraft.client.main.Main";
     @SuppressWarnings("unused") // never read; it only has to be found
     private static final String GOSPEL = "Linus Torvalds loves C++. [citation needed]";
@@ -118,6 +118,7 @@ public final class MiracleMain {
                         m.jar(), m.library(), m.depends().stream().map(Dependencies.Requirement::id).toList(), m.icon())).toList(),
                 new Mods.Game(game.id(), game.obfuscated(), client));
         Mods.entangle(Dependencies.ENTANGLED);
+        reach(infos);
         for (ModDiscovery.ModInfo info : infos) {
             pickVariant(info, game, host, rgct);
             host.addMod(info.jar());
@@ -304,5 +305,49 @@ public final class MiracleMain {
         }
         err.println("==================================================");
         err.println("If a mod is named above, blame it. Otherwise, you didn't believe hard enough.");
+    }
+
+    /**
+     * What each mod's code reaches for, one line per mod that reaches for anything notable; and
+     * the raw graphics rule: {@code -Dmiracle.rawGraphics=warn} (default), {@code refuse} or
+     * {@code allow}.
+     */
+    static void reach(List<ModDiscovery.ModInfo> infos) {
+        String rule = System.getProperty("miracle.rawGraphics", "warn");
+        if (!List.of("warn", "refuse", "allow").contains(rule)) {
+            throw new MiracleFailure("-Dmiracle.rawGraphics=" + rule + ": that's warn, refuse or allow.");
+        }
+        List<String> refused = new java.util.ArrayList<>();
+        for (ModDiscovery.ModInfo m : infos) {
+            List<Reach.Find> finds;
+            try {
+                finds = Reach.scan(m.jar());
+            } catch (java.io.IOException | RuntimeException e) {
+                Log.warn("Couldn't read " + m.jar().getFileName() + " to see what it reaches for: " + e);
+                continue;
+            }
+            Map<Reach.Kind, java.util.Set<String>> by = Reach.byKind(finds);
+            boolean warned = by.containsKey(Reach.Kind.RAW_GRAPHICS) && !rule.equals("allow");
+            List<String> notable = by.keySet().stream().filter(k -> k.notable && !(warned && k == Reach.Kind.RAW_GRAPHICS))
+                    .map(k -> k.says).toList();
+            if (!notable.isEmpty()) {
+                Log.info("Reach: " + m.id() + " " + String.join(", ", notable) + ". (miracle zandatsu shows where.)");
+            }
+            if (by.containsKey(Reach.Kind.RAW_GRAPHICS) && !rule.equals("allow")) {
+                Reach.Find first = finds.stream().filter(f -> f.kind() == Reach.Kind.RAW_GRAPHICS).findFirst().orElseThrow();
+                String where = first.what() + " in " + first.where();
+                if (rule.equals("refuse")) {
+                    refused.add(m.id() + " (" + where + ")");
+                } else {
+                    Log.warn(m.id() + " calls OpenGL or Vulkan directly (" + where + "): it can break on the Vulkan backend and"
+                            + " other mods' rendering. Rendering belongs to the game's own API (blaze3d, renderpearl)."
+                            + " -Dmiracle.rawGraphics=refuse refuses such mods; allow keeps quiet.");
+                }
+            }
+        }
+        if (!refused.isEmpty()) {
+            throw new MiracleFailure("These mods call OpenGL or Vulkan directly, and -Dmiracle.rawGraphics=refuse:\n    "
+                    + String.join("\n    ", refused) + "\nRemove them, or start with -Dmiracle.rawGraphics=warn.");
+        }
     }
 }

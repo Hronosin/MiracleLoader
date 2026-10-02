@@ -1,6 +1,6 @@
 id = "miracle-toolchain"
 name = "MiracleToolChain"
-version = "1.1.1"
+version = "1.2.0"
 authors = ["Hronosin"]
 icon = "icon.png"
 # Mods that use the library say depends = ["miracle-toolchain"]; its entrypoint prepares their hooks.

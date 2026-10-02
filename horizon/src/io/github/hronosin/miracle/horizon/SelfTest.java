@@ -35,7 +35,7 @@ final class SelfTest {
         }
         System.out.println("event-horizon self-test: " + passed + " passed, " + failed + " failed");
         if (failed > 0) {
-            System.exit(1);
+            throw new AssertionError(failed + " check(s) failed");   // exits with 1, no System.exit
         }
     }
 
