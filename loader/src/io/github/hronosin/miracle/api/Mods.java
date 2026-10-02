@@ -115,6 +115,27 @@ public final class Mods {
         return Optional.empty();
     }
 
+    private static volatile Map<String, List<String>> entangled = Map.of();
+
+    /**
+     * The mods {@code id} is entangled with: those its {@code entangles} lists that are here, in a
+     * version it accepts, and that load before it. Empty for any other mod, or one that isn't here.
+     *
+     * @since 1.1.0
+     */
+    public static List<String> entangled(String id) {
+        require();
+        return entangled.getOrDefault(id, List.of());
+    }
+
+    /** Loader use only: who's entangled with whom, right after {@link #revealed}. */
+    @Internal
+    public static synchronized void entangle(Map<String, List<String>> links) {
+        Map<String, List<String>> copy = new LinkedHashMap<>();
+        links.forEach((k, v) -> copy.put(k, List.copyOf(v)));
+        entangled = java.util.Collections.unmodifiableMap(copy);
+    }
+
     private static final java.util.Map<Path, Path> STAND_INS = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**

@@ -25,7 +25,8 @@ final class ModDiscovery {
      * {@code bake} is null for a mod that never went through miracle-bake.
      */
     record ModInfo(String id, String name, String version, String entrypoint, List<String> authors, Path jar,
-                   BakeInfo bake, List<Dependencies.Requirement> depends, String icon) {
+                   BakeInfo bake, List<Dependencies.Requirement> depends, String icon,
+                   List<Dependencies.Requirement> entangles) {
         String display() {
             return name + " (" + id + " " + version + ")";
         }
@@ -143,6 +144,14 @@ final class ModDiscovery {
                 throw new DiscoveryException(jar.getFileName() + ": " + METADATA_FILE + ", depends: " + e.getMessage());
             }
         }
+        List<Dependencies.Requirement> entangles = new ArrayList<>();
+        for (String d : optionalList(toml, "entangles")) {
+            try {
+                entangles.add(Dependencies.Requirement.parse(d));
+            } catch (IllegalArgumentException e) {
+                throw new DiscoveryException(jar.getFileName() + ": " + METADATA_FILE + ", entangles: " + e.getMessage());
+            }
+        }
         String icon = optionalString(toml, "icon", null);
         if (icon != null) {
             icon = icon.replaceFirst("^/+", "");
@@ -153,7 +162,7 @@ final class ModDiscovery {
                 }
             }
         }
-        return new ModInfo(id, name, version, entrypoint, authors, jar, bake, List.copyOf(depends), icon);
+        return new ModInfo(id, name, version, entrypoint, authors, jar, bake, List.copyOf(depends), icon, List.copyOf(entangles));
     }
 
     private static String requireString(Map<String, Object> toml, String key, Path jar) throws DiscoveryException {

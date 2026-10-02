@@ -1,0 +1,4 @@
+id = "w-needy"
+version = "1.0.0"
+library = true
+depends = ["a-entangler"]

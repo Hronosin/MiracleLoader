@@ -46,6 +46,9 @@ final class Scriptorium {
         if (p.usesHorizon()) {
             libs.add(lib("Event Horizon Extension", Miracle.horizonJar()));
         }
+        for (Path other : p.against()) {
+            libs.add(lib(other.getFileName().toString().replaceFirst("\\.jar$", ""), other));
+        }
         libs.add(new Lib("Minecraft " + primary.id(), Mojang.clientJar(primary), null));
         for (Path l : Mojang.compileLibraries(primary)) {
             libs.add(lib(l.getFileName().toString().replaceFirst("\\.jar$", ""), l));

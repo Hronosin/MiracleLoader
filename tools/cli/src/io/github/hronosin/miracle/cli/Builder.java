@@ -48,6 +48,7 @@ final class Builder {
         if (p.usesHorizon()) {
             base.add(Miracle.horizonJar());
         }
+        base.addAll(p.against());
         base.addAll(libs);
 
         List<Path> cp = new ArrayList<>(base);
@@ -80,6 +81,10 @@ final class Builder {
             // override game methods: the baker has to see those classes to rename the overrides.
             args.add("--lib");
             args.add(Miracle.toolchainJar().toString());
+        }
+        for (Path other : p.against()) {
+            args.add("--lib");
+            args.add(other.toString());
         }
         List<String> targets = Targets.expand(p.targets());
         if (p.targets().stream().anyMatch(Targets::isPattern)) {

@@ -39,7 +39,7 @@ import java.util.Map;
  */
 public final class MiracleMain {
 
-    public static final String VERSION = "1.0.1";
+    public static final String VERSION = "1.1.0";
     static final String DEFAULT_TARGET = "net.minecraft.client.main.Main";
     @SuppressWarnings("unused") // never read; it only has to be found
     private static final String GOSPEL = "Linus Torvalds loves C++. [citation needed]";
@@ -108,11 +108,16 @@ public final class MiracleMain {
         GameVersion game = GameVersion.detect(host);
         Log.info("Game: " + game.describe());
         Log.info("Found " + infos.size() + " mod(s)" + (infos.isEmpty() ? "." : ":"));
-        infos.forEach(m -> Log.info("  - " + m.display() + (m.library() ? ", a library" : "")));
+        infos.forEach(m -> {
+            List<String> links = Dependencies.ENTANGLED.getOrDefault(m.id(), List.of());
+            Log.info("  - " + m.display() + (m.library() ? ", a library" : "")
+                    + (links.isEmpty() ? "" : ", entangled with " + String.join(", ", links)));
+        });
         boolean client = host.findResource("net/minecraft/client/main/Main.class") != null;
         Mods.revealed(infos.stream().map(m -> new Mods.Mod(m.id(), m.name(), m.version(), List.copyOf(m.authors()),
                         m.jar(), m.library(), m.depends().stream().map(Dependencies.Requirement::id).toList(), m.icon())).toList(),
                 new Mods.Game(game.id(), game.obfuscated(), client));
+        Mods.entangle(Dependencies.ENTANGLED);
         for (ModDiscovery.ModInfo info : infos) {
             pickVariant(info, game, host, rgct);
             host.addMod(info.jar());

@@ -28,6 +28,11 @@ final class SelfTest {
         scheduler();
         foam();
         penrose();
+        wormhole();
+        lensing();
+        if (args.length == 2) {
+            corpus(java.nio.file.Path.of(args[0]), java.nio.file.Path.of(args[1]));
+        }
         System.out.println("event-horizon self-test: " + passed + " passed, " + failed + " failed");
         if (failed > 0) {
             System.exit(1);
@@ -450,5 +455,157 @@ final class SelfTest {
         check("penrose: choices, and a wrong type doesn't count", weather.get() == Weather.THUNDER
                 && weather.explain(null).contains("THUNDER (storms, priority 1)"));
         check("penrose: everything is listed", Penrose.ids().containsAll(List.of("selftest:blade", "selftest:pvp", "selftest:late")));
+    }
+
+    private static void wormhole() {
+        java.util.function.Function<String, String> up = String::toUpperCase;
+        java.util.function.Function<String, String> down = String::toLowerCase;
+        Wormhole.Offer a = Wormhole.offer("selftest:case", up);
+        check("wormhole: one offer, found", Wormhole.seek("selftest:case", java.util.function.Function.class).orElse(null) == up);
+        check("wormhole: the wrong type finds nothing", Wormhole.seek("selftest:case", Runnable.class).isEmpty()
+                && Wormhole.seek("selftest:nobody", Object.class).isEmpty());
+        Wormhole.Offer b = Wormhole.offer("selftest:case", down).priority(5);
+        check("wormhole: the higher priority wins; all() lists both", Wormhole.seek("selftest:case", Object.class).orElse(null) == down
+                && Wormhole.all("selftest:case", Object.class).equals(List.of(down, up)));
+        Wormhole.Offer same = Wormhole.offer("selftest:case", down).priority(5);
+        check("wormhole: the same offer twice is no tie", Wormhole.seek("selftest:case", Object.class).orElse(null) == down);
+        Wormhole.Offer c = Wormhole.offer("selftest:case", (java.util.function.Function<String, String>) String::strip).priority(5);
+        check("wormhole: a tie: nobody wins", Wormhole.seek("selftest:case", Object.class).isEmpty()
+                && Wormhole.report().contains("selftest:case: nobody wins"));
+        c.withdraw();
+        same.withdraw();
+        check("wormhole: withdrawn", Wormhole.seek("selftest:case", Object.class).orElse(null) == down
+                && Wormhole.report().contains("  <- wins") && a.mod().equals("event-horizon"));
+        b.withdraw();
+        a.withdraw();
+        check("wormhole: all gone", Wormhole.all("selftest:case", Object.class).isEmpty());
+        Wormhole.Bridge bridge = Wormhole.to("create>=6.0");
+        check("wormhole: no game, no bridge", !bridge.possible() && !bridge.open("nowhere.Bridge")
+                && bridge.state() == Wormhole.State.CLOSED && bridge.why().equals("no MiracleLoader running"));
+        boolean twice = false;
+        try {
+            bridge.open("nowhere.Bridge");
+        } catch (IllegalStateException e) {
+            twice = true;
+        }
+        check("wormhole: a bridge opens once", twice && Wormhole.bridges().contains(bridge)
+                && Wormhole.report().contains("event-horizon -> create >= 6.0: closed (no MiracleLoader running) [nowhere.Bridge]"));
+        boolean bad = false;
+        try {
+            Wormhole.to("Not A Mod");
+        } catch (IllegalArgumentException e) {
+            bad = true;
+        }
+        check("wormhole: mod ids are checked", bad);
+        check("wormhole: versions compare like the loader's", Wormhole.compare("1.10", "1.9") > 0 && Wormhole.compare("6.0", "6") == 0
+                && Wormhole.compare("6.0.1-beta", "6.0.2") < 0);
+    }
+
+    private static final String CLASSIC_VSH = String.join("\n",
+            "#version 150",
+            "",
+            "#moj_import <minecraft:projection.glsl>",
+            "",
+            "in vec3 Position;",
+            "in vec4 Color;",
+            "",
+            "out vec4 vertexColor;",
+            "flat out int glow;",
+            "",
+            "void helper(in vec3 a, out vec3 b) {",
+            "    b = a;",
+            "}",
+            "",
+            "void main() {",
+            "    gl_Position = ProjMat * vec4(Position, 1.0);",
+            "    vertexColor = Color;",
+            "}");
+
+    private static void lensing() {
+        String sep = Lensing.translate(CLASSIC_VSH, Lensing.Dialect.SEPARATE, Lensing.Stage.VERTEX);
+        check("lensing: #moj_import becomes #include", sep.contains("#include <minecraft:projection.glsl>") && !sep.contains("moj_import"));
+        check("lensing: the extension right after #version, raised to 330", sep.startsWith("#version 330\n" + Lensing.EXTENSION + "\n"));
+        check("lensing: inputs and outputs numbered in order", sep.contains("layout(location = 0) in vec3 Position;")
+                && sep.contains("layout(location = 1) in vec4 Color;") && sep.contains("layout(location = 0) out vec4 vertexColor;")
+                && sep.contains("layout(location = 1) flat out int glow;"));
+        check("lensing: function parameters left alone", sep.contains("void helper(in vec3 a, out vec3 b) {"));
+        check("lensing: already separate, nothing changes", Lensing.translate(sep, Lensing.Dialect.SEPARATE, Lensing.Stage.VERTEX).equals(sep));
+        String back = Lensing.translate(sep, Lensing.Dialect.CLASSIC, Lensing.Stage.VERTEX);
+        check("lensing: and back to classic", back.contains("#moj_import <minecraft:projection.glsl>") && !back.contains("location")
+                && !back.contains("#extension") && back.contains("\nin vec3 Position;") && back.contains("\nflat out int glow;"));
+        check("lensing: classic stays classic", Lensing.translate(CLASSIC_VSH, Lensing.Dialect.CLASSIC, Lensing.Stage.VERTEX).equals(CLASSIC_VSH));
+        String mixed = "#version 330\nlayout(location = 0) out vec4 fragColor;\nout vec4 extra;\nin vec2 texCoord;\n";
+        String m2 = Lensing.translate(mixed, Lensing.Dialect.SEPARATE, Lensing.Stage.FRAGMENT);
+        check("lensing: explicit locations kept, others take the free ones", m2.contains("layout(location = 0) out vec4 fragColor;")
+                && m2.contains("layout(location = 1) out vec4 extra;") && m2.contains("layout(location = 0) in vec2 texCoord;"));
+        String commented = "#version 330\n/*\nin vec3 Fake;\n*/\nin vec3 Real;\nlayout(std140) uniform Block {\n    vec4 Thing;\n};\n";
+        String c2 = Lensing.translate(commented, Lensing.Dialect.SEPARATE, Lensing.Stage.VERTEX);
+        check("lensing: comments and uniform blocks untouched", c2.contains("\nin vec3 Fake;\n") && c2.contains("layout(location = 0) in vec3 Real;")
+                && c2.contains("layout(std140) uniform Block {"));
+        check("lensing: includes keep their in/out, lose nothing else", Lensing.translate("#moj_import <a:b.glsl>\nout vec4 x;\n",
+                Lensing.Dialect.SEPARATE, Lensing.Stage.INCLUDE).equals("#include <a:b.glsl>\nout vec4 x;\n"));
+        check("lensing: windows line ends survive", Lensing.translate("#version 330\r\nin vec3 P;\r\n", Lensing.Dialect.SEPARATE,
+                Lensing.Stage.VERTEX).equals("#version 330\r\n" + Lensing.EXTENSION + "\r\nlayout(location = 0) in vec3 P;\r\n"));
+        check("lensing: telling dialects apart", Lensing.dialectOf(CLASSIC_VSH) == Lensing.Dialect.CLASSIC
+                && Lensing.dialectOf(sep) == Lensing.Dialect.SEPARATE);
+        check("lensing: stages by file name", Lensing.Stage.of("mymod:shaders/post/warp.fsh") == Lensing.Stage.FRAGMENT
+                && Lensing.Stage.of("x.VSH") == Lensing.Stage.VERTEX && Lensing.Stage.of("x.glsl") == Lensing.Stage.INCLUDE
+                && Lensing.Stage.of("x.json") == null);
+        check("lensing: no game, no dialect", Lensing.dialect() == null);
+    }
+
+    /** Every vanilla shader of a classic version and of a separate one, through the translator. */
+    private static void corpus(java.nio.file.Path classicJar, java.nio.file.Path separateJar) {
+        int[] n = {0, 0};
+        boolean[] ok = {true, true, true, true};
+        java.util.List<String> bad = new java.util.ArrayList<>();
+        for (int k = 0; k < 2; k++) {
+            boolean classic = k == 0;
+            try (java.util.zip.ZipFile z = new java.util.zip.ZipFile((classic ? classicJar : separateJar).toFile())) {
+                for (var e : java.util.Collections.list(z.entries())) {
+                    Lensing.Stage stage = Lensing.Stage.of(e.getName());
+                    if (!e.getName().startsWith("assets/minecraft/shaders/") || stage == null) {
+                        continue;
+                    }
+                    String src = new String(z.getInputStream(e).readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                    n[k]++;
+                    Lensing.Dialect own = classic ? Lensing.Dialect.CLASSIC : Lensing.Dialect.SEPARATE;
+                    Lensing.Dialect other = classic ? Lensing.Dialect.SEPARATE : Lensing.Dialect.CLASSIC;
+                    if (!Lensing.translate(src, own, stage).equals(src)) {
+                        ok[k] = false;
+                        bad.add("changed in its own dialect: " + e.getName());
+                    }
+                    String there = Lensing.translate(src, other, stage);
+                    String back = Lensing.translate(there, own, stage);
+                    if (classic && !back.equals(src)) {
+                        ok[2] = false;
+                        bad.add("classic round trip differs: " + e.getName());
+                    }
+                    if (stage != Lensing.Stage.INCLUDE) {
+                        for (String line : there.split("\n")) {
+                            String t = line.strip();
+                            boolean decl = (t.startsWith("in ") || t.startsWith("out ") || t.startsWith("flat ")) && t.endsWith(";");
+                            boolean located = t.startsWith("layout(location");
+                            if (other == Lensing.Dialect.SEPARATE && decl && !located) {
+                                ok[3] = false;
+                                bad.add("unnumbered: " + e.getName() + ": " + t);
+                            }
+                            if (other == Lensing.Dialect.CLASSIC && (located || t.startsWith("#include") || t.startsWith("#extension GL_ARB_sep"))) {
+                                ok[3] = false;
+                                bad.add("still separate: " + e.getName() + ": " + t);
+                            }
+                        }
+                    }
+                }
+            } catch (java.io.IOException e) {
+                check("lensing corpus: readable jars (" + e + ")", false);
+                return;
+            }
+        }
+        bad.stream().limit(10).forEach(b -> System.out.println("  " + b));
+        check("lensing corpus: " + n[0] + " classic shaders unchanged in their own dialect", ok[0] && n[0] > 50);
+        check("lensing corpus: " + n[1] + " separate shaders unchanged in their own dialect", ok[1] && n[1] > 50);
+        check("lensing corpus: classic -> separate -> classic gives back every file exactly", ok[2]);
+        check("lensing corpus: every in/out numbered for separate, every trace gone for classic", ok[3]);
     }
 }

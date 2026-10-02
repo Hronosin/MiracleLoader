@@ -1,0 +1,4 @@
+id = "self-tangle"
+version = "1.0.0"
+library = true
+entangles = ["self-tangle"]

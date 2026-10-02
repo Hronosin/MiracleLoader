@@ -22,6 +22,8 @@ import java.util.concurrent.CompletableFuture;
  *     layers, how many conflicts.</li>
  * <li>{@code /horizon why <id>}: how one came out, step by step, for whoever runs the command
  *     (use {@code /execute as <entity> run horizon why <id>} for someone else).</li>
+ * <li>{@code /horizon bridges}: every {@link Wormhole} bridge (open, closed, failed, and why) and
+ *     every service, with the one that wins.</li>
  * <li>{@code /horizon dice <rolls> <pool>}: rolls a named {@link QuantumFoam} pool and compares what
  *     came up with what should have.</li>
  * </ul>
@@ -39,6 +41,7 @@ final class Telescope {
         d.register(Commands.literal("horizon")
                 .requires(Commands.hasPermission(Commands.LEVEL_GAMEMASTERS))
                 .then(Commands.literal("values").executes(Telescope::values))
+                .then(Commands.literal("bridges").executes(Telescope::bridges))
                 .then(Commands.literal("why")
                         .then(Commands.argument("id", StringArgumentType.greedyString())
                                 .suggests((c, b) -> suggest(Penrose.ids(), b))
@@ -85,6 +88,11 @@ final class Telescope {
         }
         reply(c.getSource(), sb.toString());
         return ids.size();
+    }
+
+    private static int bridges(CommandContext<CommandSourceStack> c) {
+        reply(c.getSource(), Wormhole.report());
+        return Wormhole.bridges().size();
     }
 
     private static int why(CommandContext<CommandSourceStack> c) {

@@ -15,7 +15,7 @@ import java.util.TreeMap;
  * item, block or entity needs besides code: model definitions, models, a placeholder texture, the
  * English name, for blocks a blockstate and a loot table that drops the block, and for entities
  * an empty loot table and a spawn egg (its own placeholder, or a vanilla egg's look with
- * {@code --egg zombie}). Existing files are kept, unless {@code --force}.
+ * {@code --egg zombie}). Existing files are kept, unless {@code --force}. Sounds: see {@link Cantor}.
  *
  * <p>Paths follow the game's layout since 1.21.4 ({@code assets/<ns>/items/<id>.json} names the
  * model), which is what every supported version reads.
@@ -30,8 +30,25 @@ final class Scribe {
     }
 
     static int run(Path dir, List<String> args, String title, String egg, boolean model, boolean force) throws IOException {
+        return run(dir, args, title, egg, model, false, force);
+    }
+
+    static int run(Path dir, List<String> args, String title, String egg, boolean model, boolean music, boolean force)
+            throws IOException {
+        if (!args.isEmpty() && args.get(0).equals("sound")) {
+            if (args.size() != 3) {
+                throw new Miracle.Heresy("scribe sound <name> <file>: what to call it, and the sound file (wav, mp3, flac, ogg...)");
+            }
+            if (egg != null || model) {
+                throw new Miracle.Heresy("--egg and --model are for entities; a sound has neither");
+            }
+            return Cantor.run(dir, args.get(1), Path.of(args.get(2)), music, title, force);
+        }
+        if (music) {
+            throw new Miracle.Heresy("--music is for sounds: miracle scribe sound <name> <file> --music");
+        }
         if (args.size() < 2 || !List.of("item", "block", "entity").contains(args.get(0))) {
-            throw new Miracle.Heresy("scribe what? miracle scribe item <name>, block <name>, or entity <name>");
+            throw new Miracle.Heresy("scribe what? miracle scribe item <name>, block <name>, entity <name>, or sound <name> <file>");
         }
         if (egg != null && !args.get(0).equals("entity")) {
             throw new Miracle.Heresy("--egg is for entities: their spawn egg can borrow a vanilla one's look");
@@ -167,7 +184,7 @@ final class Scribe {
     }
 
     /** Adds one name to en_us.json, keeping the others. */
-    private static void lang(Path file, String key, String value, boolean force, List<String> wrote, List<String> kept,
+    static void lang(Path file, String key, String value, boolean force, List<String> wrote, List<String> kept,
                              Path root) throws IOException {
         Map<String, String> entries = new TreeMap<>();
         if (Files.exists(file)) {
@@ -296,7 +313,7 @@ final class Scribe {
         return Math.max(0, Math.min(255, v));
     }
 
-    private static String pretty(String name) {
+    static String pretty(String name) {
         String last = name.substring(name.lastIndexOf('/') + 1);
         StringBuilder sb = new StringBuilder();
         for (String w : last.split("[_.-]")) {

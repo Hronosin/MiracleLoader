@@ -63,6 +63,14 @@ final class Runner {
         } else {
             Files.deleteIfExists(library);
         }
+        for (Path other : p.against()) {
+            // the mods among them come along, so entanglements can be tried; plain libraries don't
+            try (var jf = new java.util.jar.JarFile(other.toFile())) {
+                if (jf.getJarEntry("miracle.mod.toml") != null) {
+                    Files.copy(other, mods.resolve(other.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+                }
+            }
+        }
 
         List<String> cmd = new ArrayList<>();
         cmd.add(Miracle.javaExecutable());

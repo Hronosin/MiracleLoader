@@ -603,6 +603,38 @@ expect scribe-again "kept  assets/holy_hops/items/holy_wafer.json (exists; --for
 pcli scribe potion x
 expect_code scribe-bad 1
 expect scribe-bad "HERESY: scribe what?"
+
+# sounds: a mono Ogg Vorbis is copied as it is; anything else needs ffmpeg, hidden from it here
+SND="$CLI_HOME/sounds" && rm -rf "$SND" && mkdir -p "$SND"
+{ printf 'OggS\000\002'; printf '\000%.0s' $(seq 20); printf '\001\036\001vorbis\000\000\000\000\001'; printf '\000%.0s' $(seq 30); } > "$SND/chime.ogg"
+{ printf 'OggS\000\002'; printf '\000%.0s' $(seq 20); printf '\001\023OpusHead\001\002'; printf '\000%.0s' $(seq 30); } > "$SND/opus.ogg"
+printf 'RIFF....WAVEfmt ' > "$SND/bell.wav"
+nopath() { out="$(cd "$CLI_HOME/holy-hops" && PATH=/nonexistent MIRACLE_HOME="$CLI_HOME/cache" "$JAVA" -jar "$ROOT/build/miracle.jar" "$@" 2>&1)"; code=$?; }
+nopath scribe sound chime "$SND/chime.ogg"
+expect_code scribe-sound 0
+expect scribe-sound "wrote assets/holy_hops/sounds/chime.ogg (Ogg Vorbis, mono, copied as it is)"
+expect scribe-sound "It is sung. holy_hops:chime is a sound now"
+nopath scribe sound chime "$SND/chime.ogg" --title "Chimes ring"
+expect scribe-sound-variant "wrote assets/holy_hops/sounds/chime_2.ogg"
+expect scribe-sound-variant "[chime, 2 variants]"
+grep -q '"subtitles.holy_hops.chime": "Chimes ring"' "$R/assets/holy_hops/lang/en_us.json" \
+    && grep -q '"name": "holy_hops:chime_2"' "$R/assets/holy_hops/sounds.json" \
+    && cmp -s "$SND/chime.ogg" "$R/assets/holy_hops/sounds/chime.ogg" \
+    && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL [scribe-sound]: sounds.json, subtitle or file wrong"; }
+nopath scribe sound bell "$SND/bell.wav"
+expect_code scribe-sound-no-ffmpeg 1
+expect scribe-sound-no-ffmpeg "Can't convert bell.wav: that needs ffmpeg"
+expect scribe-sound-no-ffmpeg "winget install Gyan.FFmpeg"
+[ ! -e "$R/assets/holy_hops/sounds/bell.ogg" ] && [ ! -e "$R/assets/holy_hops/sounds/bell.ogg.part" ] \
+    && pass=$((pass + 1)) || { fail=$((fail + 1)); echo "FAIL [scribe-sound-no-ffmpeg]: left something behind"; }
+nopath scribe sound theme "$SND/opus.ogg" --music
+expect_code scribe-sound-opus 1
+expect scribe-sound-opus "Can't convert opus.ogg"
+pcli scribe sound bell
+expect_code scribe-sound-bad 1
+expect scribe-sound-bad "scribe sound <name> <file>"
+pcli scribe item wafer2 --music
+expect scribe-sound-music "--music is for sounds"
 unset MIRACLE_IMPATIENT
 
 # --- the library's own self-test (Telepathy's scrolls, litanies, Inquisition) -------------------
@@ -641,7 +673,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.0.1 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.1.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
@@ -655,6 +687,22 @@ expect imposter "the id 'miracle' belongs to the loader itself."
 run_with cycle "$T/cycle-a.jar" "$T/cycle-b.jar"
 expect_code cycle 1
 expect cycle "These mods depend on each other in a circle: cycle-a -> cycle-b -> cycle-a."
+
+# --- entangles: soft dependencies -------------------------------------------------------------
+run_with entangles "$T/entangler.jar" "$T/z-partner.jar" "$T/y-old.jar" "$T/w-needy.jar"
+expect_code entangles 0
+expect entangles "[entangler] order: [z-partner, a-entangler, w-needy, y-old]"
+expect entangles "[entangler] entangled: [z-partner], z-partner's: [], nobody's: []"
+expect entangles "Entangler (a-entangler 0.1.0), entangled with z-partner"
+expect entangles "a-entangler entangles y-old >= 2.0, but y-old 1.0.0 is here: not entangled with it."
+expect entangles "a-entangler entangles w-needy, but w-needy already needs a-entangler (directly or through others)"
+expect_not entangles "absent-mod"
+run_with entangles-alone "$T/entangler.jar"
+expect_code entangles-alone 0
+expect entangles-alone "[entangler] entangled: [], z-partner's: [], nobody's: []"
+run_with self-tangle "$T/self-tangle.jar"
+expect_code self-tangle 1
+expect self-tangle "self-tangle entangles itself."
 
 # --- miracle.lock: pinned patches, diffs, strictness --------------------------------------------
 # run_in <dir> <mod jars...>: like run_with, but keeps the folder (and its miracle.lock) between runs.
@@ -736,6 +784,15 @@ if [ -f build/event-horizon.jar ]; then
     expect_code horizon-selftest 0
     expect horizon-selftest "failed"
     expect_not horizon-selftest "FAIL:"
+    # Lensing against every vanilla shader, when a classic and a 26.3 client are in the real cache
+    CORPUS="${MIRACLE_HOME:-$HOME/.cache/miracle}/minecraft/versions"
+    if [ -f "$CORPUS/26.2/client.jar" ] && [ -f "$CORPUS/26.3/client.jar" ]; then
+        out="$("$JAVA" -cp build/miracle-loader.jar:build/miracle-toolchain.jar:build/event-horizon.jar \
+            io.github.hronosin.miracle.horizon.SelfTest "$CORPUS/26.2/client.jar" "$CORPUS/26.3/client.jar" 2>&1)"; code=$?
+        expect_code horizon-corpus 0
+        expect horizon-corpus " 0 failed"
+        expect_not horizon-corpus "FAIL:"
+    fi
 fi
 
 # --- scriptorium: IDE files, when Minecraft 26.3 is in the real cache ------------------------

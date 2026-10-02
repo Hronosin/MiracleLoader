@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.0.1 |
+| Version | 1.1.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -85,6 +85,7 @@ my-mod/
 | `authors` | string array | no | |
 | `icon` | string | no | path of a square PNG inside the jar (from `resources/`), for launchers, mod lists and Modrinth; a leading `/` is ignored. A path the jar doesn't have is reported and dropped. |
 | `depends` | string array | no | `"<id>"` or `"<id> >= <version>"` (spaces optional). Every entry MUST be satisfied or the game does not start (8.2). |
+| `entangles` | string array | no | since 1.1.0. The same form as `depends`, but soft: a mod listed here may be missing. If it's there, in a version that's new enough, it loads first and the two are *entangled* (`Mods.entangled`, 8.5); see 8.2. For optional links to other mods (Event Horizon's `Wormhole`, 9.15). |
 
 A mod that uses the library MUST list `"miracle-toolchain"` in `depends` (with or without a version). That is how the toolchain knows to compile against the library and ship it to `run/`, and how the library knows to prepare the mod's hooks (9.3).
 
@@ -98,6 +99,7 @@ A mod that uses the library MUST list `"miracle-toolchain"` in `depends` (with o
 | `modrinth_loaders` | string array | no | loader tags for Modrinth versions; default `["miracle"]` |
 | `modrinth_requires` | string array | no | Modrinth projects (slugs or ids) every version requires |
 | `github` | string | no | the repository (`owner/name`) `ascend github` makes releases in |
+| `against` | string array | no | since 1.1.0. Other mods' jars (paths relative to the project) to compile against, for code that talks to mods this one `entangles`: on the class path of `bake` (fallbacks and the baker included) and of `scriptorium`'s projects, never packed into this mod's jar. `pray` copies those that are MiracleLoader mods into `run/<side>-<version>/mods/`. A path that doesn't exist is a heresy. |
 
 **Target patterns.** `"26.*"` means every release whose id starts with `26.`; `">=1.21.11"` every release that compares greater or equal (dotted numbers, 3.4); `"latest"` the latest release. Patterns are expanded against Mojang's version list, releases only, whenever the toolchain needs the targets; so a project picks up new releases by itself. A pattern that matches nothing is a heresy. `bake` prints the expansion.
 
@@ -329,6 +331,14 @@ Writes, under the project's `resources/`, what a new item, block or entity needs
 | block | `assets/<ns>/blockstates/<name>.json`, `assets/<ns>/models/block/<name>.json` (`block/cube_all`), `assets/<ns>/items/<name>.json` (the block's item uses the block model), `assets/<ns>/textures/block/<name>.png`, `data/<ns>/loot_table/blocks/<name>.json` (drops itself unless blown up) |
 | entity | `data/<ns>/loot_table/entities/<name>.json` (drops nothing, edit to taste) and a spawn egg `<name>_spawn_egg`: `assets/<ns>/items/<name>_spawn_egg.json` pointing at vanilla's `minecraft:item/<egg>_spawn_egg` with `--egg <egg>`, or at its own `item/generated` model and placeholder texture without; `--no-egg` writes neither the egg nor the loot table (a projectile, say); `--model` also writes `assets/<ns>/geo/<name>.geo.json` (a biped in Bedrock's geometry format: `body`, `head`, `rightArm`, `leftArm`, `rightLeg`, `leftLeg`, laid out like a player skin) and `assets/<ns>/textures/entity/<name>.png` (a 64×64 placeholder in that layout, with a face), for `Being.sculpted()` (9.11) |
 
+**Sounds** (since 1.1.0):
+
+```
+miracle scribe sound <name> <file> [--music] [--title "Bell tolls"] [--force]
+```
+
+Brings a sound file into the mod as `assets/<ns>/sounds/<name>.ogg` and an event `<name>` (with `/` as `.`) in `assets/<ns>/sounds.json`. The game plays Ogg Vorbis only, and plays a sound from a place in the world only if it is mono. So an Ogg Vorbis file that is mono (or any Vorbis for `--music`) MUST be copied unchanged; anything else is converted by `ffmpeg` (`libvorbis`, then its own `vorbis` encoder) or, for wav, flac and aiff, `oggenc`: to mono, or with `--music` to stereo. Without either, it is a heresy that says how to install ffmpeg on each system; nothing is left behind. The kind of an Ogg file is read from its first packet (Vorbis, Opus, FLAC, Speex). `--music` variants are `"stream": true` and get no subtitle unless `--title`; others get `"subtitle": "subtitles.<ns>.<event>"` and that key in `en_us.json` (`--title`, or the name's last part capitalized). The same name again (without `--force`) adds the file as `<name>_2.ogg`, `_3`... and another variant of the event, which the game picks from at random; `--force` replaces the event and its file. Other entries of `sounds.json` are kept.
+
 All kinds add `item.<ns>.<name>`, `block.<ns>.<name>` or `entity.<ns>.<name>` to `assets/<ns>/lang/en_us.json` (entities with an egg also `item.<ns>.<name>_spawn_egg`, "<Name> Spawn Egg"), keeping its other entries; the name is `--title`, or the id's words capitalized. Textures are 16×16 placeholders coloured from a hash of the id (a gem for items and eggs, a framed tile for blocks). Existing files and entries MUST be kept unless `--force`; each file is reported as `wrote` or `kept`. Another kind, or `--egg` on anything but an entity, is a heresy.
 
 #### `dictionary <versions>` (alias `mappings`)
@@ -521,6 +531,7 @@ A jar without `miracle.mod.toml` is skipped with a warning.
 1. Every `*.jar` directly in the mods folder is read (a missing mods folder is created empty). Two jars with the same id stop the game, as do a broken `miracle.mod.toml` or `bake.toml`, a bad id, a missing entrypoint without `library = true`, and a malformed `depends` entry.
 2. Every `depends` entry is checked: the mod MUST be present, and at least the stated version; a mod MUST NOT depend on itself. `miracle` is the loader's own version. All problems are listed together, then the game stops.
 3. Load order: dependencies before the mods that need them; otherwise alphabetical by id. A dependency cycle stops the game and names the circle.
+4. `entangles` (since 1.1.0): an entry naming a mod that isn't there is ignored; one whose version is too old is a warning, and no entanglement. Otherwise the other mod loads first, unless it already needs this one (through `depends` or earlier entanglements, directly or through others): then that entanglement is dropped with a warning, because someone has to go first. Entanglements are added mod by mod, in id order, each only if it closes no circle. A mod entangling itself, or `miracle`, stops the game. The mod list in the log says `entangled with ...`.
 
 ### 8.3 Choosing a variant
 
@@ -551,6 +562,7 @@ Available from phase 2 on.
 | `game()` | `Game(version, obfuscated, client)`; `client` is false on a dedicated server |
 | `launched()` | true from phase 3 on |
 | `owner(Class)` | the mod whose jar (baked variants included) a class came from, or empty |
+| `entangled(id)` | since 1.1.0: the mods `id` is entangled with (8.2), in its `entangles` order; empty for a mod with none, or one that isn't there |
 
 ### 8.6 Patching on behalf of dependents
 
@@ -565,7 +577,7 @@ game 26.3 server
 mod hallelujah 1.0.0
   net.minecraft.world.entity.LivingEntity#getJumpPower()F intercept@RETURN [modifies return]
   net.minecraft.server.MinecraftServer#tickServer(Ljava/util/function/BooleanSupplier;)V @RETURN [observes]
-mod miracle-toolchain 1.0.1
+mod miracle-toolchain 1.1.0
   ...
 ```
 
@@ -975,7 +987,10 @@ A refusal reads `Communion refused. Your mods and the server's don't match:`, th
 - `Spaghettification`: `stretch` (at once or eased over ticks), `restore`, `factor`: a `SCALE` modifier with id `event-horizon:spaghettification`.
 - `QuantumFoam` (0.2): streams are `Foam`s (a `java.util.random.RandomGenerator`; xoroshiro128++): `random()` (per thread, securely seeded), `seeded(seed)`, `keyed(seed, key...)` and `of(level, key...)` (the same for the same seed and key, whatever was drawn before; `fork(key...)` keys further from where a stream started), `from(RandomSource)`. Key parts: strings, whole numbers (1 and 1L are the same), other numbers, booleans, characters, UUIDs, enums, `Vec`s, int arrays, entities (by UUID) and block positions; anything else is refused. A world's streams start from the first 8 bytes of SHA-256 of `"event-horizon:quantum-foam:" + seed`, never from the seed itself. On `Foam` and, for `random()`, statically: `chance`, `maybe`, `between` (whole numbers: both ends included), `oneOf`, `pick`, `sample` (distinct), `shuffled`; on `Foam`: `gaussian`, `direction` (uniform on the sphere), `inside(shape)` (uniform, empty after 4096 misses), `roll(pool)`. `pool()` / `pool(id)` (named pools are unique and listed by Telescope): `add(item, weight)`, `add(pool, weight)`, `nothing(weight)`; weights from 0 up; `roll` (null for nothing or an empty pool), `roll(n)` (nothings left out), `chanceOf`, `outcomes`. `bag(items)`: every item once per round, never the same item twice in a row across a reshuffle. `pity(p)`: each miss raises the next try's chance by a step chosen so the long-run rate is exactly p, a hit starts over; streaks per owner (entities by UUID), forgotten when the server stops; `longest()` is the most tries it can take. `somewhere(level, center, radius)`, through `Singularity.somewhere`/`standable`: a sturdy top below, no collision and no fluid in the two blocks above, loaded chunks only.
 - `Penrose` (0.2): `number(id, base)` (with `range(min, max)`, the owner's bounds), `flag(id, base)`, `choice(id, base)` declare a value, once per id (`namespace:path`); the declaring mod is its owner. `touch(id)` or `touch(id, contextType)` changes a value by id, declared or not yet (layers wait), with `when` (all must hold), `priority` (for `set`), `by(modId)` (default: the mod whose code calls, by its jar), then `add`, `multiply` (numbers or formulas of the context), `clamp`, `set`; each returns a `Layer` (`remove()`). A layer with a context type applies only when the value is read for a context of that type. Numbers: `range(clamp((base + Σ adds) × Π factors))`, base = the winning `set` or the declared base (or, for `apply(base, context)`, the given one); adds and factors are applied in order of mod id, then amount, then the order the layers were made in, so any load order gives the same bits. `set`: the highest priority wins, each mod's last `set` at a priority counts; different values at the same top priority are a conflict and nobody wins (the base stays). Clamps intersect; ranges that don't overlap are a conflict and none of them applies. Choices take only `set` of their type. A layer of the wrong kind or type, a condition or a formula that throws, doesn't count. Conflicts are logged once each (`[Event Horizon] Penrose: ...`) and never thrown; `conflicts(context)` and `explain(context)` show them. Values are read with `get`/`getAsDouble`/`getInt`, with or without a context; without one, numbers with only unconditional constant layers are cached until a layer changes.
-- `Telescope` (0.2): `/horizon` for permission level 2: `values`, `why <id>` (for the command's entity: `execute as`), `dice <rolls> <pool>`.
+- `Telescope` (0.2): `/horizon` for permission level 2: `values`, `why <id>` (for the command's entity: `execute as`), `dice <rolls> <pool>`, and (0.3) `bridges`.
+- `Wormhole` (0.3): `to("<id>")` or `to("<id> >= <version>")` makes a bridge from the calling mod; `open(className)` runs it once, if the other mod is there and new enough: the class is loaded by the caller's class loader only then, MUST be a `Runnable` with a public constructor that takes nothing, and is run at once. Returns true if it ran; false if the other mod is missing or too old (`CLOSED`: nothing loaded) or the bridge failed (`FAILED`: not found, not a `Runnable`, a linkage error, or anything it threw; logged with the first lines of the stack, never rethrown). A second `open` on one bridge is an error. Opening a bridge to a mod not in the caller's `entangles` works, with a warning once. `possible()`, `state()`, `why()`, `bridges()`. Services: `offer(id, service)` (`priority(n)`, `withdraw()`), `seek(id, type)` (the offers that are a `type`: the highest priority wins; different offers tied at the top are a conflict, logged once, and nobody wins: empty), `all(id, type)` (highest priority first, then by mod id). `report()` is what `/horizon bridges` shows.
+- `Lensing` (0.3): GLSL comes in two dialects: *classic* (1.21.11 to 26.2: `#moj_import`, `in`/`out` without locations) and *separate* (26.3 on: `#include`, `#extension GL_ARB_separate_shader_objects : require` after `#version`, raised to at least 330, and `layout(location = N)` on every top-level `in` and `out` of `.vsh` and `.fsh` files). On clients, every shader file the game loads from a namespace other than `minecraft` (stages and, separately loaded or imported, includes) is translated to the running version's dialect (logged once per file); a file already in it is left as it is, and classic to separate and back gives the same text. Added locations are numbered in declaration order, separately for `in` and `out`, skipping numbers already written; for classic, locations on `in`/`out` are removed. Function parameters, block comments and anything inside braces are left alone; only syntax is translated. `translate(source, dialect, stage)`, `dialectOf`, `dialect()` (of the running game). Post effects: `add`, `remove`, `clear`, `forTicks` on a `ServerPlayer` use the game's own per-player list from 26.3 on (sent to the player, saved with them; `add` is false if it was already there); before 26.3 they return false (said once in the log). `here(id)`, `hereForTicks`, `clearHere`, `showing()` on clients, any version: from 26.3 the effect joins the player's list and stays when the server changes it (a hook on `LocalPlayer#setActivePostEffects`); before, it takes the game renderer's one slot. Hooks: `ShaderManager#loadShader` (and from 26.3 `loadInclude`), clients only.
+- `Chirp` (0.3): sounds by id, nothing registered: `play(level, at, id[, volume, pitch[, source]])` and `play(entity, id[, volume, pitch])` from a place for everyone near; `to(player, id[, volume, pitch])` (master) and `music(player, id)` (music) for one player, at their position; `here(id[, volume, pitch])` on the client, for this player only; `event(id)`.
 
 ## 10. Templates
 
@@ -1022,12 +1037,12 @@ What's API:
 
 What isn't:
 
-- Anything marked `@io.github.hronosin.miracle.api.Internal` (public only for technical reasons: `HookDispatch`, which patched game classes call; `TransformRegistry`; `Mods.revealed`, `Mods.launch`, `Mods.standIn`), and anything not public.
+- Anything marked `@io.github.hronosin.miracle.api.Internal` (public only for technical reasons: `HookDispatch`, which patched game classes call; `TransformRegistry`; `Mods.revealed`, `Mods.entangle`, `Mods.launch`, `Mods.standIn`), and anything not public.
 - Anything marked `@Experimental`: all of Event Horizon Extension (9.15), which has its own version number, below 1.0 while it settles.
 - The bytecode RGCT writes into game classes, the order of lines in reports, and all other output wording (Yukari included).
 - Which game versions are supported (section 11): new ones are added as they come; an old one is dropped only in a minor release that says so.
 
-A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.2.0"`).
+A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.3.0"`). A mod that uses something added in a minor release (`Mods.entangled`, `entangles`, `against`: 1.1.0) depends on that release: `"miracle>=1.1.0"`.
 
 ## 13. Known limits
 
@@ -1035,6 +1050,8 @@ A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolcha
 - Natural spawning happens during play; new chunks aren't populated with sculpted beings at generation.
 - Screens of one's own are plain game code, and differ between versions; only captions are portable.
 - Modrinth doesn't list MiracleLoader as a loader, so `ascend modrinth` can't publish until it does (5.1).
+- Lensing translates GLSL syntax, not meaning: includes and uniforms that one version has and another doesn't are the shader's business. Locations it adds follow declaration order, so varyings must be declared in the same order in both stages (or numbered by hand). A post effect that doesn't compile stops the game, by the game's own rule (it tries to recover by dropping resource packs, and a mod's resources can't be dropped). Server-side post effects need 26.3; before, one effect at a time, from the client.
+- `scribe sound` converts with ffmpeg or oggenc, which the toolchain doesn't bring: only ready Ogg Vorbis files need neither.
 - Communion asks bound mods for exactly the same version; there is no way yet to declare a range of compatible versions.
 - Mappings are Mojang's only. Yarn and Intermediary ended with 1.21.11, the last obfuscated version, so none are planned.
 - `miracle bake` does not fail on holes (6.5); read its report.
@@ -1093,6 +1110,8 @@ A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolcha
 | `Altarpiece` | block entity renderer | library (9.11) |
 | `sculpted` | custom entity model | library (9.11) |
 | `scribe` | `assets` | command |
+| the cantor (`scribe sound`) | sound import | command (5.2) |
+| `entangles` | soft dependency | `miracle.mod.toml` (3.2, 8.2) |
 | `dictionary` | `mappings` | command |
 | the Inquisition | packet tripwire | library (9.12) |
 | `Verdict.SPARE` / `SMITE` | `ALLOW` / `CANCEL` | library |

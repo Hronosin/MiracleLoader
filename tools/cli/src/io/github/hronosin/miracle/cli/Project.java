@@ -16,10 +16,12 @@ import java.util.Map;
  * minecraft = "26.2"                 # written and compiled against (unobfuscated: readable names)
  * targets = ["26.*", "1.21.11"]     # checked by miracle bake; obfuscated ones get a baked variant.
  *                                  # Patterns (26.*, >=1.21.11, latest): see Targets
+ * against = ["libs/other-mod.jar"]  # other mods' jars to compile against (for entangles bridges);
+ *                                  # not packed into yours; pray puts the mods among them in run/mods
  * </pre>
  */
 record Project(Path dir, String id, String name, String version, String minecraft, List<String> targets,
-               List<String> depends) {
+               List<String> depends, List<Path> against) {
 
     static final String PROJECT_FILE = "miracle.project.toml";
     static final String MOD_FILE = "miracle.mod.toml";
@@ -43,8 +45,19 @@ record Project(Path dir, String id, String name, String version, String minecraf
                 ? l.stream().map(Object::toString).toList() : List.of(minecraft);
         List<String> depends = mod.get("depends") instanceof List<?> l
                 ? l.stream().map(Object::toString).toList() : List.of();
+        List<Path> against = new java.util.ArrayList<>();
+        if (project.get("against") instanceof List<?> l) {
+            for (Object o : l) {
+                Path jar = dir.resolve(o.toString()).normalize();
+                if (!Files.isRegularFile(jar)) {
+                    throw new Miracle.Heresy(PROJECT_FILE + ": against = [..., \"" + o + "\"], but there's no such file."
+                            + " Put the other mod's jar there (libs/ is a good place).");
+                }
+                against.add(jar);
+            }
+        }
         return new Project(dir, str(mod, "id", MOD_FILE), mod.getOrDefault("name", mod.get("id")).toString(),
-                mod.getOrDefault("version", "0.0.0").toString(), minecraft, targets, depends);
+                mod.getOrDefault("version", "0.0.0").toString(), minecraft, targets, depends, List.copyOf(against));
     }
 
     /** True if miracle.mod.toml says depends = ["miracle-toolchain", ...], or on Event Horizon, which brings it. */

@@ -1,0 +1,7 @@
+id = "a-entangler"
+name = "Entangler"
+version = "0.1.0"
+entrypoint = "org.test.entangler.Entangler"
+# Sorted by id it would come first; z-partner must still load before it. absent-mod isn't
+# there (fine: it's soft), y-old is too old, and w-needy already needs this mod (a circle).
+entangles = ["z-partner", "absent-mod", "y-old>=2.0", "w-needy"]

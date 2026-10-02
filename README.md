@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 1.0.1, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 1.1.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -166,6 +166,8 @@ depends = ["miracle-toolchain>=1.0.0", "some-other-mod", "miracle>=1.0.0"]
 ```
 
 Every mod listed must be in `mods/`, at least that version if one is given, and loads before the mod that needs it. `miracle` means the loader itself. A missing or outdated dependency, or a circle of mods waiting for each other, stops the game before it starts, with every problem listed at once.
+
+Since 1.1, a mod can also be **entangled** with mods it doesn't need: `entangles = ["create>=6.0"]`. If that mod is there (and new enough), it loads first, and `Mods.entangled("your-mod")` lists it; if it isn't, nothing happens. That's for optional compatibility: Event Horizon's `Wormhole` runs your code for another mod only when it's there, and `against = ["libs/create.jar"]` in `miracle.project.toml` lets you compile against its jar without shipping it.
 
 A mod with `library = true` and no `entrypoint` just brings classes for other mods. A library that needs to patch things for the mods using it can register patches in their name: `rgct.onBehalfOf("their-mod")`, allowed only for mods that depend on it. `io.github.hronosin.miracle.api.Mods` tells any mod who else is loaded, which jar a class came from, and which game is running.
 
@@ -429,6 +431,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle dictionary <versions>` | `mappings` | fetches what baking needs for those versions (client jar; Mojang's mappings where obfuscated). `bake` and the build do it by themselves; `--list` shows the cache |
 | `miracle confess` | `doctor` | lists what's wrong with your setup and your Aura (RWBY), then absolves you anyway |
 | `miracle scribe item\|block <name>` | `assets` | writes what a new item or block needs besides code: model definitions, models, a placeholder texture, the English name, and for blocks a blockstate and a loot table. Keeps existing files unless `--force`; `--title "Holy Wafer"` names it |
+| `miracle scribe sound <name> <file>` | | the cantor: a wav, mp3, flac or ogg becomes the game's Ogg Vorbis (mono, so it's heard from where it plays; `--music` keeps stereo and streams it), with its `sounds.json` entry and subtitle. The same name again adds a variant the game picks at random. Ready Vorbis files are copied; anything else needs ffmpeg (or oggenc) |
 | `miracle bonfire [list\|rest [name]]` | `backup` | Dark Souls: checkpoints the worlds in `run/`; `rest` brings one back (the world you leave is kept too) |
 | `miracle grace ...` | | the same, for the Tarnished |
 | `miracle messages` | `todo` | Elden Ring: your TODO/FIXME/HACK/XXX comments as messages on the ground ("Try repent", "Be wary of the mixins") |
@@ -624,7 +627,10 @@ MiracleToolChain covers what most mods need. Event Horizon covers what they don'
 | `Spaghettification` | Scale | grow and shrink living things through the game's scale attribute, eased over time |
 | `QuantumFoam` | Dice | randomness for the especially lazy: weighted pools (nested, with "nothing"), a bag that deals everything once before repeating, pity that makes 25% feel like 25%, streams that are the same for the same world and key (a daily reward that can't be rerolled by relogging), points in shapes, safe spots to stand |
 | `Penrose` | Values | the loader's merge rules for your own numbers, flags and choices: other mods change them by name without depending on you, in any load order, to the last bit the same; ties and impossible ranges are reported, never thrown |
-| `Telescope` | Debug | `/horizon values`, `/horizon why <id>` (how a value came out, step by step, and who did what), `/horizon dice <rolls> <pool>` (what came up against what should have) |
+| `Telescope` | Debug | `/horizon values`, `/horizon why <id>` (how a value came out, step by step, and who did what), `/horizon dice <rolls> <pool>` (what came up against what should have), `/horizon bridges` |
+| `Wormhole` | Bridges | optional links between mods: a bridge class of yours runs only if the other mod is there (nothing of it is loaded otherwise; one that fails is logged and the game goes on), and services one mod offers by name and any mod seeks, with the highest priority winning |
+| `Lensing` | Shaders | bring your own shaders: write GLSL the way you're used to, the 1.21.11–26.2 way or the 26.3 way, and every shader of your mod is translated to the running version's dialect as it loads. Post effects from the server (26.3+, stacking) or the client (any version) |
+| `Chirp` | Sounds | plays sounds by id with nothing to register: from a place, from a mob, to one player, as one player's music, or on the client |
 
 ```java
 Singularity.Hit hit = Singularity.look(player, 32);
@@ -660,7 +666,19 @@ mymod:reach = 10.0 (for Pilgrim)
   range 0.0..64.0 (mymod)
 ```
 
-Checked on real 26.3 and 1.21.11 clients, in a world: an armor stand launched onto a spot 12 ticks away landed within a millionth of a block of it; a player flung upward rose 6 blocks as their own client saw it; boosts applied and expired on time, a stat clamped and spent, an aura found what was in it, scaling eased to 1.5, the scheduler ran everything in order. For 0.2, on 26.3, 1.21.11 and 26.1.2: a value declared by one mod and changed by name by another, for a player and for nobody; world-keyed rolls the same twice and different the next day; a safe spot found on a platform in the sky; `/horizon values`, `why` (also `execute as` the player) and `dice` (10,000 rolls: 90.1% dirt, 8.7% iron, 1.2% diamond). Plus 102 checks in `SelfTest`, no game needed, among them 200 shuffled load orders giving the same value to the last bit.
+Wormhole and Lensing, together:
+
+```java
+// onLaunch(); with entangles = ["create"] in miracle.mod.toml
+Wormhole.to("create>=6.0").open("com.me.mymod.compat.CreateBridge");    // runs only if Create is here
+
+// assets/mymod/shaders/post/warp.fsh, written the way you know: translated for 26.3 when it loads
+Lensing.add(player, "mymod:warp");              // server, 26.3+
+Lensing.hereForTicks("mymod:warp", 40);         // client, any version
+Chirp.play(level, Geodesic.center(pos), "mymod:bell");    // from `miracle scribe sound bell bell.wav`
+```
+
+Checked on real 26.3 and 1.21.11 clients, in a world: an armor stand launched onto a spot 12 ticks away landed within a millionth of a block of it; a player flung upward rose 6 blocks as their own client saw it; boosts applied and expired on time, a stat clamped and spent, an aura found what was in it, scaling eased to 1.5, the scheduler ran everything in order. For 0.2, on 26.3, 1.21.11 and 26.1.2: a value declared by one mod and changed by name by another, for a player and for nobody; world-keyed rolls the same twice and different the next day; a safe spot found on a platform in the sky; `/horizon values`, `why` (also `execute as` the player) and `dice` (10,000 rolls: 90.1% dirt, 8.7% iron, 1.2% diamond). For 0.3, on the same three: a bridge to hallelujah opened (compiled against its jar, loaded only because it was there), one to a missing mod stayed closed with nothing loaded, one that threw was logged and the game went on; services sought; sounds played four ways; a red tint written the classic way and a mirror written the 26.3 way, both shown on all three versions (stacked on 26.3, server and client together; one at a time before), as screenshots show. Plus 131 checks in `SelfTest`, no game needed, among them 200 shuffled load orders giving the same value to the last bit, and every vanilla shader of 26.2 and 26.3 through the translator: untouched in its own dialect, and classic to 26.3 and back giving each file back exactly.
 
 ## Lifecycle
 
@@ -712,7 +730,9 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] Java agent mode: `-javaagent:miracle-loader.jar` with the game's own main class, for any launcher
 - [x] Event Horizon Extension (experimental): vectors, curves, raycasts, ballistics, boosts and stats, auras, scheduler, particles, scale
 - [x] Event Horizon 0.2: QuantumFoam (random for the lazy), Penrose (merge rules for mods' own values), Telescope (`/horizon`)
-- [ ] Event Horizon 0.3: Wormhole (optional links between mods), Lensing (bring-your-own shaders, one dialect for every version)
+- [x] `entangles` (soft dependencies) and `against` (compile against other mods); `miracle scribe sound`
+- [x] Event Horizon 0.3: Wormhole (optional links between mods), Lensing (bring-your-own shaders, one dialect for every version), Chirp (sounds)
+- [ ] Event Horizon 0.4: Lensing's own pipelines for mods' entities and particles, uniforms from code; a post effect that fails without stopping the game
 - [x] Windows: `build.cmd`, `miracle.cmd`, and one Java build for every OS; `miracle consecrate` installs into Prism anywhere
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))
 
