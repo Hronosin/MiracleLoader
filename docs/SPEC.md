@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.4.0 |
+| Version | 1.4.1 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -607,6 +607,7 @@ MiracleLoader needs Java 25 (the ClassFile API); its bytecode can't be downgrade
 - Otherwise, before the game's `main`: mods are found (in the folder after `=`, else `miracle.modsDir`, else `mods`), resolved, and appended to the system class path; a mod's baked variant (8.3) is copied into a temporary jar appended before the mod's own, whose classes still count as the mod's (`Mods.owner`). Then the same steps as 8.4: `transform()`, freeze, report, lint, `miracle.lock`, the too-early check, and `onLaunch()`. A class-file transformer applies RGCT to every class loaded afterwards outside the JDK; if patching fails, the game stops with the crash banner instead of loading the class unpatched.
 - An exception escaping the game's main thread gets the same crash banner and blame as under `MiracleMain`, and exit code 1.
 - `miracle.target` and `miracle.gameClasspath` don't apply; everything else in 4.2 does.
+- Both at once (since 1.4.1): if the agent has run, `MiracleMain` (and so `Resurrection`) only says so and calls the game's main (`miracle.target`) from the class path, which the agent already patches. The mods are loaded once.
 
 ### 8.10 Reach (since 1.2.0)
 

@@ -191,6 +191,22 @@ expect redirect-clash "redirect-mod"
 expect redirect-clash "redirect-clash"
 expect redirect-clash "Only one mod can replace a call."
 
+# --- both at once: a -javaagent and the loader's main class (or Resurrection) ------------------
+both_ways() {   # both_ways <name> <main class>
+    local dir="$ROOT/build/test-runs/$1"
+    rm -rf "$dir" && mkdir -p "$dir/mods" && cp "$M/hello-mod.jar" "$dir/mods/"
+    out="$(cd "$dir" && "$JAVA" -javaagent:"$ROOT/build/miracle-loader.jar" \
+        -cp "$ROOT/build/miracle-loader.jar:$ROOT/build/fake-minecraft.jar" "$2" --username Steve 2>&1)"; code=$?
+}
+for m in io.github.hronosin.miracle.MiracleMain io.github.hronosin.miracle.Resurrection; do
+    both_ways "twice-${m##*.}" "$m"
+    expect_code "twice-${m##*.}" 0
+    expect "twice-${m##*.}" "already prays here as a Java agent, so the main class only hands over to net.minecraft.client.main.Main"
+    expect "twice-${m##*.}" "[hello-mod] hop, bytecode patch for Steve"
+    expect "twice-${m##*.}" "[FakeMinecraft] done"
+    expect_not "twice-${m##*.}" "already revealed"
+done
+
 # --- Resurrection: started on an older Java, the game rises again in Java 25 -----------------
 OLD_JAVA="${MIRACLE_TEST_OLD_JAVA:-$(ls -d /usr/lib/jvm/java-21*/bin/java /usr/lib/jvm/java-17*/bin/java 2>/dev/null | head -1)}"
 NEW_HOME="$("$JAVA" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.home = //p')"
@@ -710,7 +726,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.4.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.4.1 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

@@ -29,7 +29,15 @@ import java.util.jar.JarOutputStream;
  */
 public final class AgentMain {
 
+    /** Set once the agent has prayed in this JVM: the main class then only has to hand over. */
+    static final String PRAYED = "miracle.agent.prayed";
+
     private AgentMain() {
+    }
+
+    /** True if MiracleLoader already runs in this JVM as a Java agent. */
+    static boolean prayed() {
+        return System.getProperty(PRAYED) != null;
     }
 
     public static void premain(String args, Instrumentation inst) {
@@ -42,6 +50,7 @@ public final class AgentMain {
                 Files.createDirectories(dumpDir);
                 Log.info("Dumping patched classes to " + dumpDir.toAbsolutePath());
             }
+            System.setProperty(PRAYED, MiracleMain.VERSION);
             TransformRegistry rgct = new TransformRegistry();
             Host host = new AgentHost(inst);
             // Mods' redirect lambdas are relinked as their classes load, before transform() runs.

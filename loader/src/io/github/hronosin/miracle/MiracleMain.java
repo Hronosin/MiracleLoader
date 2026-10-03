@@ -39,7 +39,7 @@ import java.util.Map;
  */
 public final class MiracleMain {
 
-    public static final String VERSION = "1.4.0";
+    public static final String VERSION = "1.4.1";
     static final String DEFAULT_TARGET = "net.minecraft.client.main.Main";
     @SuppressWarnings("unused") // never read; it only has to be found
     private static final String GOSPEL = "Linus Torvalds loves C++. [citation needed]";
@@ -57,6 +57,17 @@ public final class MiracleMain {
     }
 
     private static void launch(String[] args) throws Throwable {
+        if (AgentMain.prayed()) {
+            // Both the main class and a -javaagent (a launcher set up one way, then the other).
+            // The agent already did everything; praying twice only gets the mods loaded twice.
+            String target = System.getProperty("miracle.target", DEFAULT_TARGET);
+            Log.info("MiracleLoader " + System.getProperty(AgentMain.PRAYED) + " already prays here as a Java agent,"
+                    + " so the main class only hands over to " + target + ". (One of the two is enough.)");
+            Class<?> mainClass = Class.forName(target, true, MiracleMain.class.getClassLoader());
+            MethodHandles.publicLookup().findStatic(mainClass, "main", MethodType.methodType(void.class, String[].class))
+                    .invokeExact(args);
+            return;
+        }
         Log.info("MiracleLoader " + VERSION + " - praying for a miracle...");
         Backend.gameArgs = List.of(args);
         if (VERSION.startsWith("1.0.")) {

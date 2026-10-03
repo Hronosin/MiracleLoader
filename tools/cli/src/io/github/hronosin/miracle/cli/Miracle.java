@@ -14,7 +14,7 @@ import java.util.List;
  */
 public final class Miracle {
 
-    static final String VERSION = "1.4.0";
+    static final String VERSION = "1.4.1";
 
     /** A user error: printed without a stack trace. */
     static final class Heresy extends RuntimeException {
