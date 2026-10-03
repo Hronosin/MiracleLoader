@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.5.0 |
+| Version | 1.5.1 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -175,6 +175,7 @@ Toolchain properties (`-D...`) go to the JVM running `miracle.jar`; through the 
 | `-Dmiracle.lockFile` | property | loader | where `miracle.lock` lives (default: next to the mods folder) |
 | `-Dmiracle.rawGraphics` | property | loader | since 1.2.0: `warn` (default), `refuse` or `allow`, for mods that call OpenGL or Vulkan directly (8.10) |
 | `-Dmiracle.backend` | property | loader | since 1.3.0: `auto` (default: the game's own `options.txt`), `opengl` or `vulkan`: which graphics backend the game is set to use (8.10) |
+| `-Dmiracle.cool` | property | loader | since 1.5.1: `false` drops the last word, `Cool :D`, printed on a good ending (no crash banner, no fresh crash report, no stop signal) |
 
 ## 5. Commands
 

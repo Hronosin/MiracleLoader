@@ -71,6 +71,7 @@ public final class AgentMain {
                     t.printStackTrace();
                 }
             });
+            Farewell.arm();
             Log.info("Handing over to the game's own main. Amen.");
         } catch (Throwable t) {
             MiracleMain.crash(t);

@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 1.5.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 1.5.1, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -104,6 +104,10 @@ The loader jar is also a Java agent. Leave the game's main class alone and add o
 ```
 
 Before the game's own `main` runs, the agent finds the mods, puts them on the class path and patches game classes as they load: the same mods, variants, layers, `miracle.lock` and crash reports as with `MiracleMain`. In the official Minecraft Launcher that's Installations > Edit > More options > JVM arguments; name the mods folder after an `=` if it isn't `mods` in the game folder: `-javaagent:C:\miracle\miracle-loader.jar=C:\Users\You\AppData\Roaming\.minecraft\mods`. The profile's Java has to be 25 or newer (26.x runs on 25 anyway); an agent can't relaunch the game in another Java the way `Resurrection` does, so on an older one it says which setting to change and stops. The whole test suite also runs this way: `AGENT=1 ./test.sh`. One of the two is enough: an instance set up for Prism (main class `Resurrection`) that also gets the `-javaagent` argument runs fine, the agent does the work and the main class just hands over.
+
+### The last word
+
+When the game ends the way it should (you quit, the server stops), the loader says goodbye: `Cool :D`, the last line before the launcher's own "exited with code 0". Not after a crash, and not when the process is killed. `-Dmiracle.cool=false` keeps it quiet.
 
 ### Prism Launcher
 

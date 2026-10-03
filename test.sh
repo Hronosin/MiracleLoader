@@ -68,6 +68,7 @@ expect vanilla "Found 0 mod(s)."
 expect vanilla "Vanilla, but with extra steps."
 expect vanilla "Steve jumps"
 expect vanilla "[FakeMinecraft] done"
+expect vanilla "Cool :D"                                              # the last word of a good ending
 expect_not vanilla "[hello-mod]"
 
 # --- hello-mod: head / return / ctor / static ------------------------------------------------
@@ -113,6 +114,7 @@ expect_code boom 1
 expect boom "NO MIRACLE OCCURRED"
 expect boom "Mod Boom Mod (boom-mod 0.0.0) failed in transform()"
 expect boom "kaboom"
+expect_not boom "Cool :D"                                             # not after a crash
 expect_not boom "[FakeMinecraft]"
 
 # --- mod touches game classes during transform() -> refuse to start -------------------------
@@ -730,7 +732,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.5.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.5.1 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1
