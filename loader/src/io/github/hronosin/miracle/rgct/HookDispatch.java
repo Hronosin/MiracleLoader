@@ -39,9 +39,17 @@ public final class HookDispatch {
     record Site(int[] hookIds, String argKinds, char returnKind, boolean head, String methodLabel) {
     }
 
+    /** A redirected call: what replaces it, and whose. */
+    record Redirection(String modId, String where, Object replacement) {
+    }
+
     private static final Object LOCK = new Object();
     private static volatile Entry[] entries = new Entry[0];
     private static volatile Site[] sites = new Site[0];
+    private static volatile Redirection[] redirections = new Redirection[0];
+
+    /** Arguments of a method without any: one array for every call, never written to. */
+    public static final Object[] NO_ARGS = new Object[0];
 
     private HookDispatch() {
     }
@@ -62,6 +70,16 @@ public final class HookDispatch {
             Site[] grown = Arrays.copyOf(old, old.length + 1);
             grown[old.length] = site;
             sites = grown;
+            return old.length;
+        }
+    }
+
+    static int registerRedirect(Redirection r) {
+        synchronized (LOCK) {
+            Redirection[] old = redirections;
+            Redirection[] grown = Arrays.copyOf(old, old.length + 1);
+            grown[old.length] = r;
+            redirections = grown;
             return old.length;
         }
     }
@@ -121,9 +139,49 @@ public final class HookDispatch {
                 }
                 yield MethodHandles.insertArguments(RETURN_MANY, 0, site);
             }
+            case "redirect" -> replacement(redirections[id]);
             default -> throw new IllegalArgumentException("RGCT: no such call site kind: " + name);
         };
         return new ConstantCallSite(target.asType(type));
+    }
+
+    /**
+     * The replacement of a redirected call, as a handle. A method reference to a static method (or
+     * a lambda that captures nothing) is called directly, with its own types; anything else is
+     * called through its interface method, bound to the object.
+     */
+    private static MethodHandle replacement(Redirection r) {
+        Object fn = r.replacement();
+        if (fn instanceof Shapes.Named n) {
+            return n.handle();
+        }
+        java.lang.invoke.SerializedLambda l = CallScan.lambda(fn);
+        if (l != null && l.getCapturedArgCount() == 0 && l.getImplMethodKind() == java.lang.invoke.MethodHandleInfo.REF_invokeStatic) {
+            try {
+                ClassLoader loader = fn.getClass().getClassLoader();
+                Class<?> owner = Class.forName(l.getImplClass().replace('/', '.'), false, loader);
+                MethodHandles.Lookup lookup = MethodHandles.privateLookupIn(owner, MethodHandles.lookup());
+                return lookup.findStatic(owner, l.getImplMethodName(),
+                        MethodType.fromMethodDescriptorString(l.getImplMethodSignature(), loader));
+            } catch (ReflectiveOperationException | RuntimeException e) {
+                // fall through to the interface
+            }
+        }
+        for (Class<?> iface : fn.getClass().getInterfaces()) {
+            if (iface.getEnclosingClass() == Redirect.class) {
+                for (java.lang.reflect.Method m : iface.getMethods()) {
+                    if (m.getName().equals("call") && java.lang.reflect.Modifier.isAbstract(m.getModifiers())) {
+                        try {
+                            return MethodHandles.publicLookup().unreflect(m).bindTo(fn);
+                        } catch (IllegalAccessException e) {
+                            throw new IllegalStateException("RGCT: can't call the replacement of " + r.where(), e);
+                        }
+                    }
+                }
+            }
+        }
+        throw new IllegalStateException("RGCT: the replacement of " + r.where() + " (mod '" + r.modId()
+                + "') isn't a Redirect shape");
     }
 
     private static void fireOne(Hook hook, Entry e, Object self) {

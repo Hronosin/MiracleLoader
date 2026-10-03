@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 1.3.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 1.4.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -220,6 +220,7 @@ rgct.target("a.b.SomeClass")
     .method("name", "(IF)Z")        // one exact overload
     .interceptHead(ctx -> ...)      // read/change arguments, or cancel the method
     .interceptReturn(ctx -> ...)    // read/replace the return value
+    .redirect(Foo::bar, Mine::bar)  // replace one call the method makes, for free
     .and()
     .raw(classTransform);           // raw ClassFile API: you're on your own
 ```
@@ -288,7 +289,7 @@ Details:
 
 - Primitives travel boxed: an `int` argument is an `Integer`, a `float` return is a `Float`. Plain Java casts unbox them: `(float) ctx.returnValue()`.
 - `set` needs exactly the right type, and a wrong one (a `Double` where the game wants a `float`) fails right away with an error that names the method, the expected type and your mod. The stacking effects take any `Number`; integral results are rounded to the nearest value.
-- Interception boxes the arguments into an `Object[]` on every call. Fine for most methods; for something called millions of times per tick, prefer observing.
+- Interception boxes the arguments into an `Object[]` on every call. Fine for most methods; for something called millions of times per tick, prefer observing, or a redirect.
 - Not supported on constructor heads. Raw transforms are outside the layer system entirely.
 
 ### Direct calls
@@ -303,6 +304,24 @@ Every patched spot in a game method is an `invokedynamic` site. The first time i
 | two hooks that multiply it | 145 ns | 57 ns |
 
 `-Dmiracle.directCalls=false` patches the old way (a static call with an id per spot), for comparison or suspicion; the results are the same either way, and the test suite checks both.
+
+### Transubstantiation: `redirect`
+
+Sometimes the method is fine and one call inside it isn't. `redirect` replaces a call that a method makes, at the spot where it makes it, and nowhere else:
+
+```java
+rgct.target("net.minecraft.client.renderer.LevelRenderer")
+    .method("extractSectionDrawGroups")
+    .redirect(ChunkSectionLayer::values, Layers::cached);   // no array clone per section per frame
+```
+
+- **Both sides have the same shape**, so the compiler checks that the replacement takes and returns exactly what the call did. For an instance method the object comes first: `Player::getName` is replaced by something taking a `Player` and returning a `String`. `redirectVoid` is the same for calls that return nothing. Up to nine values, the object included. An overloaded method is picked by the replacement's types: `.redirectVoid(PrintStream::print, (PrintStream out, String s) -> ...)`.
+- **Wider is fine.** The replacement may take wider types than the call passes, and may return `Object`, which is cast back where the game uses it. That's how a mod names game classes that moved or don't exist in every version it supports: as `Object`. If the call is overloaded too, say which one with a type witness: `.<PrintStream, String>redirectVoid(PrintStream::println, Mine::shout)`.
+- **Free.** The call becomes an `invokedynamic` site bound once, for good, to the replacement itself: no context, no boxing, no array. A static method (or a lambda that captures nothing) is called with its own types, and the JIT inlines it as if the game had called it.
+- **The call can be a lambda** that makes exactly one call (`p -> p.getName()`), for when `Foo::bar` would be ambiguous. Constructors, `super` calls and private methods can't be redirected.
+- **Safe in `transform()`**: naming `Player::getName` doesn't load `Player`. As a mod class loads, RGCT relinks its redirect lambdas so that they are written down by name and only looked up when the game first makes the call.
+- **One mod per call.** Effects merge; replacements can't. Two mods redirecting the same call in the same method stop the game with an error naming both. Redirecting different calls in the same method, or hooking a method whose calls are redirected, is fine.
+- A call the method never makes (a different game version, most likely) is warned about, like a missing method. Baking translates the names: a redirect of `Player::getName` becomes one of `o.a::c` on 1.21.11.
 
 ### General
 
@@ -724,6 +743,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] Merge rules for well-known game values (MiracleToolChain's Blessings)
 - [x] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [x] Direct calls: patched spots bound to their hooks, so the JIT inlines them
+- [x] Transubstantiation: `redirect` replaces one call inside a method, at no cost per call
 - [x] Mod dependencies in `miracle.mod.toml`, library mods, patching on behalf of dependents
 - [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
 - [x] MiracleToolChain: `ascend` (publish to GitHub; to Modrinth once it lists the loader)

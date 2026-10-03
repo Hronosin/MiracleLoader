@@ -17,6 +17,7 @@ public class Main {
         steve.f();
         System.out.println("[FakeMinecraft] moved=" + steve.a(2L, 0.5, false, 'x'));
         System.out.println("[FakeMinecraft] motd=" + a.g());
+        System.out.println("[FakeMinecraft] title=" + steve.h());
         System.out.println("[FakeMinecraft] done");
     }
 }

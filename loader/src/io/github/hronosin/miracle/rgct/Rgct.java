@@ -154,6 +154,117 @@ public final class Rgct {
             return this;
         }
 
+        /**
+         * Replaces a call this method makes: every {@code call} inside it calls {@code replacement}
+         * instead, with the same arguments (the receiver first, for an instance method), and the
+         * method goes on with what the replacement returned. One mod per call: two mods
+         * redirecting the same call in the same method is a conflict, reported at startup.
+         *
+         * <pre>{@code
+         * .method("extractSectionDrawGroups")
+         * .redirect(ChunkSectionLayer::values, MyMod::layers)
+         * }</pre>
+         *
+         * <p>Costs nothing at run time: the call site is bound once to the replacement, which the
+         * JIT inlines like the original. Unlike intercept hooks, nothing is boxed or wrapped. For
+         * calls that return nothing, use {@link #redirectVoid}. Constructors, private and
+         * {@code super} calls can't be redirected.
+         *
+         * <p>Safe inside {@code transform()}: as a mod class loads, RGCT rewrites its redirect
+         * lambdas so they're written down by name, and looked up only when the game first makes
+         * the call. {@code Player::getName} here loads no {@code Player}. (Anything the lambda
+         * captures is still evaluated, so capture nothing from the game.)
+         *
+         * @param call        the call to replace, as a method reference ({@code Foo::bar}) or a
+         *                    lambda making exactly that one call
+         * @param replacement what to call instead: a method reference or a lambda of the same shape
+         */
+        public <R> MethodTarget redirect(Redirect.Call0<R> call, Redirect.Call0<R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, R> MethodTarget redirect(Redirect.Call1<A, R> call, Redirect.Call1<A, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, R> MethodTarget redirect(Redirect.Call2<A, B, R> call, Redirect.Call2<A, B, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, R> MethodTarget redirect(Redirect.Call3<A, B, C, R> call, Redirect.Call3<A, B, C, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, R> MethodTarget redirect(Redirect.Call4<A, B, C, D, R> call, Redirect.Call4<A, B, C, D, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, R> MethodTarget redirect(Redirect.Call5<A, B, C, D, E, R> call, Redirect.Call5<A, B, C, D, E, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, R> MethodTarget redirect(Redirect.Call6<A, B, C, D, E, F, R> call, Redirect.Call6<A, B, C, D, E, F, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G, R> MethodTarget redirect(Redirect.Call7<A, B, C, D, E, F, G, R> call, Redirect.Call7<A, B, C, D, E, F, G, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G, H, R> MethodTarget redirect(Redirect.Call8<A, B, C, D, E, F, G, H, R> call, Redirect.Call8<A, B, C, D, E, F, G, H, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G, H, I, R> MethodTarget redirect(Redirect.Call9<A, B, C, D, E, F, G, H, I, R> call, Redirect.Call9<A, B, C, D, E, F, G, H, I, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        /** {@link #redirect} for a call that returns nothing. */
+        public MethodTarget redirectVoid(Redirect.Do0 call, Redirect.Do0 replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A> MethodTarget redirectVoid(Redirect.Do1<A> call, Redirect.Do1<A> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B> MethodTarget redirectVoid(Redirect.Do2<A, B> call, Redirect.Do2<A, B> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C> MethodTarget redirectVoid(Redirect.Do3<A, B, C> call, Redirect.Do3<A, B, C> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D> MethodTarget redirectVoid(Redirect.Do4<A, B, C, D> call, Redirect.Do4<A, B, C, D> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E> MethodTarget redirectVoid(Redirect.Do5<A, B, C, D, E> call, Redirect.Do5<A, B, C, D, E> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F> MethodTarget redirectVoid(Redirect.Do6<A, B, C, D, E, F> call, Redirect.Do6<A, B, C, D, E, F> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G> MethodTarget redirectVoid(Redirect.Do7<A, B, C, D, E, F, G> call, Redirect.Do7<A, B, C, D, E, F, G> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G, H> MethodTarget redirectVoid(Redirect.Do8<A, B, C, D, E, F, G, H> call, Redirect.Do8<A, B, C, D, E, F, G, H> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G, H, I> MethodTarget redirectVoid(Redirect.Do9<A, B, C, D, E, F, G, H, I> call, Redirect.Do9<A, B, C, D, E, F, G, H, I> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        private MethodTarget redirectAny(Object call, Object replacement) {
+            registry.addRedirect(owner.className, modId, name, descriptor, call, replacement);
+            return this;
+        }
+
         /** Back to the class, to patch another method. */
         public ClassTarget and() {
             return owner;

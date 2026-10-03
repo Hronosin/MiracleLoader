@@ -20,6 +20,7 @@ public class Main {
         steve.explode();
         System.out.println("[FakeMinecraft] moved=" + steve.move(2L, 0.5, false, 'x'));
         System.out.println("[FakeMinecraft] motd=" + Player.motd());
+        System.out.println("[FakeMinecraft] title=" + steve.title());
         System.out.println("[FakeMinecraft] done");
     }
 }

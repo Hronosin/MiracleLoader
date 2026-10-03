@@ -55,6 +55,11 @@ public class Player {
         return "vanilla";
     }
 
+    /** Two calls (one static, one virtual) for RGCT redirects to replace. */
+    public String title() {
+        return motd() + "/" + getName();
+    }
+
     /** Exists here but not in test-fixtures/fake-obf-game: something for miracle-bake to catch. */
     public void fly() {
         System.out.println("[FakeMinecraft] " + name + " flies");

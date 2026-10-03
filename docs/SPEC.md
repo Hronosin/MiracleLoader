@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.3.0 |
+| Version | 1.4.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 
@@ -1064,9 +1064,9 @@ What's API:
 
 What isn't:
 
-- Anything marked `@io.github.hronosin.miracle.api.Internal` (public only for technical reasons: `HookDispatch`, which patched game classes call; `TransformRegistry`; `Mods.revealed`, `Mods.entangle`, `Mods.launch`, `Mods.standIn`), and anything not public.
+- Anything marked `@io.github.hronosin.miracle.api.Internal` (public only for technical reasons: `HookDispatch`, which patched game classes call; `Shapes`, which mods' redirect lambdas are relinked to; `TransformRegistry`; `Mods.revealed`, `Mods.entangle`, `Mods.launch`, `Mods.standIn`), and anything not public.
 - Anything marked `@Experimental`: all of Event Horizon Extension (9.15), which has its own version number, below 1.0 while it settles.
-- The bytecode RGCT writes into game classes, the order of lines in reports, and all other output wording (Yukari included).
+- The bytecode RGCT writes into game classes (and into mod classes that redirect calls), the order of lines in reports, and all other output wording (Yukari included).
 - Which game versions are supported (section 11): new ones are added as they come; an old one is dropped only in a minor release that says so.
 
 A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolchain>=1.0.0"`, `"event-horizon>=0.4.0"`). A mod that uses something added in a minor release (`Mods.entangled`, `entangles`, `against`: 1.1.0) depends on that release: `"miracle>=1.1.0"`.

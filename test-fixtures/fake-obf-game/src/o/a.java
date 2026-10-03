@@ -57,4 +57,8 @@ public class a {
     public static String g() {
         return "vanilla";
     }
+
+    public String h() {
+        return g() + "/" + c();
+    }
 }

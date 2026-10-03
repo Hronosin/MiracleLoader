@@ -1,0 +1,2 @@
+id = "redirect-clash"
+entrypoint = "test.redirect2.RedirectClash"

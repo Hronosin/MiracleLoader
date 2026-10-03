@@ -170,6 +170,27 @@ expect badtype "NO MIRACLE OCCURRED"
 expect badtype "return value must be a Float (primitive float), got java.lang.Double 2.0"
 expect badtype "thrown by a hook of mod 'badtype-mod'"
 
+# --- redirect: a call inside a method, replaced at the call site ------------------------------
+run_with redirect "$T/redirect-mod.jar"
+expect_code redirect 0
+expect redirect "title=redirected/Mr. Steve"                        # static call + virtual call, both replaced
+expect redirect "~Steve JUMPS"                                       # void JDK calls: the right overload; wider types
+expect redirect "redirects net.minecraft.world.entity.player.Player.ticks()I in net.minecraft.world.entity.player.Player#title, but that method never makes that call"
+expect redirect "[replaces net.minecraft.world.entity.player.Player.getName()Ljava/lang/String;]"
+expect_not redirect "NO MIRACLE OCCURRED"                            # naming Player::getName loads nothing early
+expect redirect "[FakeMinecraft] done"
+
+run_with redirect-hooked "$M/hello-mod.jar" "$T/redirect-mod.jar"   # a redirect and a hook in one method
+expect_code redirect-hooked 0
+expect redirect-hooked "[hello-mod] hop, bytecode patch for Steve"
+expect redirect-hooked "~Steve JUMPS"
+
+run_with redirect-clash "$T/redirect-mod.jar" "$T/redirect-clash.jar"
+expect_code redirect-clash 1
+expect redirect-clash "redirect-mod"
+expect redirect-clash "redirect-clash"
+expect redirect-clash "Only one mod can replace a call."
+
 # --- Resurrection: started on an older Java, the game rises again in Java 25 -----------------
 OLD_JAVA="${MIRACLE_TEST_OLD_JAVA:-$(ls -d /usr/lib/jvm/java-21*/bin/java /usr/lib/jvm/java-17*/bin/java 2>/dev/null | head -1)}"
 NEW_HOME="$("$JAVA" -XshowSettings:properties -version 2>&1 | sed -n 's/^ *java.home = //p')"
@@ -293,15 +314,15 @@ expect variant-unchecked "[variant-mod] running the plain classes"
 BAKED="$ROOT/build/test-baked"
 rm -rf "$BAKED" && mkdir -p "$BAKED"
 cp "$M/hello-mod.jar" "$T/intercept-mod.jar" "$T/stack-a.jar" "$T/stack-b.jar" \
-   "$T/clash-a.jar" "$T/clash-hi.jar" "$T/fly-mod.jar" "$T/wings-mod.jar" "$BAKED/"
+   "$T/clash-a.jar" "$T/clash-hi.jar" "$T/fly-mod.jar" "$T/wings-mod.jar" "$T/redirect-mod.jar" "$BAKED/"
 out="$("$JAVA" -jar build/miracle-bake.jar --native fake=build/fake-minecraft.jar \
         --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt "$BAKED"/*.jar 2>&1)"
 expect bake "[bake] intercept-mod.jar"
 expect bake "MISSING 1:"
 expect bake "RGCT target net.minecraft.world.entity.player.Player#fly"
 expect bake "not baked. Drop this version, or add a fallback for what's missing (fallback/fake-obf/src in the mod's sources)."
-[ "$(grep -c "game references translated.*, baked" <<< "$out")" -eq 7 ] && pass=$((pass + 1)) \
-    || { fail=$((fail + 1)); echo "FAIL [bake]: expected 7 baked mods"; echo "$out"; }
+[ "$(grep -c "game references translated.*, baked" <<< "$out")" -eq 8 ] && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [bake]: expected 8 baked mods"; echo "$out"; }
 expect bake "[bake] wings-mod.jar (1 classes, fallbacks for [fake-obf])"
 expect bake "5 game references translated, 1 fallback method(s) + 1 added, baked"
 expect bake "note: added test.wings.WingsMod#label(Lnet/minecraft/world/entity/player/Player;)Ljava/lang/String;"
@@ -373,6 +394,12 @@ expect obf-hello "[hello-mod] getScore returning for 'Steve'"
 GAME_JAR="$OBF" run_with obf-prio "$BAKED/clash-a.jar" "$BAKED/clash-hi.jar"
 expect_code obf-prio 0
 expect obf-prio "motd=HI"
+
+GAME_JAR="$OBF" run_with obf-redirect "$BAKED/redirect-mod.jar"
+expect_code obf-redirect 0
+expect obf-redirect "title=redirected/Mr. Steve"                     # Player::motd baked to o.a::g
+expect obf-redirect "~Steve JUMPS"
+expect obf-redirect "[replaces o.a.c()Ljava/lang/String;]"
 
 GAME_JAR="$OBF" run_with obf-fly "$BAKED/fly-mod.jar"
 expect_code obf-fly 1
@@ -683,7 +710,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.3.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.4.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

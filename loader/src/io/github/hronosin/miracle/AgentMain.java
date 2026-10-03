@@ -44,6 +44,8 @@ public final class AgentMain {
             }
             TransformRegistry rgct = new TransformRegistry();
             Host host = new AgentHost(inst);
+            // Mods' redirect lambdas are relinked as their classes load, before transform() runs.
+            inst.addTransformer(new Relinker());
             MiracleMain.prepare(host, rgct, Path.of(folder), () -> inst.addTransformer(new Patcher(rgct, dumpDir)));
             // As MiracleMain would: the game's main dying of an exception gets the crash banner,
             // with the blame a hook's exception carries.
@@ -64,6 +66,25 @@ public final class AgentMain {
         } catch (Throwable t) {
             MiracleMain.crash(t);
             System.exit(1);
+        }
+    }
+
+    /** Mod classes, from the start: Redirect lambdas written down by name instead of linked. */
+    private static final class Relinker implements ClassFileTransformer {
+        @Override
+        public byte[] transform(ClassLoader loader, String internalName, Class<?> redefining, ProtectionDomain domain,
+                                byte[] bytes) {
+            if (loader == null || internalName == null || redefining != null) {
+                return null;
+            }
+            try {
+                byte[] relinked = TransformRegistry.relink(bytes, loader);
+                return relinked == bytes ? null : relinked;
+            } catch (Throwable t) {
+                MiracleMain.crash(new MiracleFailure("RGCT could not read the redirects in " + internalName.replace('/', '.'), t));
+                Runtime.getRuntime().halt(1);
+                return null;
+            }
         }
     }
 

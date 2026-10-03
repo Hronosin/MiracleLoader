@@ -13,6 +13,7 @@ import java.lang.classfile.Label;
 import java.lang.classfile.MethodModel;
 import java.lang.classfile.MethodTransform;
 import java.lang.classfile.TypeKind;
+import java.lang.classfile.instruction.InvokeInstruction;
 import java.lang.classfile.instruction.ReturnInstruction;
 import java.lang.constant.ClassDesc;
 import java.lang.constant.ConstantDescs;
@@ -64,6 +65,24 @@ public final class TransformRegistry {
         }
     }
 
+    /** A call {@code call} inside {@code method} that {@code modId} replaces; {@code id} is its HookDispatch slot. */
+    record RedirectPatch(String modId, String method, String descriptor, CallScan.Member call, int id) {
+        boolean matches(MethodModel mm) {
+            return mm.methodName().equalsString(method)
+                    && (descriptor == null || mm.methodType().equalsString(descriptor));
+        }
+
+        String label() {
+            return method + (descriptor == null ? "" : descriptor);
+        }
+
+        /** The call site the replacement is bound to: the call's own type, receiver first if it has one. */
+        MethodTypeDesc siteType() {
+            MethodTypeDesc t = MethodTypeDesc.ofDescriptor(call.desc());
+            return call.isStatic() ? t : t.insertParameterTypes(0, ClassDesc.ofInternalName(call.owner()));
+        }
+    }
+
     record RawPatch(String modId, ClassTransform transform) {
     }
 
@@ -72,6 +91,7 @@ public final class TransformRegistry {
 
     private static final class ClassPatches {
         final List<HookPatch> hooks = new ArrayList<>();
+        final List<RedirectPatch> redirects = new ArrayList<>();
         final List<RawPatch> raws = new ArrayList<>();
         final List<RawBytesPatch> rawBytes = new ArrayList<>();
     }
@@ -142,6 +162,40 @@ public final class TransformRegistry {
         patchesFor(className).hooks.add(new HookPatch(modId, method, descriptor, where, id, priority, effects));
     }
 
+    synchronized void addRedirect(String className, String modId, String method, String descriptor,
+                                  Object call, Object replacement) {
+        checkOpen();
+        if (call == null || replacement == null) {
+            throw new IllegalArgumentException("redirect needs both the call and its replacement");
+        }
+        if (method == null || method.isBlank()) {
+            throw new IllegalArgumentException("method name is empty");
+        }
+        if (descriptor != null) {
+            MethodTypeDesc.ofDescriptor(descriptor);
+        }
+        CallScan.Member member;
+        try {
+            member = CallScan.call(call);
+        } catch (IllegalArgumentException e) {
+            throw new IllegalArgumentException("mod '" + modId + "', redirect in " + className + "#" + method + ": "
+                    + e.getMessage(), e);
+        }
+        ClassPatches patches = patchesFor(className);
+        for (RedirectPatch other : patches.redirects) {
+            boolean sameMethod = other.method().equals(method)
+                    && (other.descriptor() == null || descriptor == null || other.descriptor().equals(descriptor));
+            if (sameMethod && other.call().equals(member)) {
+                throw new RgctConflictException("RGCT conflict at " + className + "#" + method
+                        + (descriptor == null ? "" : descriptor) + ": '" + other.modId() + "' and '" + modId
+                        + "' both redirect the call to " + member.label() + ". Only one mod can replace a call.");
+            }
+        }
+        String at = className + "#" + method + (descriptor == null ? "" : descriptor) + " redirect " + member.label();
+        int id = HookDispatch.registerRedirect(new HookDispatch.Redirection(modId, at, replacement));
+        patches.redirects.add(new RedirectPatch(modId, method, descriptor, member, id));
+    }
+
     synchronized void addRaw(String className, String modId, ClassTransform transform) {
         checkOpen();
         if (transform == null) {
@@ -178,6 +232,7 @@ public final class TransformRegistry {
         }
         List<String> mods = new ArrayList<>();
         p.hooks.forEach(h -> { if (!mods.contains(h.modId())) mods.add(h.modId()); });
+        p.redirects.forEach(r -> { if (!mods.contains(r.modId())) mods.add(r.modId()); });
         p.raws.forEach(r -> { if (!mods.contains(r.modId())) mods.add(r.modId()); });
         p.rawBytes.forEach(r -> { if (!mods.contains(r.modId())) mods.add(r.modId()); });
         return mods;
@@ -204,6 +259,11 @@ public final class TransformRegistry {
                 String nice = readable.get(e.getKey() + "#" + h.label());
                 String label = nice == null ? h.label() : h.label() + " (" + nice + ")";
                 lines.add(String.format("    %-28s %-17s <- %s%s", label, h.where().label, h.modId(), details(h)));
+            }
+            for (RedirectPatch r : e.getValue().redirects) {
+                String nice = readable.get(e.getKey() + "#" + r.label());
+                String label = nice == null ? r.label() : r.label() + " (" + nice + ")";
+                lines.add(String.format("    %-28s %-17s <- %s  [replaces %s]", label, "redirect", r.modId(), r.call().label()));
             }
             for (RawPatch r : e.getValue().raws) {
                 lines.add(String.format("    %-28s %-17s <- %s (raw: you're on your own)", "<whole class>", "", r.modId()));
@@ -233,6 +293,11 @@ public final class TransformRegistry {
                 String line = cls + "#" + (nice != null ? nice : h.label()) + " " + h.where().label + " [" + what
                         + (h.priority() != 0 ? ", priority " + h.priority() : "") + "]";
                 counted.computeIfAbsent(h.modId(), k -> new TreeMap<>()).merge(line, 1, Integer::sum);
+            }
+            for (RedirectPatch r : e.getValue().redirects) {
+                String nice = readable.get(e.getKey() + "#" + r.label());
+                String line = cls + "#" + (nice != null ? nice : r.label()) + " redirect [" + r.call().label() + "]";
+                counted.computeIfAbsent(r.modId(), k -> new TreeMap<>()).merge(line, 1, Integer::sum);
             }
             for (RawPatch r : e.getValue().raws) {
                 counted.computeIfAbsent(r.modId(), k -> new TreeMap<>()).merge(cls + " raw [whole class]", 1, Integer::sum);
@@ -305,11 +370,17 @@ public final class TransformRegistry {
         });
     }
 
+    /** A class with its {@link Redirect} lambdas relinked so they load nothing early; or {@code bytes} itself. */
+    public static byte[] relink(byte[] bytes, ClassLoader resolverLoader) {
+        return Shapes.unlink(bytes, resolverLoader);
+    }
+
     /**
-     * Applies every patch registered for {@code className}. Returns the input array unchanged
-     * when nothing targets the class.
+     * Applies every patch registered for {@code className} (and relinks Redirect lambdas). Returns
+     * the input array unchanged when there was nothing to do.
      */
     public byte[] transform(String className, byte[] bytes, ClassLoader resolverLoader) {
+        bytes = Shapes.unlink(bytes, resolverLoader);
         ClassPatches patches = byClass.get(className);
         if (patches == null) {
             return bytes;
@@ -323,14 +394,17 @@ public final class TransformRegistry {
         ClassModel model = cf.parse(bytes);
 
         Set<HookPatch> matched = Collections.newSetFromMap(new IdentityHashMap<>());
-        ClassTransform transform = hookTransform(className, patches.hooks, matched);
+        Map<RedirectPatch, int[]> calls = new IdentityHashMap<>();
+        patches.redirects.forEach(r -> calls.put(r, new int[] {-1}));
+        ClassTransform transform = hookTransform(className, patches.hooks, patches.redirects, matched, calls);
         for (RawPatch raw : patches.raws) {
             Log.warn("RGCT: mod '" + raw.modId() + "' raw-patches " + className
                     + ". If it breaks, that one is to blame.");
             transform = transform.andThen(raw.transform());
         }
 
-        byte[] out = patches.hooks.isEmpty() && patches.raws.isEmpty() ? bytes : cf.transformClass(model, transform);
+        byte[] out = patches.hooks.isEmpty() && patches.redirects.isEmpty() && patches.raws.isEmpty()
+                ? bytes : cf.transformClass(model, transform);
         for (RawBytesPatch p : patches.rawBytes) {
             Log.warn("OSHI: mod '" + p.modId() + "' brings its own hooks for " + className
                     + ". Old school rules: you break it, you bought it.");
@@ -341,6 +415,16 @@ public final class TransformRegistry {
             out = next;
         }
 
+        for (RedirectPatch r : patches.redirects) {
+            int found = calls.get(r)[0];
+            if (found < 0) {
+                Log.warn("RGCT: mod '" + r.modId() + "' redirects a call in " + className + "#" + r.label()
+                        + ", but no such method with a body exists. Wrong game version?");
+            } else if (found == 0) {
+                Log.warn("RGCT: mod '" + r.modId() + "' redirects " + r.call().label() + " in " + className + "#"
+                        + r.label() + ", but that method never makes that call. Wrong game version?");
+            }
+        }
         for (HookPatch h : patches.hooks) {
             if (!matched.contains(h)) {
                 Log.warn("RGCT: mod '" + h.modId() + "' targets " + className + "#" + h.label()
@@ -350,8 +434,9 @@ public final class TransformRegistry {
         return out;
     }
 
-    private static ClassTransform hookTransform(String className, List<HookPatch> hooks, Set<HookPatch> matched) {
-        if (hooks.isEmpty()) {
+    private static ClassTransform hookTransform(String className, List<HookPatch> hooks, List<RedirectPatch> redirects,
+                                                Set<HookPatch> matched, Map<RedirectPatch, int[]> calls) {
+        if (hooks.isEmpty() && redirects.isEmpty()) {
             return ClassTransform.ACCEPT_ALL;
         }
         return (clb, cle) -> {
@@ -362,7 +447,17 @@ public final class TransformRegistry {
                         found.computeIfAbsent(h.where(), w -> new ArrayList<>()).add(h);
                     }
                 }
-                if (!found.isEmpty()) {
+                List<RedirectPatch> here = new ArrayList<>();
+                for (RedirectPatch r : redirects) {
+                    if (r.matches(mm)) {
+                        here.add(r);
+                        int[] n = calls.get(r);
+                        if (n[0] < 0) {
+                            n[0] = 0;
+                        }
+                    }
+                }
+                if (!found.isEmpty() || !here.isEmpty()) {
                     boolean isCtor = mm.methodName().equalsString("<init>");
                     List<HookPatch> interceptHead = found.getOrDefault(Where.INTERCEPT_HEAD, List.of());
                     if (isCtor && !interceptHead.isEmpty()) {
@@ -380,7 +475,7 @@ public final class TransformRegistry {
                     int returnSite = site(shape, found.getOrDefault(Where.INTERCEPT_RETURN, List.of()), false);
 
                     Injector injector = new Injector(shape,
-                            ids(found.get(Where.HEAD)), ids(found.get(Where.RETURN)), headSite, returnSite);
+                            ids(found.get(Where.HEAD)), ids(found.get(Where.RETURN)), headSite, returnSite, here, calls);
                     if (injector.isEmpty()) {
                         clb.with(cle);
                     } else {
@@ -447,18 +542,23 @@ public final class TransformRegistry {
         private final int[] returnIds;
         private final int headSite;
         private final int returnSite;
+        private final List<RedirectPatch> redirects;
+        private final Map<RedirectPatch, int[]> calls;
         private int returnTemp = -1;
 
-        Injector(MethodShape shape, int[] headIds, int[] returnIds, int headSite, int returnSite) {
+        Injector(MethodShape shape, int[] headIds, int[] returnIds, int headSite, int returnSite,
+                 List<RedirectPatch> redirects, Map<RedirectPatch, int[]> calls) {
             this.shape = shape;
             this.headIds = headIds;
             this.returnIds = returnIds;
             this.headSite = headSite;
             this.returnSite = returnSite;
+            this.redirects = redirects;
+            this.calls = calls;
         }
 
         boolean isEmpty() {
-            return headIds.length == 0 && returnIds.length == 0 && headSite < 0 && returnSite < 0;
+            return headIds.length == 0 && returnIds.length == 0 && headSite < 0 && returnSite < 0 && redirects.isEmpty();
         }
 
         private boolean selfAvailableAtHead() {
@@ -477,6 +577,16 @@ public final class TransformRegistry {
 
         @Override
         public void accept(CodeBuilder b, CodeElement e) {
+            if (e instanceof InvokeInstruction ii && !redirects.isEmpty()) {
+                for (RedirectPatch r : redirects) {
+                    if (r.call().matches(ii)) {
+                        calls.get(r)[0]++;
+                        // The arguments (and receiver) are already on the stack, exactly as the call wanted them.
+                        b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, "redirect", r.siteType(), r.id()));
+                        return;
+                    }
+                }
+            }
             if (e instanceof ReturnInstruction) {
                 if (returnSite >= 0) {
                     emitInterceptReturn(b);
@@ -527,6 +637,10 @@ public final class TransformRegistry {
         /** Leaves a fresh Object[] holding the (boxed) current argument values on the stack. */
         private void packArgs(CodeBuilder b) {
             List<ClassDesc> params = shape.params();
+            if (params.isEmpty()) {
+                b.getstatic(DISPATCH, "NO_ARGS", ConstantDescs.CD_Object.arrayType());
+                return;
+            }
             b.loadConstant(params.size());
             b.anewarray(ConstantDescs.CD_Object);
             for (int i = 0; i < params.size(); i++) {

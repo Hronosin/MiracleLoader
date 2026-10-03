@@ -1,0 +1,2 @@
+id = "redirect-mod"
+entrypoint = "test.redirect.RedirectMod"

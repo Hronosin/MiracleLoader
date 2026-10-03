@@ -16,3 +16,4 @@ net.minecraft.world.entity.player.Player -> o.a:
     46:47:void explode() -> f
     51:54:double move(long,double,boolean,char) -> a
     57:57:java.lang.String motd() -> g
+    61:62:java.lang.String title() -> h
