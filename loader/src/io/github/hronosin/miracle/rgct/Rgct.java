@@ -167,8 +167,10 @@ public final class Rgct {
          *
          * <p>Costs nothing at run time: the call site is bound once to the replacement, which the
          * JIT inlines like the original. Unlike intercept hooks, nothing is boxed or wrapped. For
-         * calls that return nothing, use {@link #redirectVoid}. Constructors, private and
-         * {@code super} calls can't be redirected.
+         * calls that return nothing, use {@link #redirectVoid}. A {@code new} is redirected too:
+         * name it {@code Foo::new}, and the replacement, a factory taking the constructor's
+         * arguments, makes the object instead (since 1.5.0). Private and {@code super} calls can't
+         * be redirected.
          *
          * <p>Safe inside {@code transform()}: as a mod class loads, RGCT rewrites its redirect
          * lambdas so they're written down by name, and looked up only when the game first makes

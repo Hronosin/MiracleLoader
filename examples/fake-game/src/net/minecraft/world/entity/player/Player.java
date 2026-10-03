@@ -60,6 +60,11 @@ public class Player {
         return motd() + "/" + getName();
     }
 
+    /** A new object, built and used on the spot: something for RGCT to redirect a {@code new} in. */
+    public String badge() {
+        return new StringBuilder(getName()).reverse().toString();
+    }
+
     /** Exists here but not in test-fixtures/fake-obf-game: something for miracle-bake to catch. */
     public void fly() {
         System.out.println("[FakeMinecraft] " + name + " flies");

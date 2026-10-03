@@ -24,11 +24,19 @@ public final class RedirectMod implements MiracleMod {
                 // a void call on a JDK class, an overloaded one, picked by the shape
                 .redirectVoid(PrintStream::print, (PrintStream out, String s) -> out.print("~" + s))
                 // a replacement taking wider types than the call passes
-                .<PrintStream, String>redirectVoid(PrintStream::println, RedirectMod::shout);
+                .<PrintStream, String>redirectVoid(PrintStream::println, RedirectMod::shout)
+                .and()
+                .method("badge")
+                // a new: StringBuilder::new (overloaded, so the witness picks the one taking a String)
+                .<String, StringBuilder>redirect(StringBuilder::new, RedirectMod::badge);
     }
 
     public static void shout(Object out, Object line) {
         ((PrintStream) out).println(String.valueOf(line).toUpperCase());
+    }
+
+    public static StringBuilder badge(String name) {
+        return new StringBuilder("~" + name + "!");
     }
 
     public static String motd() {

@@ -15,8 +15,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Works out which call a {@link Redirect} shape names: a method reference ({@code Foo::bar}) says it
- * directly; a lambda ({@code f -> f.bar()}) is read, and must make exactly one call. Done once, at
+ * Works out which call a {@link Redirect} shape names: a method reference ({@code Foo::bar}, or
+ * {@code Foo::new} for a {@code new}) says it directly; a lambda ({@code f -> f.bar()}) is read, and
+ * must make exactly one call. Done once, at
  * registration. A baked mod's method references already carry the version's own names, so this
  * finds the call as the game's bytecode spells it.
  */
@@ -29,10 +30,16 @@ final class CallScan {
             return kind == MethodHandleInfo.REF_invokeStatic;
         }
 
+        /** A {@code new}: the constructor of {@code owner}. */
+        boolean isNew() {
+            return kind == MethodHandleInfo.REF_newInvokeSpecial;
+        }
+
         boolean matches(InvokeInstruction ii) {
             Opcode want = switch (kind) {
                 case MethodHandleInfo.REF_invokeStatic -> Opcode.INVOKESTATIC;
                 case MethodHandleInfo.REF_invokeInterface -> Opcode.INVOKEINTERFACE;
+                case MethodHandleInfo.REF_newInvokeSpecial -> Opcode.INVOKESPECIAL;
                 default -> Opcode.INVOKEVIRTUAL;
             };
             return ii.opcode() == want && ii.owner().asInternalName().equals(owner)
@@ -40,7 +47,8 @@ final class CallScan {
         }
 
         String label() {
-            return owner.replace('/', '.') + "." + name + desc;
+            return isNew() ? "new " + owner.replace('/', '.') + desc.substring(0, desc.indexOf(')') + 1)
+                    : owner.replace('/', '.') + "." + name + desc;
         }
     }
 
@@ -90,8 +98,8 @@ final class CallScan {
             case MethodHandleInfo.REF_invokeStatic, MethodHandleInfo.REF_invokeVirtual,
                  MethodHandleInfo.REF_invokeInterface -> {
             }
-            case MethodHandleInfo.REF_newInvokeSpecial ->
-                    throw new IllegalArgumentException("constructors (" + m.label() + ") can't be redirected");
+            case MethodHandleInfo.REF_newInvokeSpecial -> {
+            }
             default -> throw new IllegalArgumentException(m.label() + " is a private or super call: it can't be redirected");
         }
         return m;
@@ -128,7 +136,8 @@ final class CallScan {
                 case INVOKESTATIC -> MethodHandleInfo.REF_invokeStatic;
                 case INVOKEINTERFACE -> MethodHandleInfo.REF_invokeInterface;
                 case INVOKEVIRTUAL -> MethodHandleInfo.REF_invokeVirtual;
-                default -> MethodHandleInfo.REF_invokeSpecial;
+                default -> ii.name().equalsString("<init>") ? MethodHandleInfo.REF_newInvokeSpecial
+                        : MethodHandleInfo.REF_invokeSpecial;
             };
             return new Member(kind, ii.owner().asInternalName(), ii.name().stringValue(), ii.type().stringValue());
         }

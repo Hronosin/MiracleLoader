@@ -134,6 +134,7 @@ expect vanilla2 "Steve takes 10.0 damage from zombie"
 expect vanilla2 "[FakeMinecraft] BOOM"
 expect vanilla2 "moved=2.5"
 expect vanilla2 "motd=vanilla"
+expect vanilla2 "badge=evetS"
 
 # --- interceptHead / interceptReturn ---------------------------------------------------------
 run_with intercept "$T/intercept-mod.jar"
@@ -177,6 +178,8 @@ expect redirect "title=redirected/Mr. Steve"                        # static cal
 expect redirect "~Steve JUMPS"                                       # void JDK calls: the right overload; wider types
 expect redirect "redirects net.minecraft.world.entity.player.Player.ticks()I in net.minecraft.world.entity.player.Player#title, but that method never makes that call"
 expect redirect "[replaces net.minecraft.world.entity.player.Player.getName()Ljava/lang/String;]"
+expect redirect "badge=!evetS~"                                      # a new, made by a factory instead
+expect redirect "[replaces new java.lang.StringBuilder(Ljava/lang/String;)]"
 expect_not redirect "NO MIRACLE OCCURRED"                            # naming Player::getName loads nothing early
 expect redirect "[FakeMinecraft] done"
 
@@ -415,6 +418,7 @@ GAME_JAR="$OBF" run_with obf-redirect "$BAKED/redirect-mod.jar"
 expect_code obf-redirect 0
 expect obf-redirect "title=redirected/Mr. Steve"                     # Player::motd baked to o.a::g
 expect obf-redirect "~Steve JUMPS"
+expect obf-redirect "badge=!evetS~"
 expect obf-redirect "[replaces o.a.c()Ljava/lang/String;]"
 
 GAME_JAR="$OBF" run_with obf-fly "$BAKED/fly-mod.jar"
@@ -726,7 +730,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.4.1 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.5.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

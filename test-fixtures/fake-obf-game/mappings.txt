@@ -17,3 +17,4 @@ net.minecraft.world.entity.player.Player -> o.a:
     51:54:double move(long,double,boolean,char) -> a
     57:57:java.lang.String motd() -> g
     61:62:java.lang.String title() -> h
+    64:65:java.lang.String badge() -> i

@@ -58,6 +58,10 @@ public class a {
         return "vanilla";
     }
 
+    public String i() {
+        return new StringBuilder(c()).reverse().toString();
+    }
+
     public String h() {
         return g() + "/" + c();
     }

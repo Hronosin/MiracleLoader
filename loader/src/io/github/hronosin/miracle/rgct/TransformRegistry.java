@@ -76,9 +76,12 @@ public final class TransformRegistry {
             return method + (descriptor == null ? "" : descriptor);
         }
 
-        /** The call site the replacement is bound to: the call's own type, receiver first if it has one. */
+        /** The call site the replacement is bound to: the call's own type, receiver first if it has one; a new returns its object. */
         MethodTypeDesc siteType() {
             MethodTypeDesc t = MethodTypeDesc.ofDescriptor(call.desc());
+            if (call.isNew()) {
+                return t.changeReturnType(ClassDesc.ofInternalName(call.owner()));
+            }
             return call.isStatic() ? t : t.insertParameterTypes(0, ClassDesc.ofInternalName(call.owner()));
         }
     }
@@ -475,7 +478,8 @@ public final class TransformRegistry {
                     int returnSite = site(shape, found.getOrDefault(Where.INTERCEPT_RETURN, List.of()), false);
 
                     Injector injector = new Injector(shape,
-                            ids(found.get(Where.HEAD)), ids(found.get(Where.RETURN)), headSite, returnSite, here, calls);
+                            ids(found.get(Where.HEAD)), ids(found.get(Where.RETURN)), headSite, returnSite, here, calls,
+                            NewPlan.of(className, mm, here));
                     if (injector.isEmpty()) {
                         clb.with(cle);
                     } else {
@@ -535,6 +539,61 @@ public final class TransformRegistry {
         }
     }
 
+    /**
+     * Which {@code new}s in a method are redirected: each {@code NEW X; DUP; ...arguments...;
+     * INVOKESPECIAL X.<init>} whose constructor a redirect names loses its NEW and DUP, and the
+     * constructor call becomes a call of the factory, which takes the same arguments and returns the
+     * object. Found by walking the code once, pairing each constructor call with the latest NEW of
+     * its class still open, as Java nests them. Indexes are the code's elements, in order.
+     */
+    static final class NewPlan {
+        final java.util.BitSet dropped = new java.util.BitSet();
+        final Map<Integer, RedirectPatch> replaced = new java.util.HashMap<>();
+
+        static NewPlan of(String className, MethodModel mm, List<RedirectPatch> redirects) {
+            if (redirects.stream().noneMatch(r -> r.call().isNew())) {
+                return null;
+            }
+            List<CodeElement> code = mm.code().orElseThrow().elementList();
+            NewPlan plan = new NewPlan();
+            java.util.ArrayDeque<int[]> open = new java.util.ArrayDeque<>();      // {NEW index, DUP index or -1}
+            java.util.ArrayDeque<String> owners = new java.util.ArrayDeque<>();
+            for (int i = 0; i < code.size(); i++) {
+                CodeElement e = code.get(i);
+                if (e instanceof java.lang.classfile.instruction.NewObjectInstruction n) {
+                    int dup = -1;
+                    for (int j = i + 1; j < code.size(); j++) {
+                        if (code.get(j) instanceof java.lang.classfile.Instruction next) {
+                            dup = next.opcode() == java.lang.classfile.Opcode.DUP ? j : -1;
+                            break;
+                        }
+                    }
+                    open.push(new int[] {i, dup});
+                    owners.push(n.className().asInternalName());
+                } else if (e instanceof InvokeInstruction ii && ii.opcode() == java.lang.classfile.Opcode.INVOKESPECIAL
+                        && ii.name().equalsString("<init>") && !open.isEmpty()
+                        && owners.peek().equals(ii.owner().asInternalName())) {
+                    int[] made = open.pop();
+                    owners.pop();
+                    for (RedirectPatch r : redirects) {
+                        if (r.call().isNew() && r.call().matches(ii)) {
+                            if (made[1] < 0) {
+                                Log.warn("RGCT: mod '" + r.modId() + "' redirects " + r.call().label() + " in " + className
+                                        + "#" + r.label() + ", but one of those isn't the usual NEW, DUP: left alone.");
+                            } else {
+                                plan.dropped.set(made[0]);
+                                plan.dropped.set(made[1]);
+                                plan.replaced.put(i, r);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            return plan.replaced.isEmpty() ? null : plan;
+        }
+    }
+
     /** Rewrites one method body: observe hooks, then intercept sites, at head and at each return. */
     private static final class Injector implements CodeTransform {
         private final MethodShape shape;
@@ -544,10 +603,13 @@ public final class TransformRegistry {
         private final int returnSite;
         private final List<RedirectPatch> redirects;
         private final Map<RedirectPatch, int[]> calls;
+        private final NewPlan news;
         private int returnTemp = -1;
+        private int at = -1;                    // which element of the original code is being looked at
 
         Injector(MethodShape shape, int[] headIds, int[] returnIds, int headSite, int returnSite,
-                 List<RedirectPatch> redirects, Map<RedirectPatch, int[]> calls) {
+                 List<RedirectPatch> redirects, Map<RedirectPatch, int[]> calls, NewPlan news) {
+            this.news = news;
             this.shape = shape;
             this.headIds = headIds;
             this.returnIds = returnIds;
@@ -577,9 +639,21 @@ public final class TransformRegistry {
 
         @Override
         public void accept(CodeBuilder b, CodeElement e) {
+            at++;
+            if (news != null) {
+                if (news.dropped.get(at)) {
+                    return;                     // the NEW and DUP of a redirected new: the factory makes the object
+                }
+                RedirectPatch r = news.replaced.get(at);
+                if (r != null) {
+                    calls.get(r)[0]++;
+                    b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, "redirect", r.siteType(), r.id()));
+                    return;
+                }
+            }
             if (e instanceof InvokeInstruction ii && !redirects.isEmpty()) {
                 for (RedirectPatch r : redirects) {
-                    if (r.call().matches(ii)) {
+                    if (!r.call().isNew() && r.call().matches(ii)) {
                         calls.get(r)[0]++;
                         // The arguments (and receiver) are already on the stack, exactly as the call wanted them.
                         b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, "redirect", r.siteType(), r.id()));

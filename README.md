@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 1.4.1, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 1.5.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -318,7 +318,8 @@ rgct.target("net.minecraft.client.renderer.LevelRenderer")
 - **Both sides have the same shape**, so the compiler checks that the replacement takes and returns exactly what the call did. For an instance method the object comes first: `Player::getName` is replaced by something taking a `Player` and returning a `String`. `redirectVoid` is the same for calls that return nothing. Up to nine values, the object included. An overloaded method is picked by the replacement's types: `.redirectVoid(PrintStream::print, (PrintStream out, String s) -> ...)`.
 - **Wider is fine.** The replacement may take wider types than the call passes, and may return `Object`, which is cast back where the game uses it. That's how a mod names game classes that moved or don't exist in every version it supports: as `Object`. If the call is overloaded too, say which one with a type witness: `.<PrintStream, String>redirectVoid(PrintStream::println, Mine::shout)`.
 - **Free.** The call becomes an `invokedynamic` site bound once, for good, to the replacement itself: no context, no boxing, no array. A static method (or a lambda that captures nothing) is called with its own types, and the JIT inlines it as if the game had called it.
-- **The call can be a lambda** that makes exactly one call (`p -> p.getName()`), for when `Foo::bar` would be ambiguous. Constructors, `super` calls and private methods can't be redirected.
+- **The call can be a lambda** that makes exactly one call (`p -> p.getName()`), for when `Foo::bar` would be ambiguous. `super` calls and private methods can't be redirected.
+- **A `new` too** (since 1.5.0): `.redirect(Point::new, Points::of)` hands every `new Point(x, y)` in the method to a factory with the same arguments, which may return a shared or a recycled object, or a subclass. Constructor calls without a `new` (`super(...)`, `this(...)`) are never touched.
 - **Safe in `transform()`**: naming `Player::getName` doesn't load `Player`. As a mod class loads, RGCT relinks its redirect lambdas so that they are written down by name and only looked up when the game first makes the call.
 - **One mod per call.** Effects merge; replacements can't. Two mods redirecting the same call in the same method stop the game with an error naming both. Redirecting different calls in the same method, or hooking a method whose calls are redirected, is fine.
 - A call the method never makes (a different game version, most likely) is warned about, like a missing method. Baking translates the names: a redirect of `Player::getName` becomes one of `o.a::c` on 1.21.11.
@@ -744,6 +745,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] `miracle.lock`: pin the startup analysis, so a mod update that changes behavior shows up as a diff
 - [x] Direct calls: patched spots bound to their hooks, so the JIT inlines them
 - [x] Transubstantiation: `redirect` replaces one call inside a method, at no cost per call
+- [x] Redirecting a `new` to a factory
 - [x] Mod dependencies in `miracle.mod.toml`, library mods, patching on behalf of dependents
 - [x] **MiracleToolChain** command line: genesis, bake, pray client/server, confess
 - [x] MiracleToolChain: `ascend` (publish to GitHub; to Modrinth once it lists the loader)
