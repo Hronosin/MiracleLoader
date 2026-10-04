@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.5.1 |
+| Version | 1.5.2 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 

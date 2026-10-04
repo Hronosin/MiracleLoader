@@ -182,6 +182,8 @@ expect redirect "redirects net.minecraft.world.entity.player.Player.ticks()I in 
 expect redirect "[replaces net.minecraft.world.entity.player.Player.getName()Ljava/lang/String;]"
 expect redirect "badge=!evetS~"                                      # a new, made by a factory instead
 expect redirect "[replaces new java.lang.StringBuilder(Ljava/lang/String;)]"
+expect redirect "status=gone"                                        # an inherited method, named by its declaring class
+expect redirect "[replaces net.minecraft.world.entity.Entity.isAlive()Z]"
 expect_not redirect "NO MIRACLE OCCURRED"                            # naming Player::getName loads nothing early
 expect redirect "[FakeMinecraft] done"
 
@@ -421,6 +423,7 @@ expect_code obf-redirect 0
 expect obf-redirect "title=redirected/Mr. Steve"                     # Player::motd baked to o.a::g
 expect obf-redirect "~Steve JUMPS"
 expect obf-redirect "badge=!evetS~"
+expect obf-redirect "status=gone"                                    # Entity::isAlive baked to o.b::k, called as o.a.k()
 expect obf-redirect "[replaces o.a.c()Ljava/lang/String;]"
 
 GAME_JAR="$OBF" run_with obf-fly "$BAKED/fly-mod.jar"
@@ -732,7 +735,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.5.1 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.5.2 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

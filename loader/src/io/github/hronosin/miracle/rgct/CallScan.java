@@ -36,14 +36,35 @@ final class CallScan {
         }
 
         boolean matches(InvokeInstruction ii) {
+            return matches(ii, null);
+        }
+
+        /**
+         * The call, as the bytecode spells it. javac spells a method reference with the class that
+         * declares the method ({@code ServerLevel::getBlockRandomPos} is {@code Level.getBlockRandomPos}),
+         * while a call site spells it with the type it's called on: with {@code supers}, a site
+         * naming a subclass, a subinterface or an implementing class matches too. It calls the same method.
+         */
+        boolean matches(InvokeInstruction ii, Supers supers) {
+            if (!ii.name().equalsString(name) || !ii.type().equalsString(desc)) {
+                return false;
+            }
             Opcode want = switch (kind) {
                 case MethodHandleInfo.REF_invokeStatic -> Opcode.INVOKESTATIC;
                 case MethodHandleInfo.REF_invokeInterface -> Opcode.INVOKEINTERFACE;
                 case MethodHandleInfo.REF_newInvokeSpecial -> Opcode.INVOKESPECIAL;
                 default -> Opcode.INVOKEVIRTUAL;
             };
-            return ii.opcode() == want && ii.owner().asInternalName().equals(owner)
-                    && ii.name().equalsString(name) && ii.type().equalsString(desc);
+            String site = ii.owner().asInternalName();
+            if (site.equals(owner)) {
+                return ii.opcode() == want;
+            }
+            if (supers == null || isNew()) {
+                return false;
+            }
+            boolean opcode = ii.opcode() == want
+                    || want == Opcode.INVOKEINTERFACE && ii.opcode() == Opcode.INVOKEVIRTUAL;   // a default method, called on a class
+            return opcode && supers.isSubtype(site, owner);
         }
 
         String label() {

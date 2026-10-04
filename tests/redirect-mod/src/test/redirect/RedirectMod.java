@@ -28,7 +28,11 @@ public final class RedirectMod implements MiracleMod {
                 .and()
                 .method("badge")
                 // a new: StringBuilder::new (overloaded, so the witness picks the one taking a String)
-                .<String, StringBuilder>redirect(StringBuilder::new, RedirectMod::badge);
+                .<String, StringBuilder>redirect(StringBuilder::new, RedirectMod::badge)
+                .and()
+                .method("status")
+                // an inherited method: javac names Entity.isAlive, the call site Player.isAlive
+                .redirect(Player::isAlive, RedirectMod::gone);
     }
 
     public static void shout(Object out, Object line) {
@@ -37,6 +41,10 @@ public final class RedirectMod implements MiracleMod {
 
     public static StringBuilder badge(String name) {
         return new StringBuilder("~" + name + "!");
+    }
+
+    public static boolean gone(Player p) {
+        return false;
     }
 
     public static String motd() {

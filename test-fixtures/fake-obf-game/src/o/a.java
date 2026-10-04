@@ -6,7 +6,7 @@ package o;
  * reused across overloads (a(), a(float, String), a(long, double, boolean, char)) like the real
  * thing. It has no fly(), on purpose.
  */
-public class a {
+public class a extends b {
     private static int a;
     private final String b;
 
@@ -64,5 +64,9 @@ public class a {
 
     public String h() {
         return g() + "/" + c();
+    }
+
+    public String j() {
+        return k() ? "alive" : "gone";
     }
 }

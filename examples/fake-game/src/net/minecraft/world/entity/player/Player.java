@@ -1,7 +1,7 @@
 package net.minecraft.world.entity.player;
 
 /** A very small Steve. */
-public class Player {
+public class Player extends net.minecraft.world.entity.Entity {
     private static int ticks;
     private final String name;
 
@@ -63,6 +63,11 @@ public class Player {
     /** A new object, built and used on the spot: something for RGCT to redirect a {@code new} in. */
     public String badge() {
         return new StringBuilder(getName()).reverse().toString();
+    }
+
+    /** A call to a method Player inherits: javac spells a method reference to it with Entity. */
+    public String status() {
+        return isAlive() ? "alive" : "gone";
     }
 
     /** Exists here but not in test-fixtures/fake-obf-game: something for miracle-bake to catch. */

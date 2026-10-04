@@ -18,3 +18,7 @@ net.minecraft.world.entity.player.Player -> o.a:
     57:57:java.lang.String motd() -> g
     61:62:java.lang.String title() -> h
     64:65:java.lang.String badge() -> i
+    69:69:java.lang.String status() -> j
+net.minecraft.world.entity.Entity -> o.b:
+# {"fileName":"Entity.java","id":"sourceFile"}
+    7:7:boolean isAlive() -> k

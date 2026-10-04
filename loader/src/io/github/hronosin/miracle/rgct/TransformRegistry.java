@@ -399,7 +399,8 @@ public final class TransformRegistry {
         Set<HookPatch> matched = Collections.newSetFromMap(new IdentityHashMap<>());
         Map<RedirectPatch, int[]> calls = new IdentityHashMap<>();
         patches.redirects.forEach(r -> calls.put(r, new int[] {-1}));
-        ClassTransform transform = hookTransform(className, patches.hooks, patches.redirects, matched, calls);
+        ClassTransform transform = hookTransform(className, patches.hooks, patches.redirects, matched, calls,
+                new Supers(resolverLoader));
         for (RawPatch raw : patches.raws) {
             Log.warn("RGCT: mod '" + raw.modId() + "' raw-patches " + className
                     + ". If it breaks, that one is to blame.");
@@ -438,7 +439,7 @@ public final class TransformRegistry {
     }
 
     private static ClassTransform hookTransform(String className, List<HookPatch> hooks, List<RedirectPatch> redirects,
-                                                Set<HookPatch> matched, Map<RedirectPatch, int[]> calls) {
+                                                Set<HookPatch> matched, Map<RedirectPatch, int[]> calls, Supers supers) {
         if (hooks.isEmpty() && redirects.isEmpty()) {
             return ClassTransform.ACCEPT_ALL;
         }
@@ -479,7 +480,7 @@ public final class TransformRegistry {
 
                     Injector injector = new Injector(shape,
                             ids(found.get(Where.HEAD)), ids(found.get(Where.RETURN)), headSite, returnSite, here, calls,
-                            NewPlan.of(className, mm, here));
+                            NewPlan.of(className, mm, here), supers);
                     if (injector.isEmpty()) {
                         clb.with(cle);
                     } else {
@@ -604,12 +605,14 @@ public final class TransformRegistry {
         private final List<RedirectPatch> redirects;
         private final Map<RedirectPatch, int[]> calls;
         private final NewPlan news;
+        private final Supers supers;
         private int returnTemp = -1;
         private int at = -1;                    // which element of the original code is being looked at
 
         Injector(MethodShape shape, int[] headIds, int[] returnIds, int headSite, int returnSite,
-                 List<RedirectPatch> redirects, Map<RedirectPatch, int[]> calls, NewPlan news) {
+                 List<RedirectPatch> redirects, Map<RedirectPatch, int[]> calls, NewPlan news, Supers supers) {
             this.news = news;
+            this.supers = supers;
             this.shape = shape;
             this.headIds = headIds;
             this.returnIds = returnIds;
@@ -653,7 +656,7 @@ public final class TransformRegistry {
             }
             if (e instanceof InvokeInstruction ii && !redirects.isEmpty()) {
                 for (RedirectPatch r : redirects) {
-                    if (!r.call().isNew() && r.call().matches(ii)) {
+                    if (!r.call().isNew() && r.call().matches(ii, supers)) {
                         calls.get(r)[0]++;
                         // The arguments (and receiver) are already on the stack, exactly as the call wanted them.
                         b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, "redirect", r.siteType(), r.id()));
