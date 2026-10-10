@@ -473,7 +473,7 @@ Forge's toolchain is huge and has everything you need, and plenty you don't. Our
 | `miracle confess` | `doctor` | lists what's wrong with your setup and your Aura (RWBY), then absolves you anyway |
 | `miracle scribe item\|block <name>` | `assets` | writes what a new item or block needs besides code: model definitions, models, a placeholder texture, the English name, and for blocks a blockstate and a loot table. Keeps existing files unless `--force`; `--title "Holy Wafer"` names it |
 | `miracle scribe sound <name> <file>` | | the cantor: a wav, mp3, flac or ogg becomes the game's Ogg Vorbis (mono, so it's heard from where it plays; `--music` keeps stereo and streams it), with its `sounds.json` entry and subtitle. The same name again adds a variant the game picks at random. Ready Vorbis files are copied; anything else needs ffmpeg (or oggenc) |
-| `miracle bonfire [list\|rest [name]]` | `backup` | Dark Souls: checkpoints the worlds in `run/`; `rest` brings one back (the world you leave is kept too) |
+| `miracle bonfire [list\|rest [name]]` | `backup` | Dark Souls: checkpoints the worlds in `run/`; `rest` brings one back (the world you leave is kept too). Refuses while the game has the world open (`--anyway` to light one regardless) |
 | `miracle grace ...` | | the same, for the Tarnished |
 | `miracle messages` | `todo` | Elden Ring: your TODO/FIXME/HACK/XXX comments as messages on the ground ("Try repent", "Be wary of the mixins") |
 | `miracle zandatsu [jar]` | `inspect` | Metal Gear Rising: Blade Mode for a mod jar. What it patches, which library parts it uses, what it was baked for, and what its code reaches for outside the game: processes, native code, network, files, classes from bytes, Unsafe, private members, raw OpenGL/Vulkan, exits |

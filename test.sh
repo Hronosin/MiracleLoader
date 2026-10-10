@@ -576,6 +576,23 @@ grep -qx old "$CLI_HOME/holy-hops/run/server-26.2/world/level.dat" && pass=$((pa
     || { fail=$((fail + 1)); echo "FAIL [grace-rest]: world not restored"; }
 pcli bonfire list
 expect bonfire-list "_before-rest"
+# A running game holds its world's session.lock: lighting needs --anyway, resting refuses.
+"$JAVA" test-fixtures/LockHolder.java "$CLI_HOME/holy-hops/run/server-26.2/world/session.lock" > "$CLI_HOME/lock.out" 2>&1 &
+holder=$!
+for _ in $(seq 1 50); do grep -q holding "$CLI_HOME/lock.out" 2>/dev/null && break; sleep 0.2; done
+pcli bonfire
+expect_code bonfire-busy 1
+expect bonfire-busy "The game is running in run/server-26.2/world"
+pcli grace --anyway
+expect_code grace-anyway 0
+expect grace-anyway "lighting anyway, as asked"
+expect grace-anyway "SITE OF GRACE DISCOVERED"
+pcli bonfire rest
+expect_code bonfire-rest-busy 1
+expect bonfire-rest-busy "would save over the world you rest at"
+kill "$holder" 2>/dev/null; wait "$holder" 2>/dev/null
+pcli bonfire list
+expect_code bonfire-free 0
 
 pcli exorcise
 expect_code exorcise-dry 0

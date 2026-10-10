@@ -265,7 +265,7 @@ Then the Aura, the share of checks passed: `100%` "Semblance unlocked.", `≥75%
 #### `bonfire` (alias `backup`), `grace`
 
 ```
-miracle bonfire [light]          checkpoint the worlds
+miracle bonfire [light] [--anyway]  checkpoint the worlds
 miracle bonfire list             list checkpoints, newest first, per run folder
 miracle bonfire rest [<name>]    restore one (default: the newest not made by resting)
 ```
@@ -276,7 +276,7 @@ miracle bonfire rest [<name>]    restore one (default: the newest not made by re
 - **light** copies each world to `run/<side>-<version>/bonfires/<yyyy-MM-dd_HH-mm-ss>/` (with `-2`, `-3`... if that second is taken), skipping `session.lock`, and prints `BONFIRE LIT`.
 - **rest** first moves the current world to `bonfires/<timestamp>_before-rest/`, then copies the chosen checkpoint in its place. It MUST NOT lose a world: the one being left is always kept. Exit 1 if there was nothing to rest at.
 - A project with no worlds yet is a heresy.
-- The game SHOULD be closed while lighting or resting; the toolchain doesn't check.
+- Since 1.6.0, a world a running game has open is found by its `session.lock`, which the game keeps locked (a lock another process sees): if the lock can't be taken, the game is running. Then **rest** is a heresy (the game would save over the restored world), and so is **light**, unless `--anyway` (the copy may be torn; after `/save-all` it usually isn't), which says so and lights. A lock that can't be checked (no permission to open it) doesn't stand in the way. `list` doesn't care.
 
 #### `messages` (alias `todo`)
 
@@ -1096,7 +1096,6 @@ A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolcha
 - The Prophecy sees only calls written in the dependent mod's own classes (9.3); `Blessing.priority` needs a constant.
 - String references to game names outside RGCT targets (reflection) are never translated (6.3).
 - Windows: checked under Wine with stand-in Javas and on one real Windows 11 (in a VM, so without OpenGL: the client stops at its window); `test.sh` is bash (WSL on Windows).
-- `bonfire` doesn't check whether the game is running.
 - MiracleLoader needs Java 25, so the oldest reachable versions are those that run on it. `Resurrection` (8.8) fixes the launcher's Java, not the game's: the game itself has to work on Java 25.
 
 ---
