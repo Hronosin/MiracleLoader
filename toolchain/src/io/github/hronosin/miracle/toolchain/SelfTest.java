@@ -110,6 +110,23 @@ final class SelfTest {
                 && Communion.refusal(sins).contains("\n  Missing: hallelujah 0.3.0"));
         check("strangers get the list to install", Communion.strangerRefusal(server).contains("hallelujah 0.3.0")
                 && !Communion.strangerRefusal(server).contains("smite-only"));
+        // communes_since: the newer side says which older versions it still plays with.
+        Communion.Manifest ranged = manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 2.0 bound since=1.5");
+        check("a range survives the wire", Communion.Manifest.read(ranged.bytes()).equals(ranged));
+        byte[] old = new Scroll().writeInt(Communion.MAGIC).writeString("0.3.0").writeInt(1)
+                .writeString("shared").writeString("1.9").writeBoolean(true).writeLong(7).writeInt(3).bytes();
+        check("a 1.5 manifest (no ranges) still reads", Communion.Manifest.read(old).mods().getFirst().since() == null);
+        check("an older client in the server's range: welcome", Communion.judge(ranged,
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 1.5 bound")).isEmpty());
+        check("too old for the server's range: named, with the range", Communion.judge(ranged,
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 1.4 bound")).equals(List.of(
+                "Different version: shared (yours 1.4, the server's 2.0, which plays with 1.5 and newer)")));
+        check("a newer client's range covers an older server", Communion.judge(
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 2.0 bound"),
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 2.1 bound since=2.0")).isEmpty());
+        check("an older side's range says nothing about newer versions", Communion.judge(
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 2.0 bound since=1.0"),
+                manifest(7, 3, "miracle-toolchain 0.3.0 bound", "shared 2.1 bound")).size() == 1);
         check("creation fingerprints follow order", Communion.fingerprint(List.of("item a:b", "item a:c"))
                 != Communion.fingerprint(List.of("item a:c", "item a:b")));
 
@@ -196,7 +213,8 @@ final class SelfTest {
         List<Communion.Manifest.Entry> entries = new ArrayList<>();
         for (String m : mods) {
             String[] p = m.split(" ");
-            entries.add(new Communion.Manifest.Entry(p[0], p[1], p.length > 2));
+            String since = p.length > 3 && p[3].startsWith("since=") ? p[3].substring("since=".length()) : null;
+            entries.add(new Communion.Manifest.Entry(p[0], p[1], p.length > 2 && p[2].equals("bound"), since));
         }
         return new Communion.Manifest("0.3.0", entries, hash, creations);
     }

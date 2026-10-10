@@ -634,6 +634,8 @@ No miracle today.
 
 A vanilla client meeting a server with such mods gets the list of what to install; a modded client meeting a server that never heard of Miracle leaves on its own, saying which of its mods need the other side. Server-only mods (commands, omens, blessings) don't count: vanilla clients still join those servers. `Communion.bothSides()` and `eitherSide()` adjust it, and `Communion.modsOf(player)` tells the server what a player has.
 
+"The same version" is strict by default. When a new version still talks to older ones (same blocks and items, same messages), say so in `miracle.mod.toml`: `communes_since = "1.2.0"` lets 1.3.0 meet any 1.2.x on the other side, server or client (since 1.6). The newer side decides, because only it knows what changed.
+
 **Block entities, briefly.** A block entity is the part of a block that remembers things and may act every tick. `Creation.shrine("altar", AltarEntity::new, altar)` makes its type; the block, a `Sanctuary`, makes one per placed block, ticks it if it `implements Vigil`, and opens its menu on a right click if it has one. Extend `Reliquary` for an inventory (saved, dropped when broken, hopper-friendly, in the chest screen), or `Hallowed` for data the clients should see (`sync()` sends it). Menus of your own are `Vision`s: a `ChestMenu` subclass gets the chest screen for free, anything else names its screen class, and `caption(...)` puts a live line of text in the title row on 26.x and 1.21.11 alike, because that's where screen code differs most between versions and a caption shouldn't need a fallback.
 
 ![The altar's menu, with its caption](docs/altar.png)

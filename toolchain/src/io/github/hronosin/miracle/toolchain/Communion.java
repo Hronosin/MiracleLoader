@@ -178,7 +178,12 @@ public class Communion {
     /** One side's mods, as it tells the other. */
     record Manifest(String library, List<Entry> mods, long creationHash, int creations) {
 
-        record Entry(String id, String version, boolean bound) {
+        /** {@code since}: the oldest version of this mod its other side may have ({@code communes_since}), or null. */
+        record Entry(String id, String version, boolean bound, String since) {
+            Entry(String id, String version, boolean bound) {
+                this(id, version, bound, null);
+            }
+
             @Override
             public String toString() {
                 return id + " " + version;
@@ -189,7 +194,7 @@ public class Communion {
         static Manifest ours() {
             List<Entry> mods = new ArrayList<>();
             for (Mods.Mod m : Mods.all()) {
-                mods.add(new Entry(m.id(), m.version(), isBound(m.id())));
+                mods.add(new Entry(m.id(), m.version(), isBound(m.id()), since(m)));
             }
             List<String> made = Creation.inventory();
             return new Manifest(Mods.get(MiracleToolChain.ID).map(Mods.Mod::version).orElse("?"), mods,
@@ -201,7 +206,13 @@ public class Communion {
             for (Entry e : mods) {
                 s.writeString(e.id()).writeString(e.version()).writeBoolean(e.bound());
             }
-            return s.writeLong(creationHash).writeInt(creations).bytes();
+            s.writeLong(creationHash).writeInt(creations);
+            // Since 1.6: which mods play with older versions of themselves. Older libraries stop
+            // reading before this, so it costs them nothing.
+            List<Entry> since = mods.stream().filter(e -> e.since() != null).toList();
+            s.writeInt(since.size());
+            since.forEach(e -> s.writeString(e.id()).writeString(e.since()));
+            return s.bytes();
         }
 
         static Manifest read(byte[] data) {
@@ -218,7 +229,20 @@ public class Communion {
             for (int i = 0; i < n; i++) {
                 mods.add(new Entry(s.readString(), s.readString(), s.readBoolean()));
             }
-            return new Manifest(library, mods, s.readLong(), s.readInt());
+            long hash = s.readLong();
+            int creations = s.readInt();
+            if (s.hasMore()) {                  // a 1.6 library or newer: the communes_since of some mods
+                int k = s.readInt();
+                if (k < 0 || k > n) {
+                    throw new IllegalArgumentException(k + " ranges for " + n + " mods? No.");
+                }
+                Map<String, String> since = new LinkedHashMap<>();
+                for (int i = 0; i < k; i++) {
+                    since.put(s.readString(), s.readString());
+                }
+                mods.replaceAll(e -> since.containsKey(e.id()) ? new Entry(e.id(), e.version(), e.bound(), since.get(e.id())) : e);
+            }
+            return new Manifest(library, mods, hash, creations);
         }
 
         Map<String, Entry> byId() {
@@ -229,6 +253,87 @@ public class Communion {
 
         List<Entry> bound() {
             return mods.stream().filter(Entry::bound).toList();
+        }
+    }
+
+    // --- versions that play together ------------------------------------------------------------------
+
+    private static final Map<String, String> SINCE = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /**
+     * A mod's {@code communes_since} from its {@code miracle.mod.toml}: the oldest version of itself
+     * its other side may have. Null if it has none (then only its own version will do), or if it's
+     * newer than the mod itself (said once in the log).
+     */
+    static String since(Mods.Mod m) {
+        String v = SINCE.computeIfAbsent(m.id(), id -> {
+            try (var jf = new java.util.jar.JarFile(m.jar().toFile())) {
+                var e = jf.getJarEntry("miracle.mod.toml");
+                if (e == null) {
+                    return "";
+                }
+                String text;
+                try (var in = jf.getInputStream(e)) {
+                    text = new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8);
+                }
+                if (!(io.github.hronosin.miracle.MiniToml.parse(text).get("communes_since") instanceof String since)
+                        || since.isBlank()) {
+                    return "";
+                }
+                if (compareVersions(since.strip(), m.version()) > 0) {
+                    Log.warn("MiracleToolChain: " + id + " says communes_since = \"" + since + "\", newer than itself ("
+                            + m.version() + "). Ignored: only " + m.version() + " will do.");
+                    return "";
+                }
+                return since.strip();
+            } catch (Exception ex) {
+                return "";
+            }
+        });
+        return v.isEmpty() ? null : v;
+    }
+
+    /**
+     * Whether two versions of one mod play together: the same version, or one of them says, with
+     * {@code communes_since}, that the other (older or the same) is new enough. The newer side
+     * knows what it still understands, so it decides; both sides work it out the same way.
+     */
+    static boolean communes(Manifest.Entry a, Manifest.Entry b) {
+        return a.version().equals(b.version()) || accepts(a, b) || accepts(b, a);
+    }
+
+    private static boolean accepts(Manifest.Entry newer, Manifest.Entry older) {
+        return newer.since() != null && compareVersions(older.version(), newer.version()) <= 0
+                && compareVersions(newer.since(), older.version()) <= 0;
+    }
+
+    private static String differentVersion(Manifest.Entry server, Manifest.Entry client) {
+        boolean serverNewer = compareVersions(server.version(), client.version()) >= 0;
+        Manifest.Entry newer = serverNewer ? server : client;
+        String range = newer.since() == null ? "" : ", which plays with " + newer.since() + " and newer";
+        return "Different version: " + server.id() + " (yours " + client.version() + (serverNewer ? "" : range)
+                + ", the server's " + server.version() + (serverNewer ? range : "") + ")";
+    }
+
+    /** 1.10 > 1.9; missing parts count as 0; anything after - or + is ignored (as the loader compares). */
+    static int compareVersions(String a, String b) {
+        String[] x = a.split("[-+]", 2)[0].split("\\.");
+        String[] y = b.split("[-+]", 2)[0].split("\\.");
+        for (int i = 0; i < Math.max(x.length, y.length); i++) {
+            long p = i < x.length ? number(x[i]) : 0;
+            long q = i < y.length ? number(y[i]) : 0;
+            if (p != q) {
+                return Long.compare(p, q);
+            }
+        }
+        return 0;
+    }
+
+    private static long number(String s) {
+        try {
+            return Long.parseLong(s.strip());
+        } catch (NumberFormatException e) {
+            return 0;
         }
     }
 
@@ -256,16 +361,16 @@ public class Communion {
             Manifest.Entry c = theirs.get(s.id());
             if (c == null) {
                 wrong.add("Missing: " + s);
-            } else if (!c.version().equals(s.version())) {
-                wrong.add("Different version: " + s.id() + " (yours " + c.version() + ", the server's " + s.version() + ")");
+            } else if (!communes(s, c)) {
+                wrong.add(differentVersion(s, c));
             }
         }
         for (Manifest.Entry c : client.bound()) {
             Manifest.Entry s = ours.get(c.id());
             if (s == null) {
                 wrong.add("The server doesn't have: " + c + " (remove it to join)");
-            } else if (!s.bound() && !c.version().equals(s.version())) {
-                wrong.add("Different version: " + c.id() + " (yours " + c.version() + ", the server's " + s.version() + ")");
+            } else if (!s.bound() && !communes(s, c)) {
+                wrong.add(differentVersion(s, c));
             }
         }
         if (wrong.isEmpty() && (server.creationHash() != client.creationHash() || server.creations() != client.creations())) {

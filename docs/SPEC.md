@@ -85,6 +85,7 @@ my-mod/
 | `authors` | string array | no | |
 | `icon` | string | no | path of a square PNG inside the jar (from `resources/`), for launchers, mod lists and Modrinth; a leading `/` is ignored. A path the jar doesn't have is reported and dropped. |
 | `depends` | string array | no | `"<id>"` or `"<id> >= <version>"` (spaces optional). Every entry MUST be satisfied or the game does not start (8.2). |
+| `communes_since` | string | no | since 1.6.0. The oldest version of this mod that may be on the other side of a connection with this one (9.14). Default: only its own version. A version newer than the mod's own is logged and ignored. |
 | `entangles` | string array | no | since 1.1.0. The same form as `depends`, but soft: a mod listed here may be missing. If it's there, in a version that's new enough, it loads first and the two are *entangled* (`Mods.entangled`, 8.5); see 8.2. For optional links to other mods (Event Horizon's `Wormhole`, 9.15). |
 
 A mod that uses the library MUST list `"miracle-toolchain"` in `depends` (with or without a version). That is how the toolchain knows to compile against the library and ship it to `run/`, and how the library knows to prepare the mod's hooks (9.3).
@@ -974,7 +975,7 @@ Gesture pray = Gestures.key("pray", "G", () -> PRAYER.toServer(new Scroll()));
 
 When a player joins, before they are in the world, the server and the client compare their mods; a mismatch ends with a list of what's wrong on the player's disconnect screen, instead of a crash on the first unknown block.
 
-**Bound mods.** A mod MUST be on both sides, in the same version, when it is *bound*:
+**Bound mods.** A mod MUST be on both sides, in versions that *commune*, when it is *bound*:
 
 - the Prophecy foresaw it creating things or using Telepathy (9.3); a mod that creates things stays bound whatever it says;
 - it called `Communion.bothSides()` (a server mod whose client half matters);
@@ -983,14 +984,16 @@ When a player joins, before they are in the world, the server and the client com
 
 Everything else (omens, blessings, commands, keys) is one side's business.
 
-**The manifest** (payload `miracle:communion`, both directions): `Scroll` values `int 0x4D434D31`, `string` library version, `int n`, then per mod `string id`, `string version`, `boolean bound`, then `long` creation fingerprint (FNV-1a, 64 bits, over `block|entity|item|block_entity|menu <id>` lines in registration order) and `int` creation count.
+**Versions that commune** (since 1.6.0): two versions of a mod commune when they are the same string, or when one of them declares `communes_since` (3.2) and the other is between that and itself, both included (versions compared as in 8.2). The newer side knows which older ones it still understands, so it decides; an older side's `communes_since` says nothing about newer versions. Both sides work it out the same way. Before 1.6.0, only the same version communed. The library itself declares one too: libraries that commune may serve each other's mods.
+
+**The manifest** (payload `miracle:communion`, both directions): `Scroll` values `int 0x4D434D31`, `string` library version, `int n`, then per mod `string id`, `string version`, `boolean bound`, then `long` creation fingerprint (FNV-1a, 64 bits, over `block|entity|item|block_entity|menu <id>` lines in registration order) and `int` creation count. Since 1.6.0 it goes on: `int k`, then per mod that declares one `string id`, `string communes_since`. A reader that finds nothing after the creation count takes it as `k = 0` (a 1.5 library, which stops reading there itself).
 
 **The judgement**, the same on both sides, in the player's words:
 
 | finding | line |
 |---|---|
 | a server-bound mod the client lacks | `Missing: <id> <version>` |
-| a bound mod in another version | `Different version: <id> (yours <v>, the server's <v>)` |
+| a bound mod in a version that doesn't commune | `Different version: <id> (yours <v>, the server's <v>)`; the newer of the two followed by `, which plays with <since> and newer` if it declares `communes_since` |
 | a client-bound mod the server lacks | `The server doesn't have: <id> <version> (remove it to join)` |
 | none of those, but different creations | `Same mods, different creations: ...` |
 
@@ -1088,7 +1091,6 @@ A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolcha
 - Lensing translates GLSL syntax, not meaning: includes and uniforms that one version has and another doesn't are the shader's business. Locations it adds follow declaration order, so varyings must be declared in the same order in both stages (or numbered by hand). Server-side post effects need 26.3; before, one effect at a time, from the client. Uniforms from code are for post effects only; mods' own pipelines (shaders for their entities and particles) aren't covered yet.
 - Reach (8.10) reads names, not behavior: it's for telling players what a mod reaches for, not for catching a mod that hides it.
 - `scribe sound` converts with ffmpeg or oggenc, which the toolchain doesn't bring: only ready Ogg Vorbis files need neither.
-- Communion asks bound mods for exactly the same version; there is no way yet to declare a range of compatible versions.
 - Mappings are Mojang's only. Yarn and Intermediary ended with 1.21.11, the last obfuscated version, so none are planned.
 - `miracle bake` does not fail on holes (6.5); read its report.
 - The Prophecy sees only calls written in the dependent mod's own classes (9.3); `Blessing.priority` needs a constant.
