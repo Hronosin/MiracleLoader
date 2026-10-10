@@ -59,6 +59,70 @@ public final class Rgct {
         return new ClassTarget(className.replace('/', '.'));
     }
 
+    /**
+     * A call named by strings, for {@link MethodTarget#redirect(Call, Redirect.Call0)}: one Java
+     * can't write as {@code Foo::bar} from a mod, because the method is private (or package-private,
+     * or protected) in the game. Matches the call however it's spelled, on {@code owner} or a
+     * subclass, static or not; never a {@code super} call (that's {@link #superCall}). Since 1.6.
+     *
+     * <pre>{@code
+     * .method("tick")
+     * .redirect(Rgct.call("net.minecraft.world.entity.LivingEntity", "updateFallFlying", "()V"), MyMod::glide)
+     * }</pre>
+     *
+     * <p>Strings, like {@link #target}'s: a baked mod's are translated for obfuscated versions, so
+     * write all three as constants, right in the call. The descriptor is required: it's how
+     * overloads (and obfuscated names) are told apart.
+     *
+     * @param owner      the class that declares the method (binary name, with dots), or a subclass
+     * @param name       the method's name
+     * @param descriptor its descriptor, e.g. {@code (I)V}
+     */
+    public static Call call(String owner, String name, String descriptor) {
+        return new Call(owner, name, descriptor, false);
+    }
+
+    /**
+     * {@code super.name(...)} inside the patched method, as a call to replace (since 1.6). The
+     * replacement gets {@code this} as its first argument, typed as {@code owner}; it can't make
+     * the super call itself (Java can't, from outside the class), so redirecting one replaces it.
+     *
+     * @param owner      the superclass that declares the method, or one in between
+     */
+    public static Call superCall(String owner, String name, String descriptor) {
+        return new Call(owner, name, descriptor, true);
+    }
+
+    /** A call named by strings: see {@link #call} and {@link #superCall}. */
+    public static final class Call {
+        final String owner;
+        final String name;
+        final String descriptor;
+        final boolean isSuper;
+
+        private Call(String owner, String name, String descriptor, boolean isSuper) {
+            if (owner == null || owner.isBlank() || name == null || name.isBlank()) {
+                throw new IllegalArgumentException("a call needs its class and its name");
+            }
+            if (name.equals("<init>") || name.equals("<clinit>")) {
+                throw new IllegalArgumentException(name + " isn't a call to redirect: for a new, use Foo::new");
+            }
+            if (descriptor == null || !descriptor.startsWith("(")) {
+                throw new IllegalArgumentException("the call " + owner + "." + name + " needs its descriptor, e.g. \"(I)V\"");
+            }
+            java.lang.constant.MethodTypeDesc.ofDescriptor(descriptor);
+            this.owner = owner.replace('/', '.');
+            this.name = name;
+            this.descriptor = descriptor;
+            this.isSuper = isSuper;
+        }
+
+        @Override
+        public String toString() {
+            return (isSuper ? "super call " : "call ") + owner + "." + name + descriptor;
+        }
+    }
+
     /** Patches for one class. */
     public final class ClassTarget {
         private final String className;
@@ -169,8 +233,9 @@ public final class Rgct {
          * JIT inlines like the original. Unlike intercept hooks, nothing is boxed or wrapped. For
          * calls that return nothing, use {@link #redirectVoid}. A {@code new} is redirected too:
          * name it {@code Foo::new}, and the replacement, a factory taking the constructor's
-         * arguments, makes the object instead (since 1.5.0). Private and {@code super} calls can't
-         * be redirected.
+         * arguments, makes the object instead (since 1.5.0). A call Java won't let a mod write (a
+         * private method, a {@code super} call) is named by strings: {@link Rgct#call},
+         * {@link Rgct#superCall} (since 1.6).
          *
          * <p>Safe inside {@code transform()}: as a mod class loads, RGCT rewrites its redirect
          * lambdas so they're written down by name, and looked up only when the game first makes
@@ -259,6 +324,94 @@ public final class Rgct {
         }
 
         public <A, B, C, D, E, F, G, H, I> MethodTarget redirectVoid(Redirect.Do9<A, B, C, D, E, F, G, H, I> call, Redirect.Do9<A, B, C, D, E, F, G, H, I> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        /**
+         * {@link #redirect} for a call named by strings ({@link Rgct#call}, {@link Rgct#superCall}):
+         * a private, package-private or protected method, or a {@code super} call (since 1.6). The
+         * compiler can't check the replacement against strings: it must take the receiver (for an
+         * instance method) and then the call's arguments, and return what it returns. A replacement
+         * that doesn't fit stops the game, naming both, the first time the call is made.
+         */
+        public <R> MethodTarget redirect(Call call, Redirect.Call0<R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, R> MethodTarget redirect(Call call, Redirect.Call1<A, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B, R> MethodTarget redirect(Call call, Redirect.Call2<A, B, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B,C, R> MethodTarget redirect(Call call, Redirect.Call3<A, B, C, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B,C,D, R> MethodTarget redirect(Call call, Redirect.Call4<A, B, C, D, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B,C,D,E, R> MethodTarget redirect(Call call, Redirect.Call5<A, B, C, D, E, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B,C,D,E,F, R> MethodTarget redirect(Call call, Redirect.Call6<A, B, C, D, E, F, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B,C,D,E,F,G, R> MethodTarget redirect(Call call, Redirect.Call7<A, B, C, D, E, F, G, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B,C,D,E,F,G,H, R> MethodTarget redirect(Call call, Redirect.Call8<A, B, C, D, E, F, G, H, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A,B,C,D,E,F,G,H,I, R> MethodTarget redirect(Call call, Redirect.Call9<A, B, C, D, E, F, G, H, I, R> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        /** {@link #redirect(Call, Redirect.Call0)} for a call that returns nothing. */
+        public MethodTarget redirectVoid(Call call, Redirect.Do0 replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A> MethodTarget redirectVoid(Call call, Redirect.Do1<A> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B> MethodTarget redirectVoid(Call call, Redirect.Do2<A, B> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C> MethodTarget redirectVoid(Call call, Redirect.Do3<A, B, C> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D> MethodTarget redirectVoid(Call call, Redirect.Do4<A, B, C, D> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E> MethodTarget redirectVoid(Call call, Redirect.Do5<A, B, C, D, E> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F> MethodTarget redirectVoid(Call call, Redirect.Do6<A, B, C, D, E, F> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G> MethodTarget redirectVoid(Call call, Redirect.Do7<A, B, C, D, E, F, G> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G, H> MethodTarget redirectVoid(Call call, Redirect.Do8<A, B, C, D, E, F, G, H> replacement) {
+            return redirectAny(call, replacement);
+        }
+
+        public <A, B, C, D, E, F, G, H, I> MethodTarget redirectVoid(Call call, Redirect.Do9<A, B, C, D, E, F, G, H, I> replacement) {
             return redirectAny(call, replacement);
         }
 

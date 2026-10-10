@@ -1,0 +1,2 @@
+id = "whisper-wrong"
+entrypoint = "test.whisperwrong.WhisperWrong"

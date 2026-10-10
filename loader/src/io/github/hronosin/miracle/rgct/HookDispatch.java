@@ -148,7 +148,18 @@ public final class HookDispatch {
                 }
                 yield chain(site, RETURN_CONTEXT, RETURN_MERGE);
             }
-            case "redirect" -> replacement(redirections[id]);
+            case "redirect" -> {
+                Redirection r = redirections[id];
+                MethodHandle h = replacement(r);
+                try {
+                    yield h.asType(type);
+                } catch (java.lang.invoke.WrongMethodTypeException e) {
+                    throw new IllegalStateException("RGCT: mod '" + r.modId() + "' replaces " + r.where() + " with something"
+                            + " that takes " + h.type() + ", but the call passes and expects " + type
+                            + (type.parameterCount() > 0 && h.type().parameterCount() == type.parameterCount() - 1
+                            ? " (an instance method's receiver comes first)" : ""), e);
+                }
+            }
             default -> throw new IllegalArgumentException("RGCT: no such call site kind: " + name);
         };
         return new ConstantCallSite(target.asType(type));

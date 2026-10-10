@@ -69,4 +69,17 @@ public class a extends b {
     public String j() {
         return k() ? "alive" : "gone";
     }
+
+    @Override
+    public String l() {
+        return "player, " + super.l();
+    }
+
+    public String n() {
+        return m("psst");
+    }
+
+    private String m(String var1) {
+        return var1 + "...";
+    }
 }

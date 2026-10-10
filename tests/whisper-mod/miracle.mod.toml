@@ -1,0 +1,2 @@
+id = "whisper-mod"
+entrypoint = "test.whisper.WhisperMod"

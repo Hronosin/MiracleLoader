@@ -84,6 +84,15 @@ public final class TransformRegistry {
             }
             return call.isStatic() ? t : t.insertParameterTypes(0, ClassDesc.ofInternalName(call.owner()));
         }
+
+        /** {@link #siteType()} at one call: a call named by strings is static or not as the instruction is. */
+        MethodTypeDesc siteType(InvokeInstruction ii) {
+            if (!call.isNamed()) {
+                return siteType();
+            }
+            MethodTypeDesc t = MethodTypeDesc.ofDescriptor(call.desc());
+            return call.isStaticAt(ii) ? t : t.insertParameterTypes(0, ClassDesc.ofInternalName(call.owner()));
+        }
     }
 
     record RawPatch(String modId, ClassTransform transform) {
@@ -188,7 +197,7 @@ public final class TransformRegistry {
         for (RedirectPatch other : patches.redirects) {
             boolean sameMethod = other.method().equals(method)
                     && (other.descriptor() == null || descriptor == null || other.descriptor().equals(descriptor));
-            if (sameMethod && other.call().equals(member)) {
+            if (sameMethod && other.call().sameCall(member)) {
                 throw new RgctConflictException("RGCT conflict at " + className + "#" + method
                         + (descriptor == null ? "" : descriptor) + ": '" + other.modId() + "' and '" + modId
                         + "' both redirect the call to " + member.label() + ". Only one mod can replace a call.");
@@ -425,8 +434,12 @@ public final class TransformRegistry {
                 Log.warn("RGCT: mod '" + r.modId() + "' redirects a call in " + className + "#" + r.label()
                         + ", but no such method with a body exists. Wrong game version?");
             } else if (found == 0) {
+                String hint = r.call().isNamed() && !new Supers(resolverLoader).has(r.call().owner(), r.call().name(), r.call().desc())
+                        ? " " + r.call().owner().replace('/', '.') + " has no " + r.call().name() + r.call().desc()
+                        + ", not even inherited: name the class that declares it (or a subclass of that one)."
+                        : " Wrong game version?";
                 Log.warn("RGCT: mod '" + r.modId() + "' redirects " + r.call().label() + " in " + className + "#"
-                        + r.label() + ", but that method never makes that call. Wrong game version?");
+                        + r.label() + ", but that method never makes that call." + hint);
             }
         }
         for (HookPatch h : patches.hooks) {
@@ -652,7 +665,7 @@ public final class TransformRegistry {
                     if (!r.call().isNew() && r.call().matches(ii, supers)) {
                         calls.get(r)[0]++;
                         // The arguments (and receiver) are already on the stack, exactly as the call wanted them.
-                        b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, "redirect", r.siteType(), r.id()));
+                        b.invokedynamic(DynamicCallSiteDesc.of(BOOTSTRAP, "redirect", r.siteType(ii), r.id()));
                         return;
                     }
                 }

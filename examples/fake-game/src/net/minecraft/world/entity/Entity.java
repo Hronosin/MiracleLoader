@@ -6,4 +6,8 @@ public class Entity {
     public boolean isAlive() {
         return true;
     }
+
+    public String describe() {
+        return "entity";
+    }
 }

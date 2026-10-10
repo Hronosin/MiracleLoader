@@ -204,6 +204,22 @@ expect_code redirect-hooked 0
 expect redirect-hooked "[hello-mod] hop, bytecode patch for Steve"
 expect redirect-hooked "~Steve JUMPS"
 
+# --- redirecting calls a method reference can't name: private, super (Rgct.call, superCall) ----
+run_with whisper "$T/whisper-mod.jar"
+expect_code whisper 0
+expect whisper "secret=PSST!"                                       # a private call, replaced
+expect whisper "describe=player, creature"                          # a super call, replaced
+expect whisper "[replaces net.minecraft.world.entity.player.Player.whisper(Ljava/lang/String;)Ljava/lang/String;]"
+expect whisper "[replaces super net.minecraft.world.entity.Entity.describe()Ljava/lang/String;]"
+run_with whisper-wrong "$T/whisper-wrong.jar"
+expect_code whisper-wrong 0
+expect whisper-wrong "secret=psst..."                                # names a method Entity doesn't have: no match
+expect whisper-wrong "net.minecraft.world.entity.Entity has no whisper(Ljava/lang/String;)Ljava/lang/String;, not even inherited"
+JAVA_OPTS=-Dwhisper.misfit=true run_with whisper-misfit "$T/whisper-mod.jar"
+expect_code whisper-misfit 1
+expect whisper-misfit "replaces net.minecraft.world.entity.player.Player#status redirect net.minecraft.world.entity.Entity.isAlive()Z with something that takes ()boolean"
+expect whisper-misfit "(an instance method's receiver comes first)"
+
 run_with redirect-clash "$T/redirect-mod.jar" "$T/redirect-clash.jar"
 expect_code redirect-clash 1
 expect redirect-clash "redirect-mod"
@@ -361,15 +377,15 @@ expect variant-unchecked "[variant-mod] running the plain classes"
 BAKED="$ROOT/build/test-baked"
 rm -rf "$BAKED" && mkdir -p "$BAKED"
 cp "$M/hello-mod.jar" "$T/intercept-mod.jar" "$T/stack-a.jar" "$T/stack-b.jar" \
-   "$T/clash-a.jar" "$T/clash-hi.jar" "$T/fly-mod.jar" "$T/wings-mod.jar" "$T/redirect-mod.jar" "$BAKED/"
+   "$T/clash-a.jar" "$T/clash-hi.jar" "$T/fly-mod.jar" "$T/wings-mod.jar" "$T/redirect-mod.jar" "$T/whisper-mod.jar" "$BAKED/"
 out="$("$JAVA" -jar build/miracle-bake.jar --native fake=build/fake-minecraft.jar \
         --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt "$BAKED"/*.jar 2>&1)"
 expect bake "[bake] intercept-mod.jar"
 expect bake "MISSING 1:"
 expect bake "RGCT target net.minecraft.world.entity.player.Player#fly"
 expect bake "not baked. Drop this version, or add a fallback for what's missing (fallback/fake-obf/src in the mod's sources)."
-[ "$(grep -c "game references translated.*, baked" <<< "$out")" -eq 8 ] && pass=$((pass + 1)) \
-    || { fail=$((fail + 1)); echo "FAIL [bake]: expected 8 baked mods"; echo "$out"; }
+[ "$(grep -c "game references translated.*, baked" <<< "$out")" -eq 9 ] && pass=$((pass + 1)) \
+    || { fail=$((fail + 1)); echo "FAIL [bake]: expected 9 baked mods"; echo "$out"; }
 expect bake "[bake] wings-mod.jar (1 classes, fallbacks for [fake-obf])"
 expect bake "5 game references translated, 1 fallback method(s) + 1 added, baked"
 expect bake "note: added test.wings.WingsMod#label(Lnet/minecraft/world/entity/player/Player;)Ljava/lang/String;"
@@ -428,6 +444,12 @@ OBF="$ROOT/build/fake-minecraft-obf.jar"
 GAME_JAR="$OBF" run_with obf-vanilla
 expect obf-vanilla "Game: Minecraft fake-obf (obfuscated)"
 expect obf-vanilla "jumpPower=0.42"
+
+GAME_JAR="$OBF" run_with obf-whisper "$BAKED/whisper-mod.jar"
+expect_code obf-whisper 0
+expect obf-whisper "OSHI: whisper-mod uses its variant baked for fake-obf"
+expect obf-whisper "secret=PSST!"
+expect obf-whisper "describe=player, creature"
 
 GAME_JAR="$OBF" run_with obf-intercept "$BAKED/intercept-mod.jar"
 expect_code obf-intercept 0

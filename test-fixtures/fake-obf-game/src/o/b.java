@@ -6,4 +6,8 @@ public class b {
     public boolean k() {
         return true;
     }
+
+    public String l() {
+        return "entity";
+    }
 }

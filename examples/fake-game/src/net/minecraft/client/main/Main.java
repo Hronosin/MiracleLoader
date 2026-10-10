@@ -23,6 +23,8 @@ public class Main {
         System.out.println("[FakeMinecraft] title=" + steve.title());
         System.out.println("[FakeMinecraft] badge=" + steve.badge());
         System.out.println("[FakeMinecraft] status=" + steve.status());
+        System.out.println("[FakeMinecraft] describe=" + steve.describe());
+        System.out.println("[FakeMinecraft] secret=" + steve.secret());
         System.out.println("[FakeMinecraft] done");
     }
 }

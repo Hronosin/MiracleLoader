@@ -26,8 +26,28 @@ final class CallScan {
     /** A method call as the bytecode names it. {@code kind} is a {@link MethodHandleInfo} REF_ kind. */
     record Member(int kind, String owner, String name, String desc) {
 
+        /** Named by strings ({@link Rgct#call}): any call but a super one, static or not as the site says. */
+        static final int NAMED = 100;
+        /** Named by strings ({@link Rgct#superCall}): an invokespecial that isn't a constructor. */
+        static final int SUPER = 101;
+
         boolean isStatic() {
             return kind == MethodHandleInfo.REF_invokeStatic;
+        }
+
+        boolean isNamed() {
+            return kind == NAMED || kind == SUPER;
+        }
+
+        /** Static at this site: a named call can only tell from the instruction. */
+        boolean isStaticAt(InvokeInstruction ii) {
+            return isNamed() ? ii.opcode() == Opcode.INVOKESTATIC : isStatic();
+        }
+
+        /** The same call, however it was named (a method reference, a lambda, strings). */
+        boolean sameCall(Member o) {
+            return owner.equals(o.owner) && name.equals(o.name) && desc.equals(o.desc)
+                    && isNew() == o.isNew() && (kind == SUPER) == (o.kind == SUPER);
         }
 
         /** A {@code new}: the constructor of {@code owner}. */
@@ -49,6 +69,17 @@ final class CallScan {
             if (!ii.name().equalsString(name) || !ii.type().equalsString(desc)) {
                 return false;
             }
+            if (isNamed()) {
+                // javac spells private calls (since Java 11, nestmates) invokevirtual/invokeinterface,
+                // and only super calls invokespecial: the opcode tells them apart.
+                boolean special = ii.opcode() == Opcode.INVOKESPECIAL;
+                if (special != (kind == SUPER)) {
+                    return false;
+                }
+                String site = ii.owner().asInternalName();
+                return (site.equals(owner) || supers != null && supers.isSubtype(site, owner))
+                        && (supers == null || supers.has(owner, name, desc));   // strings name a real method, or nothing
+            }
             Opcode want = switch (kind) {
                 case MethodHandleInfo.REF_invokeStatic -> Opcode.INVOKESTATIC;
                 case MethodHandleInfo.REF_invokeInterface -> Opcode.INVOKEINTERFACE;
@@ -68,6 +99,9 @@ final class CallScan {
         }
 
         String label() {
+            if (kind == SUPER) {
+                return "super " + owner.replace('/', '.') + "." + name + desc;
+            }
             return isNew() ? "new " + owner.replace('/', '.') + desc.substring(0, desc.indexOf(')') + 1)
                     : owner.replace('/', '.') + "." + name + desc;
         }
@@ -89,6 +123,9 @@ final class CallScan {
 
     /** The call {@code fn} names. Throws, with a message for the mod author, if it can't tell. */
     static Member call(Object fn) {
+        if (fn instanceof Rgct.Call c) {
+            return new Member(c.isSuper ? Member.SUPER : Member.NAMED, c.owner.replace('.', '/'), c.name, c.descriptor);
+        }
         if (fn instanceof Shapes.Named n) {
             if (n.captured.length != 0) {
                 throw new IllegalArgumentException("the call to redirect can't capture anything: write it as Foo::bar");
@@ -121,7 +158,8 @@ final class CallScan {
             }
             case MethodHandleInfo.REF_newInvokeSpecial -> {
             }
-            default -> throw new IllegalArgumentException(m.label() + " is a private or super call: it can't be redirected");
+            default -> throw new IllegalArgumentException(m.label() + " is a private or super call, which a method"
+                    + " reference can't name: name it with Rgct.call(...) or Rgct.superCall(...)");
         }
         return m;
     }

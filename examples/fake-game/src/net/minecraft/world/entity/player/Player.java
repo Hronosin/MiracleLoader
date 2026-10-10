@@ -70,6 +70,21 @@ public class Player extends net.minecraft.world.entity.Entity {
         return isAlive() ? "alive" : "gone";
     }
 
+    /** A super call: something only Rgct.superCall can name. */
+    @Override
+    public String describe() {
+        return "player, " + super.describe();
+    }
+
+    /** A private call: something only Rgct.call can name. */
+    public String secret() {
+        return whisper("psst");
+    }
+
+    private String whisper(String s) {
+        return s + "...";
+    }
+
     /** Exists here but not in test-fixtures/fake-obf-game: something for miracle-bake to catch. */
     public void fly() {
         System.out.println("[FakeMinecraft] " + name + " flies");

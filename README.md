@@ -334,7 +334,18 @@ rgct.target("net.minecraft.client.renderer.LevelRenderer")
 - **Both sides have the same shape**, so the compiler checks that the replacement takes and returns exactly what the call did. For an instance method the object comes first: `Player::getName` is replaced by something taking a `Player` and returning a `String`. `redirectVoid` is the same for calls that return nothing. Up to nine values, the object included. An overloaded method is picked by the replacement's types: `.redirectVoid(PrintStream::print, (PrintStream out, String s) -> ...)`.
 - **Wider is fine.** The replacement may take wider types than the call passes, and may return `Object`, which is cast back where the game uses it. That's how a mod names game classes that moved or don't exist in every version it supports: as `Object`. If the call is overloaded too, say which one with a type witness: `.<PrintStream, String>redirectVoid(PrintStream::println, Mine::shout)`.
 - **Free.** The call becomes an `invokedynamic` site bound once, for good, to the replacement itself: no context, no boxing, no array. A static method (or a lambda that captures nothing) is called with its own types, and the JIT inlines it as if the game had called it.
-- **The call can be a lambda** that makes exactly one call (`p -> p.getName()`), for when `Foo::bar` would be ambiguous. `super` calls and private methods can't be redirected.
+- **The call can be a lambda** that makes exactly one call (`p -> p.getName()`), for when `Foo::bar` would be ambiguous.
+- **Calls Java won't let you write** (since 1.6): a private, package-private or protected method, or a `super` call, is named by strings, like a target:
+
+  ```java
+  .method("updateTitle")
+  .redirect(Rgct.call("net.minecraft.client.Minecraft", "createTitle", "()Ljava/lang/String;"), MyMod::title)
+  .and()
+  .method("updateIsUnderwater")      // in LocalPlayer: super.updateIsUnderwater()
+  .redirect(Rgct.superCall("net.minecraft.world.entity.player.Player", "updateIsUnderwater", "()Z"), MyMod::dry)
+  ```
+
+  The descriptor is required, and the strings are translated for obfuscated versions like a target's, so keep them constants. The class must have the method, declared or inherited; a misnamed one matches nothing and the startup log says so. The compiler can't check a replacement against strings: it takes the receiver first (for an instance method), then the call's arguments. One that doesn't fit stops the game on the first call, saying what it takes and what the call passes. A replacement can't make the private or super call itself; redirecting one replaces it.
 - **Inherited methods too** (since 1.5.2): javac writes `ServerLevel::getBlockRandomPos` down as `Level.getBlockRandomPos`, the class that declares it, while the game's call names `ServerLevel`. A call naming a subclass, a subinterface or an implementing class is the same method, and matches. (Before 1.5.2 it didn't, and was warned about as a call the method never makes.)
 - **A `new` too** (since 1.5.0): `.redirect(Point::new, Points::of)` hands every `new Point(x, y)` in the method to a factory with the same arguments, which may return a shared or a recycled object, or a subclass. Constructor calls without a `new` (`super(...)`, `this(...)`) are never touched.
 - **Safe in `transform()`**: naming `Player::getName` doesn't load `Player`. As a mod class loads, RGCT relinks its redirect lambdas so that they are written down by name and only looked up when the game first makes the call.

@@ -81,6 +81,7 @@ final class Remapper {
     private static final String METHOD1_DESC = "(Ljava/lang/String;)L" + METHOD_TARGET + ";";
     private static final String METHOD2_DESC = "(Ljava/lang/String;Ljava/lang/String;)L" + METHOD_TARGET + ";";
     private static final String UNKNOWN_TARGET = "\0unknown";
+    private static final String CALL_DESC = "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)L" + RGCT + "$Call;";
 
     private final VersionDict dict;
     private final Set<String> universe;
@@ -475,6 +476,10 @@ final class Remapper {
         String current = null;
         for (int i = 0; i < els.size(); i++) {
             CodeElement e = els.get(i);
+            if (isInvoke(e, RGCT, "call", CALL_DESC) || isInvoke(e, RGCT, "superCall", CALL_DESC)) {
+                planCall(els, i, replace, where);
+                continue;
+            }
             if (isInvoke(e, RGCT, "target", TARGET_DESC)) {
                 int p = prevReal(els, i - 1);
                 if (p < 0 || !(ldcString(els.get(p)) != null)) {
@@ -514,6 +519,38 @@ final class Remapper {
             }
         }
         return new Plan(replace, upgrade);
+    }
+
+    /**
+     * {@code Rgct.call("a.b.Owner", "name", "(I)V")} (or {@code superCall}): a call named by
+     * three string constants, right before it. The method is looked up through the owner's
+     * supertypes, as a call to it would be.
+     */
+    private void planCall(List<CodeElement> els, int at, Map<Integer, List<ConstantDesc>> replace, String where) {
+        String owner = at >= 3 ? ldcString(els.get(at - 3)) : null;
+        String name = at >= 2 ? ldcString(els.get(at - 2)) : null;
+        String desc = at >= 1 ? ldcString(els.get(at - 1)) : null;
+        if (owner == null || name == null || desc == null) {
+            if (dict.obfuscated) {
+                missing.add("RGCT call in " + where + " isn't three string constants, so it can't be baked");
+            }
+            return;
+        }
+        String internalOwner = owner.replace('.', '/');
+        if (!dict.classes.containsKey(internalOwner) && !universe.contains(internalOwner)) {
+            return; // not a game class (another mod's?): nothing to translate
+        }
+        String obfOwner = mapClass(internalOwner);
+        String jarName = mapMember(internalOwner, name, desc, true);
+        if (!dict.obfuscated) {
+            return;
+        }
+        String jarDesc = mapDesc(desc);
+        targetNames.put(obfOwner.replace('/', '.'), owner);
+        targetNames.put(obfOwner.replace('/', '.') + "#" + jarName + jarDesc, name);
+        replace.put(at - 3, List.of(obfOwner.replace('/', '.')));
+        replace.put(at - 2, List.of(jarName));
+        replace.put(at - 1, List.of(jarDesc));
     }
 
     private void planMethod(String target, String name, String desc, int nameAt, int descAt, int invokeAt,
