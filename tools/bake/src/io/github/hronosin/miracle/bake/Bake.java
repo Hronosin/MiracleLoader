@@ -182,7 +182,8 @@ public final class Bake {
                 }
                 merged = res.classes();
                 fb = ", " + res.replaced() + " fallback method(s)" + (res.added() > 0 ? " + " + res.added() + " added" : "");
-                res.notes().stream().filter(n -> n.startsWith("added")).forEach(n -> notes.add("             note: " + n));
+                res.notes().stream().filter(n -> n.startsWith("added") || n.startsWith("replaced class")
+                        || n.startsWith("dropped")).forEach(n -> notes.add("             note: " + n));
             }
 
             Map<String, ModClass> shapes = new LinkedHashMap<>(LIBRARIES);

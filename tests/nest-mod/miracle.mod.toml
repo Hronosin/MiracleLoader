@@ -1,0 +1,2 @@
+id = "nest-mod"
+entrypoint = "test.nest.NestMod"

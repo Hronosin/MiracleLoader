@@ -428,8 +428,12 @@ The fallback file is a **partial class** with the same name as the real one:
 
 - a method with a body replaces the method of the same name and descriptor, or is added if there's none;
 - a `native` method and any field are only declarations, so the file compiles: they refer to the real class's members (`static native void flap(String how);` calls the real `flap`);
-- constructors and static initializers of the partial class are ignored; lambdas are fine (their synthetic methods are renamed so they can't collide), nested and anonymous classes aren't;
+- constructors and static initializers of the partial class are ignored; lambdas are fine (their synthetic methods are renamed so they can't collide);
+- **nested classes** (since 1.6): a named one is whole, not partial, and replaces the real nested class of the same name, header and all. A class that `implements` something only the newer game has gets an older twin that doesn't. Anonymous and local classes are renamed like lambdas (`Outer$fallback$1_21_11$1`) and just work, private access to the real class included;
+- **what only replaced code used goes** (since 1.6): the real class's lambdas and anonymous classes that nothing else uses any more are dropped from that version's variant, so the 26.x calls inside them don't show up as holes. The bake notes each drop;
 - classes that only exist in the fallback folder are added as they are.
+
+`miracle bake` compiles `fallback/<v>/` only when `<v>` is one of the targets, and against that version's own libraries (since 1.6).
 
 Fallbacks are merged in before the dictionary check, so a version is baked only once they cover every hole. They work for unobfuscated versions too: then the variant is baked just for that version.
 

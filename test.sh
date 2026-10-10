@@ -382,6 +382,24 @@ expect wings-native "fly                          @HEAD             <- wings-mod
 expect_not wings-native "uses its variant"
 expect wings-native "jumpPower=0.42"
 
+# --- OSHI fallbacks with nested classes: whole replacements, renamed anonymous ones, orphans dropped
+cp "$T/nest-mod.jar" "$BAKED/"
+out="$("$JAVA" -jar build/miracle-bake.jar --native fake=build/fake-minecraft.jar \
+        --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt "$BAKED/nest-mod.jar" 2>&1)"
+expect bake-nest "fake-obf  obfuscated    ok, 1 game references translated, 1 fallback method(s), baked"
+expect bake-nest "note: added class test.nest.NestMod\$fallback\$fake_obf\$1"
+expect bake-nest "note: replaced class test.nest.NestMod\$Feathers"
+expect bake-nest "note: added class test.nest.NestMod\$Step"
+expect bake-nest "note: dropped test.nest.NestMod\$1 (only replaced code used it)"
+expect bake-nest "note: dropped 2 lambda bodies in test.nest.NestMod (only replaced code used them)"  # not kept()'s
+GAME_JAR="$ROOT/build/fake-minecraft-obf.jar" run_with obf-nest "$BAKED/nest-mod.jar"
+expect_code obf-nest 0
+expect obf-nest "[nest-mod] a fallback's anonymous walk, calm step by step / no feathers in this version / kept calm"
+run_with nest-native "$BAKED/nest-mod.jar"
+expect_code nest-native 0
+expect nest-native "[nest-mod] an anonymous flight / feathers / kept calm"
+expect nest-native "Alex flies"
+
 OBF="$ROOT/build/fake-minecraft-obf.jar"
 GAME_JAR="$OBF" run_with obf-vanilla
 expect obf-vanilla "Game: Minecraft fake-obf (obfuscated)"

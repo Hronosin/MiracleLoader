@@ -384,11 +384,11 @@ Commands nobody needs, kept on purpose. They MUST NOT change anything outside th
 3. Wipe and recreate `build/classes/`.
 4. Compile `src/**/*.java` with `--release 25`, UTF-8, all lint except `serial`, `path`, `classfile` and `processing`, annotation processing off. Class path: the loader, the library (if the project depends on it), the libraries, the client.
 5. Copy `resources/` and `miracle.mod.toml` into `build/classes/`.
-6. For each `fallback/<v>/` folder (sorted): compile `fallback/<v>/src` against the loader, the library (if used), the libraries, the main classes, and **the readable API of `<v>`** (6.4), into `build/classes/META-INF/miracle/fallback/<v>/`.
+6. Expand the targets (3.3). For each `fallback/<v>/` folder (sorted) whose `<v>` is a target other than `minecraft`: compile `fallback/<v>/src` against the loader, the library (if used), **`<v>`'s compile libraries**, the main classes, and **the readable API of `<v>`** (6.4), into `build/classes/META-INF/miracle/fallback/<v>/`. Any other fallback folder is skipped with a line saying why (`fallback/<v> skipped: <v> isn't in targets`, or `... is the version the main sources are written for`); nothing is downloaded for it.
 7. Pack `build/classes/` into `build/<id>-<version>.jar`.
-8. Expand the targets (3.3), fetch each one's dictionary (4.1, `dictionary`), and run `miracle-bake` on the jar, with `minecraft` as a native version and every other target as native or obfuscated, as Mojang says.
+8. Fetch each target's dictionary (4.1, `dictionary`), and run `miracle-bake` on the jar, with `minecraft` as a native version and every other target as native or obfuscated, as Mojang says.
 
-A compiler error stops the bake (heresy), as does a `fallback/<v>/` folder without `src/`. A missing reference found in stage 8 does not: see 6.5. A fallback folder for a version that isn't a target is compiled (so that version is downloaded) but only noted at bake time.
+A compiler error stops the bake (heresy), as does a `fallback/<v>/` folder without `src/` for a target. A missing reference found in stage 8 does not: see 6.5. (Before 1.6.0, fallbacks compiled against `minecraft`'s libraries, and folders for versions that aren't targets were compiled too.)
 
 ### 6.2 Checking
 
@@ -424,7 +424,11 @@ When a target lacks something the mod uses, the author writes a *fallback*: a pa
 - constructors, static initializers and `$deserializeLambda$` of the partial class are dropped;
 - lambdas in fallback methods get their synthetic methods renamed (`lambda$fallback$<v>$...`, with every non-alphanumeric character of `<v>` replaced by `_`) so they cannot collide with the main class's;
 - a replacing method keeps the real method's access flags; a `static` method can't replace an instance one, or the reverse;
-- a class that exists only in the fallback folder is added as is, unless it is a nested or anonymous class of a main class (which can't be added that way).
+- since 1.6.0, a **named nested class** of a partial class is *whole*, not partial: it replaces the main class's nested class of the same name (superclass, interfaces, fields, constructors and methods, all of it), or is added if there is none. That's how a nested class whose very header needs the newer game (`implements` an interface the older one lacks) gets a twin for the older one;
+- since 1.6.0, **anonymous and local classes** of a partial class (and whatever is nested in them) are renamed like its lambdas, `Outer$1` to `Outer$fallback$<v>$1`, and added; every reference to them in the fallback's classes, their `InnerClasses`, `EnclosingMethod`, `NestHost` and `NestMembers` follow;
+- the merged class's `InnerClasses` and `NestMembers` are the union of the main class's and the fallback's, so the fallback's nested classes are nestmates of the real class (private access works as written);
+- since 1.6.0, what **only replaced code used** goes: the main code's lambda bodies, and anonymous and local classes (with what's nested in them), of a nest the fallback touched, that no remaining code of the mod refers to, are dropped from the variant and noted (`dropped <class>`, `dropped <n> lambda bodies in <class>`), so the references they make don't count as holes. `$deserializeLambda$` doesn't keep a lambda: where it would make a dropped one, it throws `IllegalArgumentException`, as it does for any lambda it doesn't know. Named classes are never dropped (reflection can name them); replace them with a whole one instead;
+- a class that exists only in the fallback folder is added as is (with its own nested classes).
 
 A broken fallback prints `BAD FALLBACK` with the reason, and that version is neither baked nor checked.
 
@@ -1087,10 +1091,8 @@ A mod states what it needs with `depends` (`"miracle>=1.0.0"`, `"miracle-toolcha
 - `miracle bake` does not fail on holes (6.5); read its report.
 - The Prophecy sees only calls written in the dependent mod's own classes (9.3); `Blessing.priority` needs a constant.
 - String references to game names outside RGCT targets (reflection) are never translated (6.3).
-- Fallbacks compile against the primary version's libraries, not the target's.
 - Windows: checked under Wine with stand-in Javas and on one real Windows 11 (in a VM, so without OpenGL: the client stops at its window); `test.sh` is bash (WSL on Windows).
 - `bonfire` doesn't check whether the game is running.
-- `miracle bake` compiles fallbacks for any `fallback/<v>/` folder, target or not.
 - MiracleLoader needs Java 25, so the oldest reachable versions are those that run on it. `Resurrection` (8.8) fixes the launcher's Java, not the game's: the game itself has to work on Java 25.
 
 ---

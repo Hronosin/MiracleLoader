@@ -49,24 +49,40 @@ final class Builder {
             base.add(Miracle.horizonJar());
         }
         base.addAll(p.against());
-        base.addAll(libs);
 
         List<Path> cp = new ArrayList<>(base);
+        cp.addAll(libs);
         cp.add(client);
         compile(p.dir().resolve("src"), classes, cp, "main sources");
 
         copyTree(p.dir().resolve("resources"), classes);
         Files.copy(p.dir().resolve(Project.MOD_FILE), classes.resolve(Project.MOD_FILE));
 
-        // Fallback functions: each against its own version's readable API.
+        List<String> targets = Targets.expand(p.targets());
+        if (p.targets().stream().anyMatch(Targets::isPattern)) {
+            System.out.println("  targets " + p.targets() + " mean " + targets);
+        }
+
+        // Fallback functions: each against its own version's readable API and libraries, and only
+        // for versions this bake is for.
         Path fallbacks = p.dir().resolve("fallback");
         if (Files.isDirectory(fallbacks)) {
             try (Stream<Path> dirs = Files.list(fallbacks)) {
                 for (Path d : dirs.filter(Files::isDirectory).sorted().toList()) {
                     String v = d.getFileName().toString();
+                    if (v.equals(primary.id())) {
+                        System.out.println("  fallback/" + v + " skipped: " + v + " is the version the main sources are written for");
+                        continue;
+                    }
+                    if (!targets.contains(v)) {
+                        System.out.println("  fallback/" + v + " skipped: " + v + " isn't in targets");
+                        continue;
+                    }
+                    Mojang.Version fv = Mojang.version(v);
                     List<Path> fcp = new ArrayList<>(base);
+                    fcp.addAll(Mojang.compileLibraries(fv));
                     fcp.add(classes);
-                    fcp.add(api(Mojang.version(v)));
+                    fcp.add(api(fv));
                     compile(d.resolve("src"), classes.resolve("META-INF/miracle/fallback/" + v), fcp, "fallbacks for " + v);
                 }
             }
@@ -85,10 +101,6 @@ final class Builder {
         for (Path other : p.against()) {
             args.add("--lib");
             args.add(other.toString());
-        }
-        List<String> targets = Targets.expand(p.targets());
-        if (p.targets().stream().anyMatch(Targets::isPattern)) {
-            System.out.println("  targets " + p.targets() + " mean " + targets);
         }
         for (String t : targets) {
             if (t.equals(primary.id())) {
