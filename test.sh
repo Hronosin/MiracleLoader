@@ -816,7 +816,7 @@ run_with too-old "$T/needs-new-lib.jar" "$T/dep-lib.jar"
 expect_code too-old 1
 expect too-old "Some mods came without what they need:"
 expect too-old "needs-new-lib needs dep-lib >= 2.0, but dep-lib 1.2.0 is here. Update it."
-expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.6.0 is here. Update it."
+expect too-old "needs-new-lib needs miracle >= 99, but miracle 1.7.0 is here. Update it."
 
 run_with ghost-dep "$T/needs-ghost.jar"
 expect_code ghost-dep 1

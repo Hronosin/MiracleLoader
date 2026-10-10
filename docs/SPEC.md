@@ -4,7 +4,7 @@
 
 | | |
 |---|---|
-| Version | 1.6.0 |
+| Version | 1.7.0 |
 | Status | Draft. Describes the implementation at the commit it ships with; where they disagree, one of them has a bug. |
 | Covers | the `miracle` command line, `miracle-bake`, the `miracle-toolchain` library, and the parts of MiracleLoader they rely on |
 

@@ -12,7 +12,7 @@ A mod loader for Minecraft Java Edition 26.x that works *by miracle*. Well, tech
 
 For those who'd rather not write everything from scratch, there's **MiracleToolChain**: a command line that creates, builds and runs mods, and a library mod with events, merge-ready game values, commands, configs and resource loading. The library is an ordinary mod with no special privileges, so anything it can do, you can do too.
 
-> **Status: 1.6.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
+> **Status: 1.7.0, stable:** within 1.x, nothing a mod can use breaks (the promise, and what it covers, is in [the specification, section 12](docs/SPEC.md#12-versioning-and-stability); Event Horizon Extension is still experimental). Runs on real Minecraft 26.x (client and server) and, through baked variants, on obfuscated 1.21.11. RGCT hooks observe, change or cancel game methods, and when several mods hook the same method their effects merge by fixed rules instead of overwriting each other. MiracleToolChain's `miracle` command creates, builds and runs mods with no Gradle in sight, and its library covers the common cases without naming a single game method.
 
 The full contract of the toolchain, the build and the library is in the [specification](docs/SPEC.md).
 
@@ -806,6 +806,7 @@ After step 3 the loader writes down what every mod patches, one line per patch, 
 - [x] Reach: what each mod's code reaches for, at startup and in `zandatsu`; rendering only through the game's API (`-Dmiracle.rawGraphics`)
 - [x] The graphics backend, known before the game starts (`options.txt` or `-Dmiracle.backend`), and what it actually runs (`Lensing.backend()`)
 - [x] 1.6: fallbacks with nested classes; hooks that change things as cheap as hooks that look; `interceptHead` on constructors; each mod's resources a pack of its own (tags and atlases merge); `communes_since`; `bonfire` that sees a running game
+- [x] 1.7: redirects of private and `super` calls (`Rgct.call`, `superCall`); animation controllers, Molang variables, a mod's own queries, and `Rites` to play an animation from code
 - [ ] Event Horizon 0.5: Lensing's own pipelines, for mods' entities and particles
 - [x] Windows: `build.cmd`, `miracle.cmd`, and one Java build for every OS; `miracle consecrate` installs into Prism anywhere
 - [x] MiracleToolChain specification ([docs/SPEC.md](docs/SPEC.md))

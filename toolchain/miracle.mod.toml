@@ -1,6 +1,6 @@
 id = "miracle-toolchain"
 name = "MiracleToolChain"
-version = "1.6.0"
+version = "1.7.0"
 # Libraries from 1.6.0 on understand each other's Communion and Telepathy: their mods may meet.
 communes_since = "1.6.0"
 authors = ["Hronosin"]
