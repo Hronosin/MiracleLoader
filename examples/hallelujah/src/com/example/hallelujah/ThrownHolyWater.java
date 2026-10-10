@@ -1,5 +1,6 @@
 package com.example.hallelujah;
 
+import io.github.hronosin.miracle.toolchain.Rites;
 import net.minecraft.core.particles.ParticleTypes;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.world.entity.EntityType;
@@ -38,6 +39,7 @@ public final class ThrownHolyWater extends ThrowableItemProjectile {
         if (level() instanceof ServerLevel level && hit.getEntity() instanceof LivingEntity target) {
             if (target instanceof Heretic) {
                 target.hurtServer(level, damageSources().thrown(this, getOwner()), 12f); // purified
+                Rites.play(target, "recoil");   // animation.heretic.recoil, on every client that sees it
             } else if (target.isInvertedHealAndHarm()) {
                 target.hurtServer(level, damageSources().thrown(this, getOwner()), 6f);  // undead: it burns
             } else {

@@ -132,6 +132,9 @@ public final class Hallelujah implements MiracleMod {
                         .of(Heretic::new, MobCategory.MONSTER).sized(0.6f, 1.95f).clientTrackingRange(8))
                 .attributes(() -> Zombie.createAttributes())
                 .sculpted()     // its own model, from Blockbench: resources/assets/hallelujah/geo/heretic.geo.json
+                // ...animated by Blockbench's controllers (animation_controllers/heretic...json), which can
+                // ask "q.is_burning": heretics burn in the sun like any zombie, and panic when they do.
+                .query("is_burning", h -> h.isOnFire() ? 1 : 0)
                 .spawnEgg()
                 .spawns(30, 1, 2, "#minecraft:is_overworld");   // at night, in the dark, like other monsters
 

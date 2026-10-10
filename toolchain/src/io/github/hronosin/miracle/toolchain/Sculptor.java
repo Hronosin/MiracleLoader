@@ -53,22 +53,100 @@ final class Sculptor {
         }
         Identifier animFile = Identifier.fromNamespaceAndPath(geometry.getNamespace(),
                 "animations/" + geometry.getPath() + ".animation.json");
+        Liturgy.Lexicon lex = new Liturgy.Lexicon(b.queryNames);
         Map<String, Liturgy.Rite> rites = Map.of();
         Optional<Resource> animations = Minecraft.getInstance().getResourceManager().getResource(animFile);
         if (animations.isPresent()) {
             List<String> notes = new ArrayList<>();
             try (Reader r = animations.get().openAsReader()) {
-                rites = Liturgy.read(text(r), notes);
+                rites = Liturgy.read(text(r), notes, lex);
             } catch (IOException | RuntimeException e) {
                 Log.error("MiracleToolChain: " + b + "'s animations in " + animFile + " couldn't be read: " + e.getMessage()
                         + ". It moves by part names instead.");
             }
             notes.forEach(n -> Log.warn("MiracleToolChain: " + b + "'s animations: " + n));
         }
-        Sculpture model = new Sculpture(bake(clay), rites);
+        List<Choir.Controller> controllers = List.of();
+        for (String suffix : List.of(".animation_controllers.json", ".animation_controller.json")) {
+            Identifier ctlFile = Identifier.fromNamespaceAndPath(geometry.getNamespace(),
+                    "animation_controllers/" + geometry.getPath() + suffix);
+            Optional<Resource> ctl = Minecraft.getInstance().getResourceManager().getResource(ctlFile);
+            if (ctl.isEmpty()) {
+                continue;
+            }
+            List<String> notes = new ArrayList<>();
+            try (Reader r = ctl.get().openAsReader()) {
+                controllers = Choir.read(text(r), notes, lex);
+            } catch (IOException | RuntimeException e) {
+                Log.error("MiracleToolChain: " + b + "'s animation controllers in " + ctlFile + " couldn't be read: "
+                        + e.getMessage() + ". It plays by animation names instead.");
+            }
+            notes.forEach(n -> Log.warn("MiracleToolChain: " + b + "'s animation controllers: " + n));
+            break;
+        }
+        Sculpture model = new Sculpture(bake(clay), rites, controllers, b);
+        SCULPTURES.put(b.get(), model);
         Identifier texture = Identifier.parse(b.texture);
         float shadow = Math.max(0.1f, b.get().getWidth() * 0.5f);
         return new Effigy(ctx, model, shadow, texture);
+    }
+
+    // --- souls: each entity's variables, controller states and rites in play -------------------
+
+    /** The sculpture each being is drawn with now (made again on every resource reload). */
+    private static final Map<net.minecraft.world.entity.EntityType<?>, Sculpture> SCULPTURES = new java.util.concurrent.ConcurrentHashMap<>();
+
+    /** One soul per entity drawn, for as long as the entity exists on this client. Render thread only. */
+    private static final Map<net.minecraft.world.entity.Entity, Choir.Soul> SOULS = new java.util.WeakHashMap<>();
+
+    private static final java.util.Set<String> SAID = java.util.concurrent.ConcurrentHashMap.newKeySet();
+
+    /** -Dmiracle.animations=trace: every controller move and rite, in the log. */
+    static final boolean TRACE = "trace".equals(System.getProperty("miracle.animations"));
+
+    static Choir.Soul soul(net.minecraft.world.entity.Entity e, int controllers) {
+        Choir.Soul s = SOULS.get(e);
+        if (s == null || s.lanes() != controllers) {
+            s = new Choir.Soul(controllers);
+            SOULS.put(e, s);
+        }
+        return s;
+    }
+
+    /** {@link Rites#play}/{@code stop} for an entity on this client. */
+    static void rite(net.minecraft.world.entity.Entity e, String name, boolean play) {
+        Sculpture sc = SCULPTURES.get(e.getType());
+        if (sc == null) {
+            say(net.minecraft.world.entity.EntityType.getKey(e.getType()) + " isn't a sculpted being (or isn't drawn yet),"
+                    + " so Rites can't play '" + name + "' on it");
+            return;
+        }
+        Liturgy.Rite rite = Choir.find(sc.rites, name);
+        if (rite == null) {
+            say(sc.being + " has no animation '" + name + "' (its animations: " + sc.rites.keySet() + ")");
+            return;
+        }
+        Choir.Soul soul = soul(e, sc.controllers.size());
+        if (play) {
+            soul.play(rite, e.tickCount / 20.0);
+        } else {
+            soul.stop(rite);
+        }
+    }
+
+    /** What the server said: Rites on entity {@code id}, if this client has it. */
+    static void received(int id, String name, boolean play) {
+        var level = Minecraft.getInstance().level;
+        net.minecraft.world.entity.Entity e = level == null ? null : level.getEntity(id);
+        if (e != null) {
+            rite(e, name, play);
+        }
+    }
+
+    private static void say(String what) {
+        if (SAID.add(what)) {
+            Log.warn("MiracleToolChain: " + what);
+        }
     }
 
     private static Clay.Model read(Identifier file) throws IOException {
@@ -119,17 +197,20 @@ final class Sculptor {
     }
 
     /**
-     * A sculpted being's model. Plays the animations whose names end in {@code idle},
-     * {@code walk}, {@code attack} and {@code death}, if it has them; otherwise moves by the names
-     * of its parts: one called {@code head} follows the gaze (always), parts with {@code leg} in
-     * their name walk, parts with {@code arm} swing against the legs; {@code left}/{@code right}
-     * in the name set which foot goes first.
+     * A sculpted being's model. With animation controllers, they decide what plays. Without, it
+     * plays the animations whose names end in {@code idle}, {@code walk}, {@code attack} and
+     * {@code death}, if it has them, or else moves by the names of its parts: one called
+     * {@code head} follows the gaze (always), parts with {@code leg} in their name walk, parts with
+     * {@code arm} swing against the legs; {@code left}/{@code right} in the name set which foot
+     * goes first. What code plays ({@link Rites}) plays on top, either way.
      */
     static final class Sculpture extends EntityModel<LivingEntityRenderState> {
 
-        /** The render state, plus how far along an attack swing is. */
+        /** The render state, plus how far along an attack swing is, and what plays this frame. */
         static final class State extends LivingEntityRenderState {
             float attack;
+            Liturgy.Scene scene;
+            List<Choir.Voice> voices = List.of();
         }
 
         private record Limb(ModelPart part, float phase, float amplitude) {
@@ -137,6 +218,10 @@ final class Sculptor {
 
         private static final float DEG = (float) Math.PI / 180f;
 
+        final Map<String, Liturgy.Rite> rites;
+        final List<Choir.Controller> controllers;
+        final Being<?> being;
+        final List<String> notes = new java.util.concurrent.CopyOnWriteArrayList<>();
         private final ModelPart head;
         private final List<Limb> limbs = new ArrayList<>();
         private final Map<String, ModelPart> parts = new HashMap<>();
@@ -145,16 +230,22 @@ final class Sculptor {
         private final List<Liturgy.Rite> attack = new ArrayList<>();
         private final List<Liturgy.Rite> death = new ArrayList<>();
 
-        Sculpture(ModelPart root, Map<String, Liturgy.Rite> rites) {
+        Sculpture(ModelPart root, Map<String, Liturgy.Rite> rites, List<Choir.Controller> controllers, Being<?> being) {
             super(root);
-            for (Liturgy.Rite r : rites.values()) {
-                switch (r.kind()) {
-                    case "idle" -> idle.add(r);
-                    case "walk", "walking", "move", "run" -> walk.add(r);
-                    case "attack", "swing" -> attack.add(r);
-                    case "death", "die" -> death.add(r);
-                    default -> Log.warn("MiracleToolChain: animation " + r.name() + " plays at no time: names that end in"
-                            + " idle, walk, attack or death do.");
+            this.rites = rites;
+            this.controllers = controllers;
+            this.being = being;
+            if (controllers.isEmpty()) {
+                for (Liturgy.Rite r : rites.values()) {
+                    switch (r.kind()) {
+                        case "idle" -> idle.add(r);
+                        case "walk", "walking", "move", "run" -> walk.add(r);
+                        case "attack", "swing" -> attack.add(r);
+                        case "death", "die" -> death.add(r);
+                        default -> {
+                            // played by name from code (Rites), or by nothing
+                        }
+                    }
                 }
             }
             ModelPart found = null;
@@ -221,33 +312,91 @@ final class Sculptor {
             return out;
         }
 
+        /** This frame for one entity: its scene filled in, its controllers moved on, its voices chosen. */
+        @SuppressWarnings({"unchecked", "rawtypes"})
+        void extract(Mob mob, State state, float partialTick) {
+            Choir.Soul soul = soul(mob, controllers.size());
+            Liturgy.Scene sc = soul.scene;
+            double now = (mob.tickCount + partialTick) / 20.0;
+            sc.deltaTime = Double.isNaN(soul.last) ? 0 : Math.max(0, now - soul.last);
+            soul.last = now;
+            sc.lifeTime = now;
+            sc.groundSpeed = state.walkAnimationSpeed;
+            sc.distanceMoved = state.walkAnimationPos;
+            sc.headX = state.xRot;
+            sc.headY = state.yRot;
+            sc.onGround = mob.onGround() ? 1 : 0;
+            sc.inWater = mob.isInWater() ? 1 : 0;
+            sc.moving = state.walkAnimationSpeed > 0.01f || mob.getDeltaMovement().horizontalDistanceSqr() > 1e-6 ? 1 : 0;
+            sc.baby = state.isBaby ? 1 : 0;
+            sc.health = mob.getHealth();
+            sc.maxHealth = mob.getMaxHealth();
+            sc.attackTime = state.attack;
+            sc.alive = mob.isAlive() && state.deathTime <= 0 ? 1 : 0;
+            int n = being.queryValues.size();
+            if (sc.custom.length != n) {
+                sc.custom = new double[n];
+            }
+            for (int i = 0; i < n; i++) {
+                try {
+                    sc.custom[i] = ((java.util.function.ToDoubleFunction) being.queryValues.get(i)).applyAsDouble(mob);
+                } catch (RuntimeException e) {
+                    sc.custom[i] = 0;
+                    say(being + "'s query " + being.queryNames.get(i) + " threw " + e + "; read as 0");
+                }
+            }
+            state.scene = sc;
+            state.voices = Choir.step(controllers, rites, soul, now, notes);
+            if (!soul.events.isEmpty()) {
+                if (TRACE) {
+                    for (String ev : soul.events) {
+                        Log.info("MiracleToolChain: " + being + " #" + mob.getId() + " " + ev);
+                    }
+                }
+                soul.events.clear();
+            }
+            if (!notes.isEmpty()) {
+                notes.forEach(note -> say(being + "'s animation controllers: " + note));
+                notes.clear();
+            }
+        }
+
         @Override
         public void setupAnim(LivingEntityRenderState state) {
             resetPose();
-            float pos = state.walkAnimationPos;
-            float speed = Math.min(1f, state.walkAnimationSpeed);
-            double life = state.ageInTicks / 20.0;
-            if (walk.isEmpty()) {
-                for (Limb l : limbs) {
-                    l.part().xRot += (float) Math.cos(pos * 0.6662f + l.phase()) * l.amplitude() * speed;
+            State st = state instanceof State s ? s : null;
+            Liturgy.Scene sc = st != null && st.scene != null ? st.scene : new Liturgy.Scene();
+            if (controllers.isEmpty()) {
+                float pos = state.walkAnimationPos;
+                float speed = Math.min(1f, state.walkAnimationSpeed);
+                double life = state.ageInTicks / 20.0;
+                if (walk.isEmpty()) {
+                    for (Limb l : limbs) {
+                        l.part().xRot += (float) Math.cos(pos * 0.6662f + l.phase()) * l.amplitude() * speed;
+                    }
+                }
+                float walking = walk.isEmpty() ? 0 : Math.min(1f, speed * 1.5f);
+                for (Liturgy.Rite r : idle) {
+                    play(r, life, 1 - walking, sc);
+                }
+                for (Liturgy.Rite r : walk) {
+                    play(r, life, walking, sc);
+                }
+                float swing = st != null ? st.attack : 0;
+                if (swing > 0) {
+                    for (Liturgy.Rite r : attack) {
+                        play(r, swing * r.length(), 1, sc);
+                    }
+                }
+                if (state.deathTime > 0) {
+                    for (Liturgy.Rite r : death) {
+                        play(r, state.deathTime / 20.0, 1, sc);
+                    }
                 }
             }
-            float walking = walk.isEmpty() ? 0 : Math.min(1f, speed * 1.5f);
-            for (Liturgy.Rite r : idle) {
-                play(r, life, 1 - walking, state);
-            }
-            for (Liturgy.Rite r : walk) {
-                play(r, life, walking, state);
-            }
-            float swing = state instanceof State s ? s.attack : 0;
-            if (swing > 0) {
-                for (Liturgy.Rite r : attack) {
-                    play(r, swing * r.length(), 1, state);
-                }
-            }
-            if (state.deathTime > 0) {
-                for (Liturgy.Rite r : death) {
-                    play(r, state.deathTime / 20.0, 1, state);
+            if (st != null) {
+                for (Choir.Voice v : st.voices) {
+                    play(v.rite(), v.seconds(), v.weight(), sc);
                 }
             }
             if (head != null) {
@@ -257,13 +406,13 @@ final class Sculptor {
         }
 
         /** Adds one animation, at {@code seconds} into it, weighted by {@code weight}. */
-        private void play(Liturgy.Rite rite, double seconds, float weight, LivingEntityRenderState state) {
-            if (weight <= 0) {
+        private void play(Liturgy.Rite rite, double seconds, double weight, Liturgy.Scene sc) {
+            if (weight == 0) {
                 return;
             }
+            float w = (float) weight;
             double t = rite.at(seconds);
-            Liturgy.Scene scene = new Liturgy.Scene(t, state.ageInTicks / 20.0, state.walkAnimationSpeed,
-                    state.walkAnimationPos, state.xRot, state.yRot);
+            sc.animTime = t;
             for (var e : rite.bones().entrySet()) {
                 ModelPart part = parts.get(e.getKey());
                 if (part == null) {
@@ -274,22 +423,22 @@ final class Sculptor {
                 }
                 Liturgy.Bone b = e.getValue();
                 if (b.rotation() != null) {
-                    double[] r = Liturgy.sample(b.rotation(), t, scene);
-                    part.xRot += (float) r[0] * DEG * weight;
-                    part.yRot += (float) r[1] * DEG * weight;
-                    part.zRot += (float) r[2] * DEG * weight;
+                    double[] r = Liturgy.sample(b.rotation(), t, sc);
+                    part.xRot += (float) r[0] * DEG * w;
+                    part.yRot += (float) r[1] * DEG * w;
+                    part.zRot += (float) r[2] * DEG * w;
                 }
                 if (b.position() != null) {
-                    double[] p = Liturgy.sample(b.position(), t, scene);
-                    part.x += (float) p[0] * weight;
-                    part.y -= (float) p[1] * weight;
-                    part.z += (float) p[2] * weight;
+                    double[] p = Liturgy.sample(b.position(), t, sc);
+                    part.x += (float) p[0] * w;
+                    part.y -= (float) p[1] * w;
+                    part.z += (float) p[2] * w;
                 }
                 if (b.scale() != null) {
-                    double[] sc = Liturgy.sample(b.scale(), t, scene);
-                    part.xScale *= 1 + ((float) sc[0] - 1) * weight;
-                    part.yScale *= 1 + ((float) sc[1] - 1) * weight;
-                    part.zScale *= 1 + ((float) sc[2] - 1) * weight;
+                    double[] scale = Liturgy.sample(b.scale(), t, sc);
+                    part.xScale *= 1 + ((float) scale[0] - 1) * w;
+                    part.yScale *= 1 + ((float) scale[1] - 1) * w;
+                    part.zScale *= 1 + ((float) scale[2] - 1) * w;
                 }
             }
         }
@@ -314,6 +463,7 @@ final class Sculptor {
         public void extractRenderState(Mob mob, Sculpture.State state, float partialTick) {
             super.extractRenderState(mob, state, partialTick);
             state.attack = Swing.progress(mob, partialTick);
+            getModel().extract(mob, state, partialTick);
         }
 
         @Override

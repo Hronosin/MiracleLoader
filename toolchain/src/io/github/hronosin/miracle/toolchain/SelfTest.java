@@ -201,6 +201,78 @@ final class SelfTest {
                 && deathRite.at(5) == 2.0 && walkRite.at(1.25) == 0.25);
         check("animation: unknown Molang is 0, and said", animNotes.size() == 1 && animNotes.getFirst().contains("math.nope"));
 
+        // Molang with variables and statements, custom queries.
+        Liturgy.Lexicon lex = new Liturgy.Lexicon(List.of("is_angry"));
+        List<String> mNotes = new ArrayList<>();
+        Liturgy.Molang counter = Liturgy.Molang.of("v.count = v.count + 1; t.twice = v.count * 2; return t.twice + q.is_angry;",
+                "test", mNotes, lex);
+        Liturgy.Molang readCount = Liturgy.Molang.of("variable.count", "test", mNotes, lex);
+        Liturgy.Scene ms = new Liturgy.Scene();
+        ms.custom = new double[]{10};
+        double first = counter.eval(ms);
+        double second = counter.eval(ms);
+        check("molang: statements, variables kept, return", first == 12 && second == 14 && readCount.eval(ms) == 2 && mNotes.isEmpty());
+        check("molang: a lone assignment is worth its value", Liturgy.Molang.of("v.x = 3", "test", mNotes, lex).eval(ms) == 3
+                && Liturgy.Molang.of("v.x == 3 ? 7 : 0", "test", mNotes, lex).eval(ms) == 7);
+        check("molang: queries a model asks about", Liturgy.Molang.of("q.is_on_ground && !query.is_in_water", "test", mNotes, lex)
+                .eval(ms) == 0 && mNotes.isEmpty());
+
+        // Animation controllers: states, transitions, blending, on_entry, rites from code.
+        List<String> cNotes = new ArrayList<>();
+        Liturgy.Lexicon clex = new Liturgy.Lexicon(List.of("is_angry"));
+        java.util.Map<String, Liturgy.Rite> crites = Liturgy.read("""
+                {"animations": {
+                  "animation.t.idle": {"loop": true, "animation_length": 2, "bones": {"a": {"rotation": [1, 0, 0]}}},
+                  "animation.t.walk": {"loop": true, "animation_length": 1, "bones": {"a": {"rotation": [2, 0, 0]}}},
+                  "animation.t.rage": {"loop": true, "animation_length": 1, "bones": {"a": {"rotation": [3, 0, 0]}}},
+                  "animation.t.roar": {"animation_length": 0.5, "bones": {"a": {"rotation": [4, 0, 0]}}}
+                }}""", cNotes, clex);
+        List<Choir.Controller> choir = Choir.read("""
+                {"format_version": "1.10.0", "animation_controllers": {
+                  "controller.animation.t.move": {"initial_state": "default", "states": {
+                    "default": {"animations": ["idle"], "transitions": [{"walking": "q.is_moving"}], "blend_transition": 0.2},
+                    "walking": {"animations": [{"walk": "q.ground_speed"}], "transitions": [{"default": "!q.is_moving"}],
+                                "blend_transition": 0.2, "on_entry": ["v.steps = v.steps + 1;"]}}},
+                  "controller.animation.t.mood": {"states": {
+                    "default": {"transitions": [{"angry": "q.is_angry"}]},
+                    "angry": {"animations": ["animation.t.rage"], "transitions": [{"default": "!q.is_angry"}],
+                              "sound_effects": [{"effect": "grr"}]}}}
+                }}""", cNotes, clex);
+        Choir.Soul soul = new Choir.Soul(choir.size());
+        soul.scene.custom = new double[1];
+        List<Choir.Voice> v0 = Choir.step(choir, crites, soul, 1.0, cNotes);
+        check("controller: starts in its initial state", soul.state(0).equals("default") && soul.state(1).equals("default")
+                && v0.size() == 1 && v0.getFirst().rite().kind().equals("idle") && v0.getFirst().weight() == 1);
+        soul.scene.moving = 1;
+        soul.scene.groundSpeed = 0.5;
+        List<Choir.Voice> v1 = Choir.step(choir, crites, soul, 1.1, cNotes);
+        check("controller: moves on a condition, runs on_entry", soul.state(0).equals("walking")
+                && Liturgy.Molang.of("v.steps", "t", cNotes, clex).eval(soul.scene) == 1);
+        check("controller: crossfades at the move (new at 0, old at 1) with weights",
+                v1.stream().anyMatch(v -> v.rite().kind().equals("walk") && v.weight() == 0) == false
+                && v1.stream().anyMatch(v -> v.rite().kind().equals("idle") && v.weight() == 1));
+        List<Choir.Voice> v2 = Choir.step(choir, crites, soul, 1.2, cNotes);
+        double walkW = v2.stream().filter(v -> v.rite().kind().equals("walk")).mapToDouble(Choir.Voice::weight).sum();
+        double idleW = v2.stream().filter(v -> v.rite().kind().equals("idle")).mapToDouble(Choir.Voice::weight).sum();
+        check("controller: halfway through the blend", Math.abs(walkW - 0.25) < 1e-9 && Math.abs(idleW - 0.5) < 1e-9);
+        List<Choir.Voice> v3 = Choir.step(choir, crites, soul, 2.0, cNotes);
+        check("controller: blend done, walk only, its time from entry", v3.size() == 1
+                && Math.abs(v3.getFirst().seconds() - 0.9) < 1e-9 && v3.getFirst().weight() == 0.5);
+        soul.scene.custom[0] = 1;
+        Choir.step(choir, crites, soul, 2.1, cNotes);
+        check("controller: a mod's own query moves another controller", soul.state(1).equals("angry"));
+        soul.play(Choir.find(crites, "roar"), 2.1);
+        List<Choir.Voice> v4 = Choir.step(choir, crites, soul, 2.3, cNotes);
+        check("rites: played on top, from when they were asked", v4.stream().anyMatch(v -> v.rite().kind().equals("roar")
+                && Math.abs(v.seconds() - 0.2) < 1e-9) && v4.stream().anyMatch(v -> v.rite().kind().equals("rage")));
+        Choir.step(choir, crites, soul, 2.7, cNotes);
+        check("rites: a one-shot ends by itself", !soul.playing(Choir.find(crites, "roar")));
+        soul.play(Choir.find(crites, "rage"), 3);
+        soul.stop(Choir.find(crites, "rage"));
+        check("rites: stop", !soul.playing(Choir.find(crites, "rage")));
+        check("controller: what it can't do is said", cNotes.size() == 1 && cNotes.getFirst().contains("sound_effects"));
+        check("controller: names by last part or in full", Choir.find(crites, "animation.t.walk") == Choir.find(crites, "WALK"));
+
         System.out.println(passed + " passed, " + failed + " failed");
         if (failed != 0) {
             // an uncaught throw ends the JVM with 1; no System.exit, so the jar's label stays honest

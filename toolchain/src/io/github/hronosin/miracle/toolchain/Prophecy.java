@@ -34,7 +34,7 @@ final class Prophecy {
     /** What a mod will need. */
     record Foresight(Set<Omens.Omen> omens, Set<Blessings.Key> blessings, boolean sermons, boolean scripture,
                      boolean creation, boolean beings, boolean visions, boolean shrineLooks, boolean spawns, boolean telepathy, boolean gestures,
-                     List<String> doubts) {
+                     boolean rites, List<String> doubts) {
 
         boolean empty() {
             return omens.isEmpty() && blessings.isEmpty() && !sermons && !scripture && !creation && !telepathy && !gestures;
@@ -76,6 +76,9 @@ final class Prophecy {
             if (gestures) {
                 parts.add("gestures");
             }
+            if (rites) {
+                parts.add("rites");
+            }
             return String.join(", ", parts);
         }
     }
@@ -89,7 +92,7 @@ final class Prophecy {
         Set<Blessings.Value> values = EnumSet.noneOf(Blessings.Value.class);
         Set<Blessings.Key> keys = new LinkedHashSet<>();
         Set<Blessings.Key> loose = new LinkedHashSet<>();
-        boolean[] flags = new boolean[9];
+        boolean[] flags = new boolean[10];
         List<String> doubts = new ArrayList<>();
         try (JarFile jf = new JarFile(jar.toFile())) {
             for (JarEntry e : jf.stream().toList()) {
@@ -117,7 +120,8 @@ final class Prophecy {
         for (Blessings.Key k : loose) {
             values.forEach(v -> keys.add(new Blessings.Key(v, k.op(), k.priority())));
         }
-        return new Foresight(omens, keys, flags[0], flags[1], flags[2], flags[5], flags[6], flags[7], flags[8], flags[3], flags[4], doubts);
+        return new Foresight(omens, keys, flags[0], flags[1], flags[2], flags[5], flags[6], flags[7], flags[8],
+                flags[3] || flags[9], flags[4], flags[9], doubts);
     }
 
     /**
@@ -183,6 +187,7 @@ final class Prophecy {
                     case "Being" -> flags[8] |= name.equals("spawns");
                     case "Telepathy", "Networking", "Telepathy$Channel" -> flags[3] = true;
                     case "Gestures", "Keybinds" -> flags[4] |= name.equals("key");
+                    case "Rites", "Animations" -> flags[9] |= name.equals("play") || name.equals("stop");
                     default -> {
                     }
                 }

@@ -1,0 +1,76 @@
+{
+  "format_version": "1.10.0",
+  "animation_controllers": {
+    "controller.animation.heretic.body": {
+      "initial_state": "default",
+      "states": {
+        "default": {
+          "animations": [
+            {
+              "idle": "1 - math.min(1, q.ground_speed * 1.5)"
+            },
+            {
+              "walk": "math.min(1, q.ground_speed * 1.5)"
+            }
+          ],
+          "transitions": [
+            {
+              "attacking": "q.attack_time > 0"
+            },
+            {
+              "dying": "!q.is_alive"
+            }
+          ]
+        },
+        "attacking": {
+          "animations": [
+            {
+              "walk": "math.min(1, q.ground_speed * 1.5)"
+            },
+            "attack"
+          ],
+          "transitions": [
+            {
+              "dying": "!q.is_alive"
+            },
+            {
+              "default": "q.anim_time > 0.5"
+            }
+          ],
+          "blend_transition": 0.1
+        },
+        "dying": {
+          "animations": [
+            "death"
+          ]
+        }
+      }
+    },
+    "controller.animation.heretic.mood": {
+      "initial_state": "calm",
+      "states": {
+        "calm": {
+          "transitions": [
+            {
+              "panic": "q.is_burning && q.is_alive"
+            }
+          ]
+        },
+        "panic": {
+          "animations": [
+            "panic"
+          ],
+          "transitions": [
+            {
+              "calm": "!q.is_burning || !q.is_alive"
+            }
+          ],
+          "blend_transition": 0.3,
+          "on_entry": [
+            "v.panics = v.panics + 1;"
+          ]
+        }
+      }
+    }
+  }
+}

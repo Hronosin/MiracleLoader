@@ -58,8 +58,89 @@ final class Liturgy {
         }
     }
 
-    /** Everything a Molang expression may ask about, for one frame. */
-    record Scene(double animTime, double lifeTime, double groundSpeed, double distanceMoved, double headX, double headY) {
+    /**
+     * Everything a Molang expression may ask about, for one frame of one entity: the queries, the
+     * mod's own queries ({@code custom}, by {@link Lexicon} slot) and the entity's variables
+     * ({@code vars}, by slot too, kept from frame to frame). Mutable: one per entity, refilled
+     * every frame, {@code animTime} set for each animation as it's sampled.
+     */
+    static final class Scene {
+        double animTime;
+        double lifeTime;
+        double groundSpeed;
+        double distanceMoved;
+        double headX;
+        double headY;
+        double onGround;
+        double inWater;
+        double moving;
+        double baby;
+        double health;
+        double maxHealth;
+        double attackTime;
+        double alive = 1;
+        double deltaTime;
+        double[] custom = new double[0];
+        double[] vars = new double[0];
+
+        Scene() {
+        }
+
+        Scene(double animTime, double lifeTime, double groundSpeed, double distanceMoved, double headX, double headY) {
+            this.animTime = animTime;
+            this.lifeTime = lifeTime;
+            this.groundSpeed = groundSpeed;
+            this.distanceMoved = distanceMoved;
+            this.headX = headX;
+            this.headY = headY;
+        }
+
+        double var(int slot) {
+            return slot < vars.length ? vars[slot] : 0;
+        }
+
+        void set(int slot, double v) {
+            if (slot >= vars.length) {
+                vars = java.util.Arrays.copyOf(vars, slot + 1);
+            }
+            vars[slot] = v;
+        }
+
+        double custom(int slot) {
+            return slot < custom.length ? custom[slot] : 0;
+        }
+    }
+
+    /**
+     * The names one model's Molang uses, as slots: variables ({@code variable.x}, {@code v.x},
+     * {@code temp.x}, {@code t.x}) and the mod's own queries ({@link Being#query}). Shared by a
+     * model's animations and controllers, so they see the same variables.
+     */
+    static final class Lexicon {
+        private final Map<String, Integer> vars = new LinkedHashMap<>();
+        private final Map<String, Integer> queries = new LinkedHashMap<>();
+
+        Lexicon() {
+        }
+
+        /** With the mod's own query names, in the order their values come. */
+        Lexicon(List<String> customQueries) {
+            for (String q : customQueries) {
+                queries.putIfAbsent(q.toLowerCase(Locale.ROOT), queries.size());
+            }
+        }
+
+        int var(String canonical) {
+            return vars.computeIfAbsent(canonical, k -> vars.size());
+        }
+
+        Integer query(String name) {
+            return queries.get(name);
+        }
+
+        int varCount() {
+            return vars.size();
+        }
     }
 
     private Liturgy() {
@@ -67,6 +148,10 @@ final class Liturgy {
 
     /** Every animation in a {@code .animation.json}, by full name, in file order. */
     static Map<String, Rite> read(String json, List<String> notes) {
+        return read(json, notes, new Lexicon());
+    }
+
+    static Map<String, Rite> read(String json, List<String> notes, Lexicon lex) {
         Object root = Clay.Json.parse(json);
         if (!(Clay.Json.get(root, "animations") instanceof Map<?, ?> anims)) {
             throw new IllegalArgumentException("no \"animations\" in it (a Bedrock animation file from Blockbench?)");
@@ -88,9 +173,9 @@ final class Liturgy {
                         continue;
                     }
                     String where = name + " / " + b.getKey();
-                    Channel rot = channel(bone.get("rotation"), false, where + " rotation", notes);
-                    Channel pos = channel(bone.get("position"), false, where + " position", notes);
-                    Channel scl = channel(bone.get("scale"), true, where + " scale", notes);
+                    Channel rot = channel(bone.get("rotation"), false, where + " rotation", notes, lex);
+                    Channel pos = channel(bone.get("position"), false, where + " position", notes, lex);
+                    Channel scl = channel(bone.get("scale"), true, where + " scale", notes, lex);
                     for (Channel c : new Channel[]{rot, pos, scl}) {
                         if (c != null && !c.keys().isEmpty()) {
                             last = Math.max(last, c.keys().getLast().time());
@@ -105,7 +190,7 @@ final class Liturgy {
         return out;
     }
 
-    private static Channel channel(Object value, boolean scale, String where, List<String> notes) {
+    private static Channel channel(Object value, boolean scale, String where, List<String> notes, Lexicon lex) {
         if (value == null) {
             return null;
         }
@@ -119,34 +204,34 @@ final class Liturgy {
                     notes.add(where + ": keyframe time '" + f.getKey() + "' isn't a number; skipped");
                     continue;
                 }
-                keys.add(key(t, f.getValue(), scale, where, notes));
+                keys.add(key(t, f.getValue(), scale, where, notes, lex));
             }
             keys.sort(Comparator.comparingDouble(Key::time));
         } else {
-            keys.add(key(0, value, scale, where, notes));
+            keys.add(key(0, value, scale, where, notes, lex));
         }
         return new Channel(List.copyOf(keys));
     }
 
-    private static Key key(double time, Object v, boolean scale, String where, List<String> notes) {
+    private static Key key(double time, Object v, boolean scale, String where, List<String> notes, Lexicon lex) {
         if (v instanceof Map<?, ?> m && (m.containsKey("pre") || m.containsKey("post"))) {
-            Molang[] pre = vec(m.containsKey("pre") ? m.get("pre") : m.get("post"), scale, where, notes);
-            Molang[] post = vec(m.containsKey("post") ? m.get("post") : m.get("pre"), scale, where, notes);
+            Molang[] pre = vec(m.containsKey("pre") ? m.get("pre") : m.get("post"), scale, where, notes, lex);
+            Molang[] post = vec(m.containsKey("post") ? m.get("post") : m.get("pre"), scale, where, notes, lex);
             return new Key(time, pre, post, "catmullrom".equals(m.get("lerp_mode")));
         }
-        Molang[] both = vec(v, scale, where, notes);
+        Molang[] both = vec(v, scale, where, notes, lex);
         return new Key(time, both, both, false);
     }
 
     /** {@code [x, y, z]}, or one value for all three (Bedrock allows that for scale). */
-    private static Molang[] vec(Object v, boolean scale, String where, List<String> notes) {
+    private static Molang[] vec(Object v, boolean scale, String where, List<String> notes, Lexicon lex) {
         Molang[] out = new Molang[3];
         if (v instanceof List<?> l) {
             for (int i = 0; i < 3; i++) {
-                out[i] = i < l.size() ? Molang.of(l.get(i), where, notes) : Molang.constant(scale ? 1 : 0);
+                out[i] = i < l.size() ? Molang.of(l.get(i), where, notes, lex) : Molang.constant(scale ? 1 : 0);
             }
         } else {
-            Molang one = Molang.of(v, where, notes);
+            Molang one = Molang.of(v, where, notes, lex);
             out[0] = one;
             out[1] = one;
             out[2] = one;
@@ -212,11 +297,15 @@ final class Liturgy {
      * {@code ||}, {@code !} and {@code ?:}; parentheses; {@code math.} {@code sin}, {@code cos}
      * (in degrees, as in Bedrock), {@code abs}, {@code min}, {@code max}, {@code clamp},
      * {@code lerp}, {@code sqrt}, {@code pow}, {@code exp}, {@code ln}, {@code floor},
-     * {@code ceil}, {@code round}, {@code trunc}, {@code mod}, {@code random}, {@code pi}; and
+     * {@code ceil}, {@code round}, {@code trunc}, {@code mod}, {@code random}, {@code pi};
      * {@code query.} (or {@code q.}) {@code anim_time}, {@code life_time}, {@code ground_speed},
      * {@code modified_move_speed}, {@code modified_distance_moved}, {@code head_x_rotation},
-     * {@code head_y_rotation}. Variables ({@code variable.}, {@code v.}, {@code temp.}) and
-     * unknown queries are 0; statements ({@code ;}, {@code return}) aren't supported.
+     * {@code head_y_rotation}, {@code is_on_ground}, {@code is_in_water}, {@code is_moving},
+     * {@code is_baby}, {@code health}, {@code max_health}, {@code attack_time}, {@code is_alive},
+     * {@code delta_time}, and the mod's own ({@link Being#query}); variables ({@code variable.},
+     * {@code v.}, {@code temp.}, {@code t.}), kept per entity; and statements: {@code ;},
+     * assignments to variables ({@code v.x = 1}), {@code return}. A statement list is worth what
+     * it returns, or its last expression. Unknown queries are 0.
      */
     interface Molang {
 
@@ -227,8 +316,15 @@ final class Liturgy {
         }
 
         static Molang of(Object v, String where, List<String> notes) {
+            return of(v, where, notes, new Lexicon());
+        }
+
+        static Molang of(Object v, String where, List<String> notes, Lexicon lex) {
             if (v instanceof Number n) {
                 return constant(n.doubleValue());
+            }
+            if (v instanceof Boolean b) {
+                return constant(b ? 1 : 0);
             }
             if (v instanceof String text) {
                 String t = text.trim();
@@ -236,7 +332,7 @@ final class Liturgy {
                     return constant(0);
                 }
                 try {
-                    return new Parser(t, where, notes).parse();
+                    return new Parser(t, where, notes, lex).parse();
                 } catch (IllegalArgumentException e) {
                     notes.add(where + ": '" + t + "' " + e.getMessage() + "; read as 0");
                     return constant(0);
@@ -251,24 +347,89 @@ final class Liturgy {
         private final String s;
         private final String where;
         private final List<String> notes;
+        private final Lexicon lex;
         private int i;
 
-        Parser(String s, String where, List<String> notes) {
+        Parser(String s, String where, List<String> notes, Lexicon lex) {
             this.s = s.toLowerCase(Locale.ROOT);
             this.where = where;
             this.notes = notes;
+            this.lex = lex;
         }
 
         Molang parse() {
-            if (s.contains(";") || s.startsWith("return")) {
-                throw new IllegalArgumentException("uses statements, which aren't supported");
-            }
-            Molang e = ternary();
+            List<Molang> statements = new ArrayList<>();
+            List<Boolean> returns = new ArrayList<>();
+            do {
+                ws();
+                if (i >= s.length()) {
+                    break;                      // a trailing ;
+                }
+                boolean ret = word("return");
+                statements.add(ret ? ternary() : statement());
+                returns.add(ret);
+                ws();
+            } while (eat(";"));
             ws();
             if (i != s.length()) {
                 throw new IllegalArgumentException("has something unexpected at '" + s.substring(i) + "'");
             }
-            return e;
+            if (statements.size() == 1 && !returns.getFirst()) {
+                return statements.getFirst();
+            }
+            Molang[] list = statements.toArray(Molang[]::new);
+            boolean[] ret = new boolean[list.length];
+            for (int k = 0; k < ret.length; k++) {
+                ret[k] = returns.get(k);
+            }
+            return sc -> {
+                double last = 0;
+                for (int k = 0; k < list.length; k++) {
+                    last = list[k].eval(sc);
+                    if (ret[k]) {
+                        return last;
+                    }
+                }
+                return last;
+            };
+        }
+
+        /** An assignment to a variable, or an expression. */
+        private Molang statement() {
+            int save = i;
+            int start = i;
+            while (i < s.length() && (Character.isLetterOrDigit(s.charAt(i)) || s.charAt(i) == '_' || s.charAt(i) == '.')) {
+                i++;
+            }
+            String name = canonical(s.substring(start, i));
+            ws();
+            if ((name.startsWith("variable.") || name.startsWith("temp.")) && peek('=') && !s.startsWith("==", i)) {
+                i++;
+                int slot = lex.var(name);
+                Molang value = ternary();
+                return sc -> {
+                    double v = value.eval(sc);
+                    sc.set(slot, v);
+                    return v;
+                };
+            }
+            i = save;
+            return ternary();
+        }
+
+        private static String canonical(String name) {
+            return name.startsWith("q.") ? "query." + name.substring(2)
+                    : name.startsWith("v.") ? "variable." + name.substring(2)
+                    : name.startsWith("t.") ? "temp." + name.substring(2)
+                    : name.startsWith("c.") ? "context." + name.substring(2) : name;
+        }
+
+        private boolean word(String w) {
+            if (s.startsWith(w, i) && (i + w.length() == s.length() || !Character.isLetterOrDigit(s.charAt(i + w.length())))) {
+                i += w.length();
+                return true;
+            }
+            return false;
         }
 
         private Molang ternary() {
@@ -438,22 +599,39 @@ final class Liturgy {
         }
 
         private Molang name(String name, List<Molang> a) {
-            String n = name.startsWith("q.") ? "query." + name.substring(2)
-                    : name.startsWith("v.") ? "variable." + name.substring(2)
-                    : name.startsWith("t.") ? "temp." + name.substring(2) : name;
+            String n = canonical(name);
             switch (n) {
-                case "query.anim_time": return s -> s.animTime();
-                case "query.life_time": return s -> s.lifeTime();
-                case "query.ground_speed": return s -> s.groundSpeed();
-                case "query.modified_move_speed": return s -> s.groundSpeed();
-                case "query.modified_distance_moved": return s -> s.distanceMoved();
-                case "query.head_x_rotation": return s -> s.headX();
-                case "query.head_y_rotation": return s -> s.headY();
+                case "query.anim_time": return s -> s.animTime;
+                case "query.life_time": return s -> s.lifeTime;
+                case "query.ground_speed": return s -> s.groundSpeed;
+                case "query.modified_move_speed": return s -> s.groundSpeed;
+                case "query.modified_distance_moved": return s -> s.distanceMoved;
+                case "query.head_x_rotation": return s -> s.headX;
+                case "query.head_y_rotation": return s -> s.headY;
+                case "query.is_on_ground": return s -> s.onGround;
+                case "query.is_in_water": return s -> s.inWater;
+                case "query.is_moving": return s -> s.moving;
+                case "query.is_baby": return s -> s.baby;
+                case "query.health": return s -> s.health;
+                case "query.max_health": return s -> s.maxHealth;
+                case "query.attack_time": return s -> s.attackTime;
+                case "query.is_alive": return s -> s.alive;
+                case "query.delta_time": return s -> s.deltaTime;
                 case "math.pi": return Molang.constant(Math.PI);
+                case "true": return Molang.constant(1);
+                case "false": return Molang.constant(0);
                 default: break;
             }
             if (n.startsWith("variable.") || n.startsWith("temp.")) {
-                return Molang.constant(0);
+                int slot = lex.var(n);
+                return s -> s.var(slot);
+            }
+            if (n.startsWith("query.")) {
+                Integer slot = lex.query(n.substring("query.".length()));
+                if (slot != null) {
+                    int k = slot;
+                    return s -> s.custom(k);
+                }
             }
             if (n.startsWith("math.")) {
                 return math(n.substring(5), a);

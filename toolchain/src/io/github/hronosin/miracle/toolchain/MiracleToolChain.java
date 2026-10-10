@@ -41,6 +41,7 @@ public final class MiracleToolChain implements MiracleMod {
         boolean spawns = false;
         boolean telepathy = false;
         boolean gestures = false;
+        boolean rites = false;
         for (Mods.Mod mod : Mods.all()) {
             if (!mod.depends().contains(ID)) {
                 continue;
@@ -77,6 +78,7 @@ public final class MiracleToolChain implements MiracleMod {
             if (f.creation() || f.telepathy()) {
                 Communion.bind(mod.id(), f.creation()); // both sides need it, and in the same version
             }
+            rites |= f.rites();
             if (f.gestures()) {
                 Faithful.foresee(mod.id(), Gestures.KEY);
                 gestures = true;
@@ -95,8 +97,11 @@ public final class MiracleToolChain implements MiracleMod {
         if (Communion.enabled) {
             Communion.install(rgct, client);
         }
-        if (telepathy) {
+        if (telepathy || rites) {
             Telepathy.install(rgct, client);
+        }
+        if (rites) {
+            Rites.install();
         }
         if (gestures && client) {
             Gestures.install(rgct);

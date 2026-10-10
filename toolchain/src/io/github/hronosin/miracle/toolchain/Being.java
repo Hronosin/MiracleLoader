@@ -45,6 +45,10 @@ public final class Being<T extends Entity> implements Supplier<EntityType<T>> {
     volatile ClassLoader loader;
     volatile String geometry;
     volatile String texture;
+    /** The mod's own Molang queries: names, and how each is worked out from the entity (client side). */
+    final java.util.List<String> queryNames = new java.util.concurrent.CopyOnWriteArrayList<>();
+    final java.util.List<java.util.function.ToDoubleFunction<? super T>> queryValues = new java.util.concurrent.CopyOnWriteArrayList<>();
+
     /** Where it turns up by itself, if anywhere. */
     final java.util.List<Spawn> spawns = new java.util.concurrent.CopyOnWriteArrayList<>();
 
@@ -165,6 +169,31 @@ public final class Being<T extends Entity> implements Supplier<EntityType<T>> {
         this.looks = Looks.SCULPTED;
         this.geometry = geometry;
         this.texture = texture;
+        return this;
+    }
+
+    /**
+     * A Molang query of your own, for a {@link #sculpted()} being's animations and animation
+     * controllers: {@code query.<name>} (or {@code q.<name>}) is {@code value} of the entity, worked
+     * out on the client every frame. It sees what the client knows of the entity, so read what
+     * your entity syncs (its {@code SynchedEntityData}): that's how a state that lasts (angry,
+     * charging, holding a book) reaches the animations of everyone who sees it, late or not.
+     *
+     * <pre>{@code
+     * .query("is_angry", h -> h.isAngry() ? 1 : 0)      // in a controller: "q.is_angry"
+     * }</pre>
+     */
+    public Being<T> query(String name, java.util.function.ToDoubleFunction<? super T> value) {
+        Creation.checkOpen("Being.query");
+        String n = name == null ? "" : name.replaceFirst("^(query|q)\\.", "").toLowerCase(java.util.Locale.ROOT);
+        if (!n.matches("[a-z_][a-z0-9_]*") || value == null) {
+            throw new IllegalArgumentException(this + ": query(\"" + name + "\", ...): a name of letters, digits and _, and a value");
+        }
+        if (queryNames.contains(n)) {
+            throw new IllegalArgumentException(this + " already has a query named " + n);
+        }
+        queryNames.add(n);
+        queryValues.add(value);
         return this;
     }
 
