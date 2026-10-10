@@ -47,8 +47,33 @@ public final class HookContext {
     private final Object returnValue;
     private final String methodLabel;
 
-    /** Null until a hook asks for something: most hooks only look. */
+    /** Null until a hook asks for something the lane below can't hold: most hooks only look. */
     private List<Effect> effects;
+
+    /**
+     * The lane: additions and factors for one slot (the first one a hook adds to or multiplies),
+     * kept as two numbers instead of a list. Sums and products don't care about order and never
+     * conflict, so nothing about who asked is needed; they are summed and multiplied in the order
+     * they were asked for, exactly as from the list. With nothing else asked for, merging needs
+     * no allocation at all, and the JIT can drop the context entirely.
+     */
+    static final int NO_SLOT = Integer.MIN_VALUE;
+    private int laneSlot = NO_SLOT;
+    private double laneAdd;
+    private double laneMul = 1;
+
+    /**
+     * The decision: the first set or cancel, while it's the only one and nothing else went to the
+     * list. Priorities and agreement only matter between two of them; the moment there's a
+     * second (or the list starts for any reason) it goes to the list first, where it would have
+     * been, and everything is merged the full way.
+     */
+    private Op decision;
+    private int decisionSlot;
+    private Object decisionValue;
+    private int decisionHook;
+    private String decisionMod;
+    private int decisionPriority;
 
     private int hookId = -1;
     private String modId = "?";
@@ -71,7 +96,37 @@ public final class HookContext {
     }
 
     boolean hasEffects() {
-        return effects != null;
+        return effects != null || laneSlot != NO_SLOT || decision != null;
+    }
+
+    /** True when every effect asked for is in the lane and the decision. */
+    boolean onlyLanes() {
+        return effects == null;
+    }
+
+    /** SET, CANCEL, or null; only while {@link #onlyLanes()}. */
+    Op decision() {
+        return decision;
+    }
+
+    int decisionSlot() {
+        return decisionSlot;
+    }
+
+    Object decisionValue() {
+        return decisionValue;
+    }
+
+    int laneSlot() {
+        return laneSlot;
+    }
+
+    double laneAdd() {
+        return laneAdd;
+    }
+
+    double laneMul() {
+        return laneMul;
     }
 
     /** Called by the dispatcher before each hook, so effects know whose they are. */
@@ -119,7 +174,7 @@ public final class HookContext {
         requireHead("setArg");
         checkIndex(i);
         checkType(argKinds.charAt(i), value, "argument " + i);
-        add(Op.SET, i, value, null);
+        decide(Op.SET, i, value);
     }
 
     /** Adds {@code amount} to numeric argument {@code i}. Stacks with other mods. */
@@ -127,7 +182,7 @@ public final class HookContext {
         requireHead("addToArg");
         checkIndex(i);
         requireNumeric(argKinds.charAt(i), "argument " + i, amount);
-        add(Op.ADD, i, amount, null);
+        lane(Op.ADD, i, amount);
     }
 
     /** Multiplies numeric argument {@code i} by {@code factor}. Stacks with other mods. */
@@ -135,7 +190,7 @@ public final class HookContext {
         requireHead("multiplyArg");
         checkIndex(i);
         requireNumeric(argKinds.charAt(i), "argument " + i, factor);
-        add(Op.MULTIPLY, i, factor, null);
+        lane(Op.MULTIPLY, i, factor);
     }
 
     /** Keeps numeric argument {@code i} within [min, max]; either bound may be null. */
@@ -152,21 +207,21 @@ public final class HookContext {
     public void setReturnValue(Object value) {
         requireReturn("setReturnValue");
         checkType(returnKind, value, "return value");
-        add(Op.SET, RETURN, value, null);
+        decide(Op.SET, RETURN, value);
     }
 
     /** Adds {@code amount} to a numeric return value. Stacks with other mods. */
     public void addToReturnValue(Number amount) {
         requireReturn("addToReturnValue");
         requireNumeric(returnKind, "return value", amount);
-        add(Op.ADD, RETURN, amount, null);
+        lane(Op.ADD, RETURN, amount);
     }
 
     /** Multiplies a numeric return value by {@code factor}. Stacks with other mods. */
     public void multiplyReturnValue(Number factor) {
         requireReturn("multiplyReturnValue");
         requireNumeric(returnKind, "return value", factor);
-        add(Op.MULTIPLY, RETURN, factor, null);
+        lane(Op.MULTIPLY, RETURN, factor);
     }
 
     /** Keeps a numeric return value within [min, max]; either bound may be null. */
@@ -184,7 +239,7 @@ public final class HookContext {
         if (returnKind != 'V') {
             throw new IllegalStateException(methodLabel + " returns a value: use cancel(value)");
         }
-        add(Op.CANCEL, RETURN, null, null);
+        decide(Op.CANCEL, RETURN, null);
     }
 
     /**
@@ -197,7 +252,7 @@ public final class HookContext {
             throw new IllegalStateException(methodLabel + " returns void: use cancel()");
         }
         checkType(returnKind, value, "return value");
-        add(Op.CANCEL, RETURN, value, null);
+        decide(Op.CANCEL, RETURN, value);
     }
 
     // --- internals --------------------------------------------------------------------------------
@@ -214,9 +269,42 @@ public final class HookContext {
         return argKinds;
     }
 
+    /** An addition or a factor: into the lane if it's free or for the same slot, else into the list. */
+    private void lane(Op op, int slot, Number n) {
+        if (laneSlot == NO_SLOT) {
+            laneSlot = slot;
+        }
+        if (laneSlot != slot) {
+            add(op, slot, n, null);
+        } else if (op == Op.ADD) {
+            laneAdd += n.doubleValue();
+        } else {
+            laneMul *= n.doubleValue();
+        }
+    }
+
+    /** A set or a cancel: the decision if it's the first thing that needs one, else the list. */
+    private void decide(Op op, int slot, Object value) {
+        if (effects == null && decision == null) {
+            decision = op;
+            decisionSlot = slot;
+            decisionValue = value;
+            decisionHook = hookId;
+            decisionMod = modId;
+            decisionPriority = priority;
+            return;
+        }
+        add(op, slot, value, null);
+    }
+
     private void add(Op op, int slot, Object a, Object b) {
         if (effects == null) {
-            effects = new ArrayList<>(2);
+            effects = new ArrayList<>(4);
+            if (decision != null) {
+                effects.add(new Effect(decision, decisionSlot, decisionValue, null, decisionHook, decisionMod,
+                        decisionPriority));
+                decision = null;
+            }
         }
         effects.add(new Effect(op, slot, a, b, hookId, modId, priority));
     }

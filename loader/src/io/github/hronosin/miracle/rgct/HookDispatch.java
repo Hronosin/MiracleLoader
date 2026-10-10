@@ -88,9 +88,12 @@ public final class HookDispatch {
 
     private static final MethodHandle FIRE_ONE;
     private static final MethodHandle HEAD_ONE;
-    private static final MethodHandle HEAD_MANY;
     private static final MethodHandle RETURN_ONE;
-    private static final MethodHandle RETURN_MANY;
+    private static final MethodHandle HEAD_CONTEXT;
+    private static final MethodHandle HEAD_MERGE;
+    private static final MethodHandle RETURN_CONTEXT;
+    private static final MethodHandle RETURN_MERGE;
+    private static final MethodHandle RUN_ONE;
 
     static {
         MethodHandles.Lookup l = MethodHandles.lookup();
@@ -99,12 +102,18 @@ public final class HookDispatch {
                     MethodType.methodType(void.class, Hook.class, Entry.class, Object.class));
             HEAD_ONE = l.findStatic(HookDispatch.class, "headOne", MethodType.methodType(Object.class,
                     ContextHook.class, Entry.class, int.class, Site.class, Object.class, Object[].class));
-            HEAD_MANY = l.findStatic(HookDispatch.class, "headMany",
-                    MethodType.methodType(Object.class, Site.class, Object.class, Object[].class));
             RETURN_ONE = l.findStatic(HookDispatch.class, "returnOne", MethodType.methodType(Object.class,
                     ContextHook.class, Entry.class, int.class, Site.class, Object.class, Object[].class, Object.class));
-            RETURN_MANY = l.findStatic(HookDispatch.class, "returnMany",
-                    MethodType.methodType(Object.class, Site.class, Object.class, Object[].class, Object.class));
+            HEAD_CONTEXT = l.findStatic(HookDispatch.class, "headContext",
+                    MethodType.methodType(HookContext.class, Site.class, Object.class, Object[].class));
+            HEAD_MERGE = l.findStatic(HookDispatch.class, "headMerge",
+                    MethodType.methodType(Object.class, HookContext.class, Object.class, Object[].class));
+            RETURN_CONTEXT = l.findStatic(HookDispatch.class, "returnContext",
+                    MethodType.methodType(HookContext.class, Site.class, Object.class, Object[].class, Object.class));
+            RETURN_MERGE = l.findStatic(HookDispatch.class, "returnMerge",
+                    MethodType.methodType(Object.class, HookContext.class, Object.class, Object[].class, Object.class));
+            RUN_ONE = l.findStatic(HookDispatch.class, "runOne",
+                    MethodType.methodType(void.class, ContextHook.class, Entry.class, int.class, HookContext.class));
         } catch (ReflectiveOperationException e) {
             throw new ExceptionInInitializerError(e);
         }
@@ -128,7 +137,7 @@ public final class HookDispatch {
                     Entry e = entries[hookId];
                     yield MethodHandles.insertArguments(HEAD_ONE, 0, (ContextHook) e.hook(), e, hookId, site);
                 }
-                yield MethodHandles.insertArguments(HEAD_MANY, 0, site);
+                yield chain(site, HEAD_CONTEXT, HEAD_MERGE);
             }
             case "interceptReturn" -> {
                 Site site = sites[id];
@@ -137,12 +146,54 @@ public final class HookDispatch {
                     Entry e = entries[hookId];
                     yield MethodHandles.insertArguments(RETURN_ONE, 0, (ContextHook) e.hook(), e, hookId, site);
                 }
-                yield MethodHandles.insertArguments(RETURN_MANY, 0, site);
+                yield chain(site, RETURN_CONTEXT, RETURN_MERGE);
             }
             case "redirect" -> replacement(redirections[id]);
             default -> throw new IllegalArgumentException("RGCT: no such call site kind: " + name);
         };
         return new ConstantCallSite(target.asType(type));
+    }
+
+    /**
+     * Several hooks at one spot, as one handle: make the context, run each hook (each a constant
+     * of its own, so each can be inlined, as with a single hook), merge. A loop over the hooks
+     * would call them all from one place, which the JIT can't inline past.
+     */
+    private static MethodHandle chain(Site site, MethodHandle context, MethodHandle merge) {
+        MethodHandle body = merge;
+        int[] ids = site.hookIds();
+        for (int i = ids.length - 1; i >= 0; i--) {
+            Entry e = entries[ids[i]];
+            MethodHandle run = MethodHandles.insertArguments(RUN_ONE, 0, (ContextHook) e.hook(), e, ids[i]);
+            body = MethodHandles.foldArguments(body, 0, run);   // run(ctx), then the rest
+        }
+        // (ctx, self, args[, value]) -> result, with ctx made from (self, args[, value]) first.
+        return MethodHandles.foldArguments(body, MethodHandles.insertArguments(context, 0, site));
+    }
+
+    private static HookContext headContext(Site site, Object self, Object[] args) {
+        return new HookContext(self, args, site.argKinds(), site.returnKind(), true, null, site.methodLabel());
+    }
+
+    private static Object headMerge(HookContext ctx, Object self, Object[] args) {
+        return Layers.head(ctx, args);
+    }
+
+    private static HookContext returnContext(Site site, Object self, Object[] args, Object returnValue) {
+        return new HookContext(self, args, site.argKinds(), site.returnKind(), false, returnValue, site.methodLabel());
+    }
+
+    private static Object returnMerge(HookContext ctx, Object self, Object[] args, Object returnValue) {
+        return Layers.ret(ctx, returnValue);
+    }
+
+    private static void runOne(ContextHook hook, Entry e, int id, HookContext ctx) {
+        ctx.enter(id, e.modId(), e.priority());
+        try {
+            hook.run(ctx);
+        } catch (RuntimeException ex) {
+            throw blame(ex, e);
+        }
     }
 
     /**

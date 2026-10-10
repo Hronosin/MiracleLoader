@@ -298,7 +298,19 @@ Details:
 
 ### Direct calls
 
-Every patched spot in a game method is an `invokedynamic` site. The first time it runs, RGCT binds it for good to the hook it calls: an observing hook's `run`, or, for a method with a single intercepting hook, that hook with no loop and no lookup around it. The JIT then sees the hook as a constant and inlines it into the game method, as if it had been written there; a hook that only reads leaves nothing behind but the check it makes. Methods with several hooks get their list bound instead. Hooks that only look (most of them) skip the layer merging entirely.
+Every patched spot in a game method is an `invokedynamic` site. The first time it runs, RGCT binds it for good to the hook it calls: an observing hook's `run`, or, for a method with a single intercepting hook, that hook with no loop and no lookup around it. The JIT then sees the hook as a constant and inlines it into the game method, as if it had been written there; a hook that only reads leaves nothing behind but the check it makes. Methods with several hooks get a chain of them bound, each hook a constant of its own (since 1.6; before, a loop the JIT couldn't see through). Hooks that only look (most of them) skip the layer merging entirely.
+
+**What a hook costs** (since 1.6). The context remembers the commonest effects without a list: one `set` or `cancel`, and additions and factors for one argument or the return value. Merging those is a few lines of arithmetic, so the JIT can inline the whole thing and the context, the arguments array and their boxes never exist. On a method called 20 million times in a loop (JDK 25, one core):
+
+| hook | 1.5 | 1.6 |
+|---|---|---|
+| reads only (`interceptReturn`) | 1.2 ns, 0 B | 1.2 ns, 0 B |
+| `multiplyReturnValue` | 35 ns, 176 B | 1.2 ns, 0 B |
+| `addToArg` (4 arguments) | 84 ns, 360 B | 2.8 ns, 0 B |
+| `setReturnValue` / `cancel(value)` | 185 ns, 1 KB | 1.2 ns, 0 B |
+| two hooks on one method | 31-53 ns, 104-208 B | 1.2-2.8 ns, 0 B |
+
+The bare method costs the same 1.2 ns. More than that (two `set`s, a `clamp`, effects on several arguments) goes the full way, with the same rules and the same results: priorities and conflicts are worked out only when there is something to work out.
 
 | patched method (100 million calls, JDK 25) | 0.4 | 0.5 |
 |---|---|---|

@@ -264,6 +264,18 @@ expect stack3 "Steve takes 5.0 damage from reduced zombie"
 expect_not stack3 "[FakeMinecraft] BOOM"                            # both cancel: still cancelled
 
 # --- direct calls: the same results the old way (a static call with an id per call) --------
+# --- layers: the context's lanes and the full merge agree ---------------------------------------
+for calls in true false; do
+    JAVA_OPTS=-Dmiracle.directCalls=$calls run_with lanes-$calls "$T/lanes-mod.jar"
+    expect_code lanes-$calls 0
+    expect lanes-$calls "jumpPower=4.5"                                 # set 1, * 3, + 0.5: (1 + 0.5) * 3
+    expect lanes-$calls "score=7"                                       # the same hook's second set
+    expect lanes-$calls "Steve takes 15.0 damage from lanes"            # (10 + 1) * 2 = 22, clamped to 15
+    expect lanes-$calls "move 3 1.0 false x -> 4.0"
+    expect lanes-$calls "ticks=5"
+    expect_not lanes-$calls "[FakeMinecraft] BOOM"
+done
+
 JAVA_OPTS=-Dmiracle.directCalls=false run_with stack3-old "$T/intercept-mod.jar" "$T/stack-a.jar" "$T/stack-b.jar"
 expect_code stack3-old 0
 expect stack3-old "jumpPower=1.56"

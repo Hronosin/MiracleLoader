@@ -22,12 +22,41 @@ final class Layers {
 
     /** Head: returns {@link HookDispatch#PROCEED}, or the value to return if the method was cancelled. */
     static Object head(HookContext ctx, Object[] args) {
+        // Kept tiny, so the JIT inlines it into the patched method and the context never exists.
         if (!ctx.hasEffects()) {
             return HookDispatch.PROCEED; // the common case: every hook only looked
         }
+        return ctx.onlyLanes() ? headLanes(ctx, args) : headFull(ctx, args);
+    }
+
+    /** The next most common: one cancel, or one set, and additions and factors for one argument. */
+    private static Object headLanes(HookContext ctx, Object[] args) {
+        Op d = ctx.decision();
+        if (d == Op.CANCEL) {
+            return ctx.returnKind() == 'V' ? null : ctx.decisionValue();
+        }
+        int lane = ctx.laneSlot();
+        if (d == Op.SET) {
+            int i = ctx.decisionSlot();
+            args[i] = lane == i ? numeric(ctx, ctx.argKinds().charAt(i), ctx.decisionValue(), i) : ctx.decisionValue();
+        }
+        if (lane != HookContext.NO_SLOT && !(d == Op.SET && ctx.decisionSlot() == lane)) {
+            args[lane] = numeric(ctx, ctx.argKinds().charAt(lane), args[lane], lane);
+        }
+        return HookDispatch.PROCEED;
+    }
+
+    private static Object headFull(HookContext ctx, Object[] args) {
         List<Effect> cancels = new ArrayList<>();
         long touched = 0; // argument slots some effect is about (bit i = argument i, up to 64)
         boolean many = false;
+        if (ctx.laneSlot() != HookContext.NO_SLOT) {
+            if (ctx.laneSlot() < 64) {
+                touched |= 1L << ctx.laneSlot();
+            } else {
+                many = true;
+            }
+        }
         for (Effect e : ctx.effects()) {
             if (e.op() == Op.CANCEL) {
                 cancels.add(e);
@@ -55,20 +84,40 @@ final class Layers {
 
     /** Return: the value the method finally returns. */
     static Object ret(HookContext ctx, Object original) {
-        if (ctx.returnKind() == 'V' || !ctx.hasEffects()) {
-            return ctx.returnKind() == 'V' ? null : original;
+        char kind = ctx.returnKind();
+        if (kind == 'V') {
+            return null;
         }
-        return slot(ctx, HookContext.RETURN, ctx.returnKind(), original, "return value");
+        if (!ctx.hasEffects()) {
+            return original;
+        }
+        return ctx.onlyLanes() ? retLanes(ctx, kind, original)
+                : slot(ctx, HookContext.RETURN, kind, original, "return value");
+    }
+
+    private static Object retLanes(HookContext ctx, char kind, Object original) {
+        Object base = ctx.decision() == Op.SET ? ctx.decisionValue() : original;
+        return ctx.laneSlot() == HookContext.RETURN ? numeric(ctx, kind, base, HookContext.RETURN) : base;
+    }
+
+    /** The lane alone: (base + additions) * factors, in the slot's own type. */
+    private static Object numeric(HookContext ctx, char kind, Object base, int slot) {
+        if (!(base instanceof Number n)) {
+            throw new IllegalStateException(ctx.methodLabel() + ": " + (slot == HookContext.RETURN ? "return value"
+                    : "argument " + slot) + " is " + base + ", cannot add to or multiply it");
+        }
+        return convert(kind, (n.doubleValue() + ctx.laneAdd()) * ctx.laneMul());
     }
 
     private static Object slot(HookContext ctx, int slot, char kind, Object original, String what) {
         List<Effect> sets = null;
-        double add = 0;
-        double mul = 1;
+        boolean inLane = ctx.laneSlot() == slot;
+        double add = inLane ? ctx.laneAdd() : 0;
+        double mul = inLane ? ctx.laneMul() : 1;
         double lo = Double.NEGATIVE_INFINITY;
         double hi = Double.POSITIVE_INFINITY;
         boolean clamped = false;
-        boolean numeric = false;
+        boolean numeric = inLane;
         List<Effect> effects = ctx.effects();
         for (int i = 0; i < effects.size(); i++) {
             Effect e = effects.get(i);
