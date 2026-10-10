@@ -462,16 +462,9 @@ public final class TransformRegistry {
                     }
                 }
                 if (!found.isEmpty() || !here.isEmpty()) {
-                    boolean isCtor = mm.methodName().equalsString("<init>");
+                    // On a constructor, interceptHead runs before super(): self is null, the
+                    // arguments can change, cancel() throws (HookContext).
                     List<HookPatch> interceptHead = found.getOrDefault(Where.INTERCEPT_HEAD, List.of());
-                    if (isCtor && !interceptHead.isEmpty()) {
-                        for (HookPatch h : interceptHead) {
-                            Log.warn("RGCT: mod '" + h.modId() + "' uses interceptHead on a constructor of "
-                                    + className + ". Not supported (this isn't initialized yet), skipping that hook.");
-                            matched.add(h); // reported already, don't also call it missing
-                        }
-                        interceptHead = List.of();
-                    }
                     found.values().forEach(l -> l.forEach(matched::add));
 
                     MethodShape shape = MethodShape.of(className, mm);
@@ -741,6 +734,24 @@ public final class TransformRegistry {
             b.aload(argsSlot);
             callSite(b, "interceptHead", headSite);
             // stack: result (PROCEED, or the value to return because the method was cancelled)
+            if (shape.isCtor()) {
+                b.pop();                        // a constructor can't be cancelled: cancel() threw already
+            } else {
+                emitCancelled(b);
+            }
+
+            // Write the (possibly changed) arguments back into their locals.
+            for (int i = 0; i < params.size(); i++) {
+                b.aload(argsSlot);
+                b.loadConstant(i);
+                b.aaload();
+                unboxOrCast(b, params.get(i));
+                b.storeLocal(TypeKind.from(params.get(i)), shape.slots()[i]);
+            }
+        }
+
+        /** With the head's result on the stack: return it now if the method was cancelled, else go on. */
+        private void emitCancelled(CodeBuilder b) {
             b.dup();
             b.getstatic(DISPATCH, "PROCEED", ConstantDescs.CD_Object);
             Label proceed = b.newLabel();
@@ -754,15 +765,6 @@ public final class TransformRegistry {
             }
             b.labelBinding(proceed);
             b.pop();
-
-            // Write the (possibly changed) arguments back into their locals.
-            for (int i = 0; i < params.size(); i++) {
-                b.aload(argsSlot);
-                b.loadConstant(i);
-                b.aaload();
-                unboxOrCast(b, params.get(i));
-                b.storeLocal(TypeKind.from(params.get(i)), shape.slots()[i]);
-            }
         }
 
         private void emitInterceptReturn(CodeBuilder b) {

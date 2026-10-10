@@ -293,8 +293,8 @@ Details:
 
 - Primitives travel boxed: an `int` argument is an `Integer`, a `float` return is a `Float`. Plain Java casts unbox them: `(float) ctx.returnValue()`.
 - `set` needs exactly the right type, and a wrong one (a `Double` where the game wants a `float`) fails right away with an error that names the method, the expected type and your mod. The stacking effects take any `Number`; integral results are rounded to the nearest value.
-- Interception boxes the arguments into an `Object[]` on every call. Fine for most methods; for something called millions of times per tick, prefer observing, or a redirect.
-- Not supported on constructor heads. Raw transforms are outside the layer system entirely.
+- Interception boxes the arguments into an `Object[]` on every call; the JIT usually makes all of it disappear (see *What a hook costs* below). Where it can't (a hook that keeps the context, or effects too many to merge simply), a redirect is the cheaper tool.
+- **Constructors** (since 1.6): `interceptHead` on `"<init>"` runs before `super(...)`. `self()` is null there (the object isn't made yet), the arguments can be changed, and `cancel()` throws: an object can't be left half made. `interceptReturn` on a constructor sees the finished object. Raw transforms are outside the layer system entirely.
 
 ### Direct calls
 

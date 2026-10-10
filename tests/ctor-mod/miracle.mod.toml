@@ -1,0 +1,2 @@
+id = "ctor-mod"
+entrypoint = "test.ctor.CtorMod"

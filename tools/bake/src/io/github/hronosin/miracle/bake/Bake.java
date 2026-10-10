@@ -181,7 +181,9 @@ public final class Bake {
                     continue;
                 }
                 merged = res.classes();
-                fb = ", " + res.replaced() + " fallback method(s)" + (res.added() > 0 ? " + " + res.added() + " added" : "");
+                long nested = res.notes().stream().filter(n -> n.startsWith("replaced class") || n.startsWith("added class")).count();
+                fb = ", " + res.replaced() + " fallback method(s)" + (res.added() > 0 ? " + " + res.added() + " added" : "")
+                        + (nested > 0 ? ", " + nested + " fallback class(es)" : "");
                 res.notes().stream().filter(n -> n.startsWith("added") || n.startsWith("replaced class")
                         || n.startsWith("dropped")).forEach(n -> notes.add("             note: " + n));
             }

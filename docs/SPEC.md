@@ -778,9 +778,11 @@ Rules:
 
 `Scripture.reveal()` adds the mod jar's `data/` and `assets/` to the game's built-in data pack and resource pack.
 
-- The namespaces exposed are the folder names under `data/` and `assets/` in the jar, found at startup, `minecraft` excluded. A jar with none gets a warning and nothing is added.
-- Hook: `VanillaPackResourcesBuilder#build(PackLocationInfo)` (head), for every built-in pack the game assembles; data packs read only `data/`, resource packs only `assets/`. The jar is opened as a zip file system the first time, and stays open.
-- Files are always on; there's no pack to enable. Mods SHOULD use their own namespace; overriding vanilla's files this way is not supported.
+- The jar's namespaces are the folder names under `data/` and `assets/`, found at startup. A jar with none gets a warning and nothing is added.
+- Since 1.6.0, each revealing mod's jar is a pack of its own (`PathPackResources` over the jar, id `miracle/<mod id>`, built-in, no known-pack info), put right after the pack whose id is `vanilla` (or first, if there is none) in every resource manager the game makes, in mod order. Hook: one for all mods, in the library's name: `MultiPackResourceManager#<init>(PackType, List)` (`interceptHead`, which replaces the list), so client resources, server data, `/reload` and the client's known-pack manager all get it. The jar is opened as a zip file system the first time, and stays open.
+- Since it's a pack, what the game merges across packs merges, with vanilla's and with other mods': tags (unless `"replace": true`), atlases, `sounds.json`, languages. Anything else replaces the file of a pack below (vanilla's), and is replaced by the packs above (the player's). Every namespace works this way, `minecraft` and other mods' (`c`) included.
+- Files are always on; there's no pack to enable, and the pack isn't listed in the game's pack screens or `/datapack list`.
+- (Before 1.6.0 the jar was one more root of the built-in vanilla pack, hooked at `VanillaPackResourcesBuilder#build(PackLocationInfo)`: files in the `minecraft` namespace were ignored, and two mods' files at the same path didn't merge.)
 
 ### 9.9 Proclamations
 

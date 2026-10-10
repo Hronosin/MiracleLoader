@@ -138,7 +138,10 @@ public final class HookContext {
 
     // --- the snapshot ---------------------------------------------------------------------------
 
-    /** The object the method was called on; {@code null} for static methods. */
+    /**
+     * The object the method was called on; {@code null} for static methods, and at the head of a
+     * constructor (it isn't made yet).
+     */
     public Object self() {
         return self;
     }
@@ -233,9 +236,13 @@ public final class HookContext {
 
     // --- cancelling (head only) -----------------------------------------------------------------
 
-    /** Skips a void method. If any mod cancels, the method doesn't run. */
+    /**
+     * Skips a void method. If any mod cancels, the method doesn't run. A constructor can't be
+     * skipped (the object would be left half made): there it throws.
+     */
     public void cancel() {
         requireHead("cancel");
+        refuseConstructor();
         if (returnKind != 'V') {
             throw new IllegalStateException(methodLabel + " returns a value: use cancel(value)");
         }
@@ -248,6 +255,7 @@ public final class HookContext {
      */
     public void cancel(Object value) {
         requireHead("cancel");
+        refuseConstructor();
         if (returnKind == 'V') {
             throw new IllegalStateException(methodLabel + " returns void: use cancel()");
         }
@@ -256,6 +264,13 @@ public final class HookContext {
     }
 
     // --- internals --------------------------------------------------------------------------------
+
+    private void refuseConstructor() {
+        if (methodLabel.contains("#<init>(")) {
+            throw new IllegalStateException(methodLabel + " is a constructor, which can't be cancelled (the object"
+                    + " would be left half made). Change its arguments, or cancel the method that makes it.");
+        }
+    }
 
     String methodLabel() {
         return methodLabel;

@@ -101,5 +101,6 @@ public final class MiracleToolChain implements MiracleMod {
         if (gestures && client) {
             Gestures.install(rgct);
         }
+        Scripture.installPsalter(rgct);
     }
 }

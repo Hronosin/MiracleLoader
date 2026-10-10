@@ -152,9 +152,21 @@ expect intercept "motd=miracle, self=null"                          # static, re
 expect intercept "[FakeMinecraft] score=42"
 expect intercept "nobody score=1337"                                # cancel with an int value
 expect intercept "ticks=101"                                        # static int return
-expect intercept "uses interceptHead on a constructor"
+expect_not intercept "on a constructor"                               # supported since 1.6
 expect intercept "intercept@RETURN"
 expect intercept "[FakeMinecraft] done"
+
+# --- interceptHead on a constructor: arguments change before super(), no self, no cancel ------
+run_with ctor "$T/ctor-mod.jar"
+expect_code ctor 0
+expect ctor "[ctor-mod] making 'Steve', self=null"
+expect ctor "player created: 'Saint Steve'"
+expect ctor "Saint Steve jumps"
+expect ctor "[ctor-mod] making '', self=null"
+expect ctor "intercept@HEAD    <- ctor-mod"
+JAVA_OPTS=-Dctor.cancel=true run_with ctor-cancel "$T/ctor-mod.jar"
+expect_code ctor-cancel 1
+expect ctor-cancel "is a constructor, which can't be cancelled"
 
 # --- observe + intercept on the same methods -------------------------------------------------
 run_with both "$M/hello-mod.jar" "$T/intercept-mod.jar"
@@ -398,7 +410,7 @@ expect wings-native "jumpPower=0.42"
 cp "$T/nest-mod.jar" "$BAKED/"
 out="$("$JAVA" -jar build/miracle-bake.jar --native fake=build/fake-minecraft.jar \
         --obf fake-obf=build/fake-minecraft-obf.jar,test-fixtures/fake-obf-game/mappings.txt "$BAKED/nest-mod.jar" 2>&1)"
-expect bake-nest "fake-obf  obfuscated    ok, 1 game references translated, 1 fallback method(s), baked"
+expect bake-nest "fake-obf  obfuscated    ok, 1 game references translated, 1 fallback method(s), 3 fallback class(es), baked"
 expect bake-nest "note: added class test.nest.NestMod\$fallback\$fake_obf\$1"
 expect bake-nest "note: replaced class test.nest.NestMod\$Feathers"
 expect bake-nest "note: added class test.nest.NestMod\$Step"
